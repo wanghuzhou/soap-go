@@ -189,7 +189,7 @@ func TestSaveFailureLeavesStateUntouched(t *testing.T) {
 		t.Fatalf("解析数据文件: %v", err)
 	}
 	if len(onDisk) != len(mem) {
-		t.Fatalf("内存 %d 个工程、磁盘 %d 个：状态分叉", len(mem), len(onDisk))
+		t.Fatalf("内存 %d 个项目、磁盘 %d 个：状态分叉", len(mem), len(onDisk))
 	}
 }
 

@@ -548,7 +548,7 @@ func (a *app) deleteOperation() {
 func (a *app) addService(name string) {
 	p := a.selectedProject()
 	if p == nil {
-		a.errMsg = "请先选择一个工程"
+		a.errMsg = "请先选择一个项目"
 		return
 	}
 	name = strings.TrimSpace(name)
@@ -608,7 +608,7 @@ func (a *app) renameCall(title string) {
 func (a *app) exportProject(path string) {
 	p := a.selectedProject()
 	if p == nil {
-		a.errMsg = "请先选择一个工程"
+		a.errMsg = "请先选择一个项目"
 		return
 	}
 	data, err := soapuiproj.Marshal(*p)
@@ -904,31 +904,31 @@ func (a *app) copyCurl() {
 func (a *app) createProject(name string) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		name = "新建工程"
+		name = "新建项目"
 	}
 	saved, err := a.st.AddProject(model.Project{Name: name, Source: "native"})
 	if err != nil {
-		a.errMsg = "新建工程失败：" + err.Error()
+		a.errMsg = "新建项目失败：" + err.Error()
 		return
 	}
 	a.pid, a.sid, a.oid, a.cid = saved.ID, "", "", ""
 	a.reload()
-	a.statusMsg = "已新建工程：" + saved.Name
+	a.statusMsg = "已新建项目：" + saved.Name
 }
 
 func (a *app) deleteProject() {
 	p := a.selectedProject()
 	if p == nil {
-		a.errMsg = "请先选择一个工程"
+		a.errMsg = "请先选择一个项目"
 		return
 	}
-	a.askConfirm("确定删除整个工程「"+p.Name+"」？", func() {
+	a.askConfirm("确定删除整个项目「"+p.Name+"」？", func() {
 		if err := a.st.DeleteProject(p.ID); err != nil {
-			a.errMsg = "删除工程失败：" + err.Error()
+			a.errMsg = "删除项目失败：" + err.Error()
 			return
 		}
 		a.clearAfterDelete()
-		a.statusMsg = "已删除工程：" + p.Name
+		a.statusMsg = "已删除项目：" + p.Name
 		a.reload()
 	})
 }
@@ -936,14 +936,14 @@ func (a *app) deleteProject() {
 func (a *app) renameProject(name string) {
 	p := a.selectedProject()
 	if p == nil {
-		a.errMsg = "请先选择一个工程"
+		a.errMsg = "请先选择一个项目"
 		return
 	}
 	if err := a.st.RenameProject(p.ID, strings.TrimSpace(name)); err != nil {
 		a.errMsg = "重命名失败：" + err.Error()
 		return
 	}
-	a.statusMsg = "工程已重命名"
+	a.statusMsg = "项目已重命名"
 	a.reload()
 }
 
@@ -956,18 +956,18 @@ func (a *app) importSoapUI(path string) {
 	}
 	project, err := soapuiproj.Parse(data)
 	if err != nil {
-		a.errMsg = "解析 SoapUI 工程失败：" + err.Error()
+		a.errMsg = "解析 SoapUI 项目失败：" + err.Error()
 		return
 	}
 	if project.Name == "" {
 		project.Name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	}
 	if _, err := a.st.AddProject(*project); err != nil {
-		a.errMsg = "保存工程失败：" + err.Error()
+		a.errMsg = "保存项目失败：" + err.Error()
 		return
 	}
 	a.reload()
-	a.statusMsg = "已导入 SoapUI 工程：" + project.Name
+	a.statusMsg = "已导入 SoapUI 项目：" + project.Name
 }
 
 // importWSDLFile parses a WSDL file and adds a project.
@@ -992,7 +992,7 @@ func (a *app) importWSDLURL(rawURL string) {
 	switch a.importProxySel {
 	case "系统代理":
 		proxy = &model.ProxySettings{Mode: "system"}
-	case "当前工程代理":
+	case "当前项目代理":
 		if p := a.selectedProject(); p != nil && p.Proxy != nil {
 			proxy = p.Proxy
 		}
@@ -1029,7 +1029,7 @@ func (a *app) persistWSDL(res *wsdl.Result, fallbackName, source, projectSource 
 		}
 	}
 	if name == "" {
-		name = "WSDL 工程"
+		name = "WSDL 项目"
 	}
 	project := model.Project{
 		Name:   name,
@@ -1041,7 +1041,7 @@ func (a *app) persistWSDL(res *wsdl.Result, fallbackName, source, projectSource 
 		}},
 	}
 	if _, err := a.st.AddProject(project); err != nil {
-		a.errMsg = "保存 WSDL 工程失败：" + err.Error()
+		a.errMsg = "保存 WSDL 项目失败：" + err.Error()
 		return
 	}
 	a.reload()
@@ -1052,7 +1052,7 @@ func (a *app) persistWSDL(res *wsdl.Result, fallbackName, source, projectSource 
 func (a *app) updateProxy() {
 	p := a.selectedProject()
 	if p == nil {
-		a.errMsg = "请先选择一个工程"
+		a.errMsg = "请先选择一个项目"
 		return
 	}
 	var cfg *model.ProxySettings
@@ -1089,7 +1089,7 @@ func (a *app) updateProxy() {
 func (a *app) openProxy() {
 	p := a.selectedProject()
 	if p == nil {
-		a.errMsg = "请先选择一个工程"
+		a.errMsg = "请先选择一个项目"
 		return
 	}
 	a.proxyModeSel, a.proxyTypeSel = "系统代理", "HTTP"

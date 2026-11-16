@@ -136,7 +136,7 @@ func Parse(data []byte) (*model.Project, error) {
 		return nil, err
 	}
 	if raw.XMLName.Local != "soapui-project" {
-		return nil, errors.New("根元素不是 soapui-project，可能不是 SoapUI 工程文件")
+		return nil, errors.New("根元素不是 soapui-project，可能不是 SoapUI 项目文件")
 	}
 
 	proj := &model.Project{Name: raw.Name, Source: "soapui"}

@@ -80,7 +80,7 @@ const dualProtocolWSDL = `<?xml version="1.0" encoding="UTF-8"?>
 
 // TestParseOrderIsDeterministic 回归：解析曾遍历 bindByQName 这个 map，
 // 导致同一份 WSDL 每次解析出的 operation 顺序可能不同（实测 60 次里
-// 有 7 次顺序翻转），进而使工程树顺序不稳定、导出结果不可复现。
+// 有 7 次顺序翻转），进而使项目树顺序不稳定、导出结果不可复现。
 func TestParseOrderIsDeterministic(t *testing.T) {
 	var first []string
 	seen := map[string]int{}

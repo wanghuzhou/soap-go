@@ -76,7 +76,7 @@ func TestImportSplitsDuplicatesInsideOneProject(t *testing.T) {
 	}
 	projects := []model.Project{{
 		ID:   "p",
-		Name: "工程",
+		Name: "项目",
 		Services: []model.Service{{
 			ID: "s",
 			Operations: []model.Operation{{
@@ -129,14 +129,14 @@ func TestImportKeepsUniqueIDs(t *testing.T) {
 	}
 	projects := []model.Project{{
 		ID:   "p1",
-		Name: "工程一",
+		Name: "项目一",
 		Services: []model.Service{{
 			ID:         "s1",
 			Operations: []model.Operation{{ID: "o1", Calls: []model.Call{{ID: "c1"}}}},
 		}},
 	}, {
 		ID:   "p2",
-		Name: "工程二",
+		Name: "项目二",
 	}}
 	if _, err := reg.Import("导入", projects); err != nil {
 		t.Fatalf("Import: %v", err)

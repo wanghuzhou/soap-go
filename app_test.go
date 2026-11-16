@@ -31,7 +31,7 @@ func newTestApp(t *testing.T) *app {
 func TestProjectAndCallLifecycle(t *testing.T) {
 	a := newTestApp(t)
 
-	a.createProject("演示工程")
+	a.createProject("演示项目")
 	a.reload()
 	if len(a.projects) != 1 {
 		t.Fatalf("projects = %d, want 1", len(a.projects))

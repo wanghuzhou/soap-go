@@ -8,7 +8,7 @@ import (
 // gbkWSDL 是 "查询" 的 GBK 字节。
 var gbkQuery = []byte{0xb2, 0xe9, 0xd1, 0xaf}
 
-// TestParseGBKProject 回归：GBK 编码的 SoapUI 工程应能解析，中文名正确。
+// TestParseGBKProject 回归：GBK 编码的 SoapUI 项目应能解析，中文名正确。
 // 此前 charsetReader 只是"原样返回"（注释里自己写着 Best effort），
 // 非 UTF-8 文档要么乱码，要么因 CharsetReader 缺失而失败。
 func TestParseGBKProject(t *testing.T) {
@@ -37,10 +37,10 @@ func TestParseGBKProject(t *testing.T) {
 
 	p, err := Parse([]byte(b.String()))
 	if err != nil {
-		t.Fatalf("GBK 工程解析失败: %v", err)
+		t.Fatalf("GBK 项目解析失败: %v", err)
 	}
 	if p.Name != "查询" {
-		t.Errorf("工程名 = %q, want 查询", p.Name)
+		t.Errorf("项目名 = %q, want 查询", p.Name)
 	}
 	if len(p.Services) != 1 {
 		t.Fatalf("services = %d", len(p.Services))
@@ -72,7 +72,7 @@ func TestParseGBKProject(t *testing.T) {
 func TestParseUTF8ProjectStillWorks(t *testing.T) {
 	p, err := Parse([]byte(sample))
 	if err != nil {
-		t.Fatalf("UTF-8 工程解析失败: %v", err)
+		t.Fatalf("UTF-8 项目解析失败: %v", err)
 	}
 	if p.Name != "DemoProject" {
 		t.Errorf("name = %q", p.Name)

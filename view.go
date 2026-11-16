@@ -73,15 +73,15 @@ func (a *app) topBar(c *ui.Context) {
 
 		// File menu.
 		ui.PopoverMenuButton(c, "文件", func(m *ui.Menu) {
-			if m.Item("新建工程…").Chosen() {
+			if m.Item("新建项目…").Chosen() {
 				a.newProjectOpen, a.projectModalKind, a.nameInput = true, 0, ""
 			}
-			if m.Item("重命名工程…").Chosen() {
+			if m.Item("重命名项目…").Chosen() {
 				if p := a.selectedProject(); p != nil {
 					a.newProjectOpen, a.projectModalKind, a.nameInput = true, 1, p.Name
 				}
 			}
-			if m.Item("删除工程").Danger().Chosen() {
+			if m.Item("删除项目").Danger().Chosen() {
 				a.deleteProject()
 			}
 			m.Separator()
@@ -162,22 +162,22 @@ func (a *app) sidebar(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Width(a.sideW).Shrink(0).FillHeight().Background(t.Surface).Children(func() {
 		ui.Row(c).Padding(10, 12, 4, 14).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "工程").FontSize(11.5).Bold()
+			ui.Text(c, "项目").FontSize(11.5).Bold()
 			ui.Badge(c, fmt.Sprint(len(a.projects)))
 			ui.Spacer(c)
-			a.iconBtn(c, iconPlus, "新建工程", func() {
+			a.iconBtn(c, iconPlus, "新建项目", func() {
 				a.newProjectOpen, a.projectModalKind, a.nameInput = true, 0, ""
 			})
 		})
 		ui.Row(c).Padding(0, 12, 8, 12).Children(func() {
-			ui.TextInput(c, &a.search).Placeholder("搜索工程 / 服务 / 操作 / 请求").Grow(1)
+			ui.TextInput(c, &a.search).Placeholder("搜索项目 / 服务 / 操作 / 请求").Grow(1)
 		})
 		ui.Scroll(c).Grow(1).Padding(4, 6, 6).Children(func() {
 			items := a.treeItems()
 			if len(items) == 0 {
 				ui.Column(c).Padding(16).Gap(6).Children(func() {
-					ui.Text(c, "还没有工程").FontSize(12.5).Bold()
-					ui.Text(c, "用「文件 › 导入」导入 SoapUI 工程或 WSDL。").FontSize(10.5).TextColor(t.TextMuted).Wrap()
+					ui.Text(c, "还没有项目").FontSize(12.5).Bold()
+					ui.Text(c, "用「文件 › 导入」导入 SoapUI 项目或 WSDL。").FontSize(10.5).TextColor(t.TextMuted).Wrap()
 				})
 				return
 			}
@@ -329,7 +329,7 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 		if m.Item("新建服务…").Chosen() {
 			a.treeModalOpen, a.treeModalKind, a.nameInput = true, 1, ""
 		}
-		if m.Item("重命名工程…").Chosen() {
+		if m.Item("重命名项目…").Chosen() {
 			name := ""
 			if p := a.findProject(it.pid); p != nil {
 				name = p.Name
@@ -343,7 +343,7 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			a.saveProjectXML()
 		}
 		m.Separator()
-		if m.Item("删除工程").Danger().Chosen() {
+		if m.Item("删除项目").Danger().Chosen() {
 			a.deleteProject()
 		}
 	case "service":
@@ -390,7 +390,7 @@ func (a *app) saveProjectXML() {
 	}
 	if path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
 		Parent: a.win, Title: "导出 SoapUI XML", DefaultPath: p.Name + "-soapui-project.xml",
-		Filters: []mygo.FileFilter{{Name: "SoapUI 工程", Extensions: []string{"xml"}}},
+		Filters: []mygo.FileFilter{{Name: "SoapUI 项目", Extensions: []string{"xml"}}},
 	}); err == nil && path != "" {
 		a.exportProject(path)
 	}
@@ -550,7 +550,7 @@ func (a *app) headersPanel(c *ui.Context) {
 				a.headers = append(a.headers, headerRow{})
 			}
 		})
-		ui.Text(c, "SOAPAction 与 Content-Type 默认存在；工程默认头会叠加，样例头可覆盖同名项。").
+		ui.Text(c, "SOAPAction 与 Content-Type 默认存在；项目默认头会叠加，样例头可覆盖同名项。").
 			FontSize(10.5).TextColor(t.TextMuted)
 		ui.Divider(c)
 
@@ -570,7 +570,7 @@ func (a *app) headersPanel(c *ui.Context) {
 		})
 
 		if len(a.projHeaders) > 0 {
-			ui.Text(c, "工程默认头").FontSize(10.5).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
+			ui.Text(c, "项目默认头").FontSize(10.5).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
 			for _, h := range a.projHeaders {
 				ui.Row(c).Gap(8).Children(func() {
 					ui.Text(c, h.Name+": "+h.Value).FontSize(11).TextColor(t.TextMuted)
@@ -684,7 +684,7 @@ func (a *app) statusBar(c *ui.Context) {
 		} else if a.statusMsg != "" {
 			ui.Text(c, a.statusMsg).FontSize(10.5).TextColor(t.Success).SingleLine()
 		}
-		ui.Text(c, fmt.Sprintf("%d 个工程", len(a.projects))).FontSize(10.5).TextColor(t.TextMuted)
+		ui.Text(c, fmt.Sprintf("%d 个项目", len(a.projects))).FontSize(10.5).TextColor(t.TextMuted)
 	})
 }
 
@@ -707,7 +707,7 @@ func (a *app) importModal(c *ui.Context) {
 					ui.Text(c, "WSDL URL").FontSize(10.5).TextColor(t.TextMuted)
 					ui.TextInput(c, &a.importURL).Placeholder("http://127.0.0.1:8080/services/ws/api?wsdl").Grow(1)
 					ui.Text(c, "代理").FontSize(10.5).TextColor(t.TextMuted)
-					ui.Select(c, &a.importProxySel, []string{"直连（默认）", "系统代理", "当前工程代理"})
+					ui.Select(c, &a.importProxySel, []string{"直连（默认）", "系统代理", "当前项目代理"})
 				})
 				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 					if ui.Button(c, "返回").Clicked() {
@@ -722,11 +722,11 @@ func (a *app) importModal(c *ui.Context) {
 					}
 				})
 			} else {
-				a.importOption(c, "◇", "导入 SoapUI 工程",
-					"从 .xml 工程导入，保留服务、操作与请求样例。", func() {
+				a.importOption(c, "◇", "导入 SoapUI 项目",
+					"从 .xml 项目导入，保留服务、操作与请求样例。", func() {
 						if path, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-							Parent: a.win, Title: "选择 SoapUI 工程",
-							Filters: []mygo.FileFilter{{Name: "SoapUI 工程", Extensions: []string{"xml"}}},
+							Parent: a.win, Title: "选择 SoapUI 项目",
+							Filters: []mygo.FileFilter{{Name: "SoapUI 项目", Extensions: []string{"xml"}}},
 						}); err == nil && len(path) > 0 {
 							a.importSoapUI(path[0])
 							a.importOpen = false
@@ -743,7 +743,7 @@ func (a *app) importModal(c *ui.Context) {
 						}
 					})
 				a.importOption(c, "↗", "从 URL 导入 WSDL",
-					"抓取远程 WSDL，生成新的工程。", func() { a.importKind = 3 })
+					"抓取远程 WSDL，生成新的项目。", func() { a.importKind = 3 })
 				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 					if ui.Button(c, "取消").Clicked() {
 						a.importOpen = false
@@ -784,7 +784,7 @@ func (a *app) exportModal(c *ui.Context) {
 				ui.Text(c, "×").FontSize(15).TextColor(t.TextMuted).
 					OnClick(func() { a.exportOpen = false })
 			})
-			ui.Text(c, "把当前工作空间的工程导出为 JSON，可在另一台机器或另一个实例导入。").
+			ui.Text(c, "把当前工作空间的项目导出为 JSON，可在另一台机器或另一个实例导入。").
 				FontSize(11).TextColor(t.TextMuted).Wrap()
 			ui.Checkbox(c, &a.keepProxy, "保留代理配置（含用户名与密码）")
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
@@ -810,7 +810,7 @@ func (a *app) proxyModal(c *ui.Context) {
 	ui.Modal(c, &a.proxyOpen, func() {
 		ui.Column(c).Width(480).Gap(10).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "工程代理设置").FontSize(16).Bold()
+				ui.Text(c, "项目代理设置").FontSize(16).Bold()
 				ui.Spacer(c)
 				ui.Text(c, "×").FontSize(15).TextColor(t.TextMuted).
 					OnClick(func() { a.proxyOpen = false })
@@ -860,13 +860,13 @@ func (a *app) newProjectModal(c *ui.Context) {
 	ui.Modal(c, &a.newProjectOpen, func() {
 		ui.Column(c).Width(420).Gap(12).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "工程").FontSize(16).Bold()
+				ui.Text(c, "项目").FontSize(16).Bold()
 				ui.Spacer(c)
 				ui.Text(c, "×").FontSize(15).TextColor(t.TextMuted).
 					OnClick(func() { a.newProjectOpen = false })
 			})
-			ui.Text(c, "工程名称").FontSize(10.5).TextColor(t.TextMuted)
-			ui.TextInput(c, &a.nameInput).Placeholder("新建工程").Grow(1)
+			ui.Text(c, "项目名称").FontSize(10.5).TextColor(t.TextMuted)
+			ui.TextInput(c, &a.nameInput).Placeholder("新建项目").Grow(1)
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
 					a.newProjectOpen = false

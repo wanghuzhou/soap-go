@@ -54,7 +54,7 @@ func TestNilSlicesSurviveClone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	// 没有任何 Services / TestSuites / Proxy 的最小工程。
+	// 没有任何 Services / TestSuites / Proxy 的最小项目。
 	if _, err := s.AddProject(model.Project{Name: "bare"}); err != nil {
 		t.Fatalf("AddProject: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestUpdateProjectProxyOnly(t *testing.T) {
 		t.Errorf("name 被改动: %q", got.Name)
 	}
 	if len(got.Services) != 1 || got.Services[0].Operations[0].Template != "<a/>" {
-		t.Errorf("工程结构被改动: %+v", got.Services)
+		t.Errorf("项目结构被改动: %+v", got.Services)
 	}
 	if got.Proxy == nil || got.Proxy.Host != "10.0.0.1" || got.Proxy.Type != "socks5" {
 		t.Errorf("proxy = %+v", got.Proxy)
@@ -166,7 +166,7 @@ func TestRenameProjectOnly(t *testing.T) {
 		t.Errorf("name = %q", got.Name)
 	}
 	if len(got.Services[0].Operations[0].Calls) != 1 {
-		t.Errorf("重命名破坏了工程结构")
+		t.Errorf("重命名破坏了项目结构")
 	}
 
 	if err := s.RenameProject("missing", "x"); err != ErrNotFound {
@@ -181,7 +181,7 @@ func TestListEmptyStore(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	if list := s.List(); len(list) != 0 {
-		t.Fatalf("空 store 应返回 0 个工程，实际 %d", len(list))
+		t.Fatalf("空 store 应返回 0 个项目，实际 %d", len(list))
 	}
 	if _, err := s.Get("missing"); err != ErrNotFound {
 		t.Errorf("err = %v, want ErrNotFound", err)

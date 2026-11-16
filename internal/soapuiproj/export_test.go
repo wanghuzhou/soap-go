@@ -10,7 +10,7 @@ import (
 func TestMarshalRoundTrip(t *testing.T) {
 	orig := model.Project{
 		ID:     "p1",
-		Name:   "往返工程",
+		Name:   "往返项目",
 		Source: "soapui",
 		Services: []model.Service{{
 			ID:   "s1",

@@ -313,7 +313,7 @@ func (s *Store) AddProject(p model.Project) (model.Project, error) {
 		p.ID = NewID()
 	}
 	if p.Name == "" {
-		p.Name = "未命名工程"
+		p.Name = "未命名项目"
 	}
 	EnsureIDs(&p)
 	err := s.commit(func(list []model.Project) ([]model.Project, error) {

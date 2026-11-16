@@ -124,10 +124,10 @@ func (r *Registry) Import(rawName string, projects []model.Project) (Info, error
 	claim := store.NewIDClaimer()
 	for i := range projects {
 		if err := projects[i].Proxy.Validate(); err != nil {
-			return Info{}, fmt.Errorf("%w：工程「%s」的代理配置无效: %v", ErrInvalidProject, projects[i].Name, err)
+			return Info{}, fmt.Errorf("%w：项目「%s」的代理配置无效: %v", ErrInvalidProject, projects[i].Name, err)
 		}
 		if err := model.ValidateProjectResponses(projects[i]); err != nil {
-			return Info{}, fmt.Errorf("%w：工程「%s」: %v", ErrInvalidProject, projects[i].Name, err)
+			return Info{}, fmt.Errorf("%w：项目「%s」: %v", ErrInvalidProject, projects[i].Name, err)
 		}
 		store.EnsureIDsIn(&projects[i], claim)
 	}
@@ -177,7 +177,7 @@ func (r *Registry) createLocked(name string, projects []model.Project) (Info, er
 	r.settings = next
 	r.active = st
 	r.activeID = id
-	log.Printf("已创建工作空间：%s（%d 个工程）", name, len(projects))
+	log.Printf("已创建工作空间：%s（%d 个项目）", name, len(projects))
 	return Info{ID: id, Name: name}, nil
 }
 
