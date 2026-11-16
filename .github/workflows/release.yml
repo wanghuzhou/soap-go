@@ -1,0 +1,265 @@
+name: Release
+
+# 推送 v*.*.* 形式的 tag 时自动构建并发版；workflow_dispatch 用于给已有 tag 补跑。
+#
+# 设计沿用 soap-web 的 release 流程：
+# - release 由本 workflow 自己创建，避免 release[published] 重复触发构建。
+# - 全部构建成功后才创建 release，构建失败不会留下空 release。
+# - 仅 publish job 需要 contents: write。
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要重建并补传资产的已有 tag，例如 v1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 0) 先跑测试，测试不过不发版。
+  # ---------------------------------------------------------------------------
+  test:
+    name: Vet and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+
+  # ---------------------------------------------------------------------------
+  # 1) Windows / Linux amd64：纯 Go、无 cgo，可在 ubuntu 上交叉编译。
+  #    MyGo 官方要求 CGO_ENABLED=0，生产构建加 mygo_noinspector 与 production。
+  # ---------------------------------------------------------------------------
+  build-unix:
+    name: ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: windows, goarch: amd64, ext: '.exe', pack: zip }
+          - { goos: linux,   goarch: amd64, ext: '',     pack: tar.gz }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cross-compile
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          SAFE_TAG="${TAG//\//-}"
+          NAME="soap-go_${SAFE_TAG}_${GOOS}_${GOARCH}"
+          STAGE="dist/${NAME}"
+          mkdir -p "${STAGE}"
+
+          LDFLAGS='-s -w -X github.com/egoist/mygo.production=1'
+          if [ "$GOOS" = "windows" ]; then
+            LDFLAGS="$LDFLAGS -H windowsgui"
+          fi
+          CGO_ENABLED=0 go build -trimpath -tags mygo_noinspector \
+            -ldflags "$LDFLAGS" -o "${STAGE}/soap-go${EXT}" .
+          cp README.md "${STAGE}/"
+
+      - name: Package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          EXT: ${{ matrix.ext }}
+          PACK: ${{ matrix.pack }}
+        run: |
+          set -euo pipefail
+          SAFE_TAG="${TAG//\//-}"
+          NAME="soap-go_${SAFE_TAG}_${GOOS}_${GOARCH}"
+          STAGE="dist/${NAME}"
+          chmod 755 "${STAGE}/soap-go${EXT}"
+
+          if [ "$GOOS" = "windows" ]; then
+            printf '%s\r\n' \
+              '@echo off' \
+              'setlocal' \
+              'cd /d "%~dp0"' \
+              '"soap-go.exe" -data "data" %*' \
+              > "${STAGE}/start.bat"
+          else
+            printf '%s\n' \
+              '#!/usr/bin/env bash' \
+              'set -euo pipefail' \
+              'cd "$(dirname "$0")"' \
+              'exec ./soap-go -data ./data "$@"' \
+              > "${STAGE}/start.sh"
+            chmod 755 "${STAGE}/start.sh"
+            printf '%s\n' \
+              'soap-go for Linux' \
+              '' \
+              'Requires GTK 3 and WebKitGTK 4.1, e.g. on Debian/Ubuntu:' \
+              '    sudo apt install libwebkit2gtk-4.1-0' \
+              '' \
+              'Run:  ./start.sh   (or ./soap-go -data ./data)' \
+              > "${STAGE}/LINUX-README.txt"
+          fi
+
+          case "$PACK" in
+            zip)    ( cd dist && zip -qr "${NAME}.zip" "${NAME}" ) ;;
+            tar.gz) ( cd dist && tar -czf "${NAME}.tar.gz" "${NAME}" ) ;;
+          esac
+          rm -rf "${STAGE}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soap-go-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 2) macOS arm64 / amd64：在对应的原生 runner 上构建，并用 lipo 校验架构。
+  # ---------------------------------------------------------------------------
+  build-macos:
+    name: darwin/${{ matrix.goarch }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15-intel, goarch: amd64, lipo: x86_64 }
+          - { runner: macos-15,       goarch: arm64, lipo: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          SAFE_TAG="${TAG//\//-}"
+          NAME="soap-go_${SAFE_TAG}_darwin_${GOARCH}"
+          STAGE="dist/${NAME}"
+          mkdir -p "${STAGE}"
+          CGO_ENABLED=0 GOOS=darwin GOARCH="${GOARCH}" go build -trimpath \
+            -tags mygo_noinspector \
+            -ldflags='-s -w -X github.com/egoist/mygo.production=1' \
+            -o "${STAGE}/soap-go" .
+          ACTUAL=$(lipo -archs "${STAGE}/soap-go")
+          echo "built architecture: ${ACTUAL}"
+          if [ "${ACTUAL}" != "${{ matrix.lipo }}" ]; then
+            echo "architecture mismatch: want ${{ matrix.lipo }}, got ${ACTUAL}" >&2
+            exit 1
+          fi
+          cp README.md "${STAGE}/"
+          chmod 755 "${STAGE}/soap-go"
+          printf '%s\n' \
+            'soap-go for macOS' \
+            '' \
+            'This build is unsigned. If macOS blocks it, run once:' \
+            '' \
+            '    xattr -dr com.apple.quarantine <this-folder>' \
+            '' \
+            'Run:  ./soap-go -data ./data' \
+            > "${STAGE}/MACOS-README.txt"
+          ( cd dist && ditto -c -k --sequesterRsrc --keepParent "${NAME}" "${NAME}.zip" )
+          rm -rf "${STAGE}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soap-go-darwin-${{ matrix.goarch }}
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 3) 全部构建成功后创建 release 并上传资产。
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Create release and attach assets
+    needs: [build-unix, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: soap-go-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        run: |
+          set -euo pipefail
+          ( cd dist && sha256sum *.zip *.tar.gz > SHA256SUMS.txt )
+
+      - name: Check existing release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/*.zip dist/*.tar.gz dist/SHA256SUMS.txt)
+          if [ ${#files[@]} -eq 0 ] || [ ! -f dist/SHA256SUMS.txt ]; then
+            echo "no assets found" >&2
+            exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}" \
+            --repo "$GITHUB_REPOSITORY" --clobber

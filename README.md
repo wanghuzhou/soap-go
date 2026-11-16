@@ -4,7 +4,7 @@ SOAP / WSDL 接口调试桌面工具，用 **Go + MyGo 原生 UI**（纯 Go 绘�
 
 > 一句话：soap-web 的原生桌面版本。
 
-![主界面](preview.png)
+![主界面](docs/screenshots/example1.png)
 
 ## 功能
 
@@ -83,6 +83,13 @@ internal/      从 soap-web 移植的业务包
   appsetup     数据目录与注册表初始化
 ```
 
+## 发布
+
+推送 `v*.*.*` 形式的 tag 会触发 `.github/workflows/release.yml`：
+
+- 先跑 `go vet` / `go test`，通过后构建
+- 产物：`windows/amd64`、`linux/amd64`、`darwin/arm64`、`darwin/amd64`
+- 自动创建 GitHub Release，附 `SHA256SUMS.txt`
 ## 说明
 
 - 界面由 MyGo 的原生 UI 工具包绘制，不依赖 WebView；业务包直接复用 soap-web，避免重复实现。
