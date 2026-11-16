@@ -530,8 +530,6 @@ func (a *app) requestPanel(c *ui.Context) {
 					}
 					ui.Button(c, "复制为 curl").OnClick(a.copyCurl)
 					ui.Button(c, "保存请求").OnClick(a.saveCall)
-					ui.Button(c, "删除").OnClick(a.deleteCall)
-					ui.Checkbox(c, &a.autoFormat, "自动格式化")
 				})
 				a.editorWithCopy(c, a.xmlEd, "请求报文已复制", func() string { return a.xmlEd.Buffer.String() })
 			})
@@ -640,10 +638,6 @@ func (a *app) responsePanel(c *ui.Context) {
 				ui.Text(c, "发送中…").FontSize(10.5).TextColor(t.TextMuted)
 			} else {
 				ui.Text(c, "尚未发送请求").FontSize(10.5).TextColor(t.TextMuted)
-			}
-			ui.Spacer(c)
-			if !side {
-				ui.Button(c, "保存响应").OnClick(a.saveResponse)
 			}
 		})
 		ui.Row(c).Shrink(0).Padding(0, 14, 0).Gap(8).AlignItems(ui.Center).Children(func() {

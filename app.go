@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
 
 	"soapgo/internal/model"
 	"soapgo/internal/soapuiproj"
@@ -73,10 +73,9 @@ type app struct {
 	reqSection  int
 
 	// Response.
-	hasResp   bool
-	resp      model.SendResponse
-	respSaved bool
-	respTab   int
+	hasResp    bool
+	resp       model.SendResponse
+	respTab    int
 	sending    bool
 	sendCancel context.CancelFunc
 
@@ -89,29 +88,28 @@ type app struct {
 	search   string
 
 	// Dialogs.
-	importOpen     bool
-	importKind     int // 0 chooser, 1 soapUI, 2 WSDL file, 3 WSDL URL
-	importURL      string
-	importProxy    int // 0 direct, 1 system, 2 current project
-	importProxySel string
-	exportOpen     bool
-	keepProxy      bool
-	proxyOpen      bool
-	newProjectOpen bool
+	importOpen       bool
+	importKind       int // 0 chooser, 1 soapUI, 2 WSDL file, 3 WSDL URL
+	importURL        string
+	importProxy      int // 0 direct, 1 system, 2 current project
+	importProxySel   string
+	exportOpen       bool
+	keepProxy        bool
+	proxyOpen        bool
+	newProjectOpen   bool
 	projectModalKind int // 0 create, 1 rename
-	treeModalOpen  bool
-	treeModalKind  int // 1 add service, 2 add operation, 3 rename call
-	confirmOpen    bool
-	confirmText    string
-	confirmAction  func()
-	wsOpen         bool
-	wsKind       int // 0 create, 1 rename, 2 import
-	wsImportPath string
-	nameInput      string
+	treeModalOpen    bool
+	treeModalKind    int // 1 add service, 2 add operation, 3 rename call
+	confirmOpen      bool
+	confirmText      string
+	confirmAction    func()
+	wsOpen           bool
+	wsKind           int // 0 create, 1 rename, 2 import
+	wsImportPath     string
+	nameInput        string
 
 	// Editor preferences and dirty tracking.
 	maskSecrets   bool
-	autoFormat    bool
 	savedSnapshot string
 	savedHeaders  []headerRow
 	savedTimeout  string
@@ -123,29 +121,29 @@ type app struct {
 	statusMsg string
 	errMsg    string
 
-	uiPath    string
-	savedUI   uiState
+	uiPath     string
+	savedUI    uiState
 	lastUISave time.Time
 }
 
 func newApp(reg *workspace.Registry) *app {
 	st, info := reg.Active()
 	a := &app{
-		reg:         reg,
-		st:          st,
-		info:        info,
-		dark:        true,
-		darkTheme:   newDarkTheme(),
-		lightTheme:  newLightTheme(),
-		sideW:       272,
-		splitV:      60,
-		splitH:      62,
+		reg:            reg,
+		st:             st,
+		info:           info,
+		dark:           true,
+		darkTheme:      newDarkTheme(),
+		lightTheme:     newLightTheme(),
+		sideW:          272,
+		splitV:         60,
+		splitH:         62,
 		splitSide:      0,
-				timeout:     "60000",
-		contentType: "text/xml; charset=utf-8",
-		xmlEd:       newXMLState("", false),
-		respEd:      newXMLState("", true),
-		expanded:    map[string]bool{},
+		timeout:        "60000",
+		contentType:    "text/xml; charset=utf-8",
+		xmlEd:          newXMLState("", false),
+		respEd:         newXMLState("", true),
+		expanded:       map[string]bool{},
 		proxyModeSel:   "系统代理",
 		proxyTypeSel:   "HTTP",
 		importProxySel: "直连（默认）",
@@ -320,11 +318,6 @@ func (a *app) openCall(pid, sid, oid, cid string) {
 		a.headers = append(a.headers, headerRow{Name: h.Name, Value: h.Value})
 	}
 	body := c.Request
-	if a.autoFormat {
-		if out, err := formatXML(body); err == nil {
-			body = out
-		}
-	}
 	a.xmlEd.Buffer.Reset(body)
 	a.xmlEd.Buffer.SetLanguage(editor.LanguageForText("request.xml", body))
 	a.savedSnapshot = body
@@ -341,11 +334,9 @@ func (a *app) openCall(pid, sid, oid, cid string) {
 			Size:       c.Response.Size,
 			Truncated:  c.Response.Truncated,
 		}
-		a.respSaved = true
 	} else {
 		a.hasResp = false
 		a.resp = model.SendResponse{}
-		a.respSaved = false
 	}
 	a.syncResponse()
 
@@ -681,28 +672,27 @@ func (a *app) clearAfterDelete() {
 	a.tabs = nil
 	a.active = -1
 }
-// saveResponse persists the last response with the selected call.
-func (a *app) saveResponse() {
-	p, s, o, c := a.locate()
-	if p == nil || s == nil || o == nil || c == nil || !a.hasResp {
-		a.errMsg = "没有可保存的响应"
+
+// persistResponse stores a sent response with its sample, so reopening it
+// shows the last response without sending the request again. It runs after
+// every send, replacing the old manual save button.
+func (a *app) persistResponse(pid, sid, oid, cid string, resp model.SendResponse) {
+	if resp.Error != "" {
 		return
 	}
-	resp := &model.SavedResponse{
-		Status:     a.resp.Status,
-		StatusText: a.resp.StatusText,
-		Headers:    a.resp.Headers,
-		Body:       a.resp.Body,
-		DurationMS: a.resp.DurationMS,
-		Size:       a.resp.Size,
-		Truncated:  a.resp.Truncated,
+	saved := &model.SavedResponse{
+		Status:     resp.Status,
+		StatusText: resp.StatusText,
+		Headers:    resp.Headers,
+		Body:       resp.Body,
+		DurationMS: resp.DurationMS,
+		Size:       resp.Size,
+		Truncated:  resp.Truncated,
 	}
-	if err := a.st.UpdateCallResponse(p.ID, s.ID, o.ID, c.ID, resp); err != nil {
+	if err := a.st.UpdateCallResponse(pid, sid, oid, cid, saved); err != nil {
 		a.errMsg = "保存响应失败：" + err.Error()
 		return
 	}
-	a.respSaved = true
-	a.statusMsg = "响应已保存"
 	a.reload()
 }
 
@@ -759,6 +749,9 @@ func (a *app) sendRequest() {
 		a.errMsg = err.Error()
 		return
 	}
+	// Remember which sample this send belongs to: the auto-save must land on
+	// it even if the user opens another sample while the request is in flight.
+	pid, sid, oid, cid := a.pid, a.sid, a.oid, a.cid
 	ctx, cancel := context.WithCancel(context.Background())
 	a.sendCancel = cancel
 	a.sending = true
@@ -770,7 +763,6 @@ func (a *app) sendRequest() {
 			a.sending = false
 			a.sendCancel = nil
 			a.hasResp = true
-			a.respSaved = false
 			a.resp = resp
 			switch {
 			case resp.Error == "已取消":
@@ -783,6 +775,7 @@ func (a *app) sendRequest() {
 				a.statusMsg = fmt.Sprintf("%d %s · %d ms · %s", resp.Status, resp.StatusText, resp.DurationMS, humanSize(resp.Size))
 			}
 			a.syncResponse()
+			a.persistResponse(pid, sid, oid, cid, resp)
 			if a.win != nil {
 				a.win.Invalidate()
 			}
@@ -802,6 +795,7 @@ func (a *app) applyWindowButtons() {
 		a.win.SetWindowButtonsTheme(mygo.ThemeLight)
 	}
 }
+
 // cancelSend aborts the request in flight, if any.
 func (a *app) cancelSend() {
 	if !a.sending || a.sendCancel == nil {

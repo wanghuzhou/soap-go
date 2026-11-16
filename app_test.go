@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"time"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"soapgo/internal/model"
 	"soapgo/internal/transport"
@@ -208,6 +208,7 @@ func TestBuildSendRequestRejectsBadURL(t *testing.T) {
 		t.Fatal("expected an error for a non-http URL")
 	}
 }
+
 // TestSendPayloadReachesServer runs the exact payload buildSendRequest makes
 // through transport.Send against a real HTTP server.
 func TestSendPayloadReachesServer(t *testing.T) {
@@ -275,6 +276,36 @@ func TestAddServiceOperationAndRenameCall(t *testing.T) {
 	a.reload()
 	if got := a.projects[0].Services[0].Operations[0].Calls[0].Title; got != "新名" {
 		t.Fatalf("title = %q", got)
+	}
+}
+
+// TestPersistResponseAutoSaves checks the automatic save that replaced the
+// response's 保存 button: a sent response is stored with its sample, and a
+// failed (or cancelled) one is not.
+func TestPersistResponseAutoSaves(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	svc, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	op, _ := a.st.AddOperation(p.ID, svc.ID, model.Operation{Name: "O"})
+	call, _ := a.st.AddCall(p.ID, svc.ID, op.ID, model.Call{Title: "c", Request: "<a/>"})
+	a.reload()
+
+	resp := model.SendResponse{Status: 200, StatusText: "OK", Body: "<ok/>", DurationMS: 12, Size: 5}
+	a.persistResponse(p.ID, svc.ID, op.ID, call.ID, resp)
+
+	got, _ := a.st.Get(p.ID)
+	saved := got.Services[0].Operations[0].Calls[0].Response
+	if saved == nil || saved.Status != 200 || saved.Body != "<ok/>" {
+		t.Fatalf("saved response = %+v", saved)
+	}
+
+	// A failed send must leave the previously saved response intact.
+	a.persistResponse(p.ID, svc.ID, op.ID, call.ID, model.SendResponse{Error: "boom"})
+	got, _ = a.st.Get(p.ID)
+	if s := got.Services[0].Operations[0].Calls[0].Response; s == nil || s.Body != "<ok/>" {
+		t.Fatalf("failed send changed saved response = %+v", s)
 	}
 }
 
