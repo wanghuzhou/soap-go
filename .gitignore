@@ -1,0 +1,14 @@
+# Build output
+/bin/
+*.exe
+*.exe~
+
+# Runtime data, logs and UI state
+/logs/
+/data/
+ui-state.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/

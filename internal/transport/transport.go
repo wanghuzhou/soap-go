@@ -1,0 +1,346 @@
+// Package transport performs the actual HTTP/SOAP request and normalises the
+// response for the frontend.
+package transport
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"net"
+	"net/http"
+	"net/textproto"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/net/proxy"
+
+	"soapgo/internal/charset"
+	"soapgo/internal/model"
+)
+
+// Send executes an HTTP request described by req, honouring the project's proxy
+// settings, and returns a normalised response. Network-level failures are
+// reported inside model.SendResponse.Error so the frontend can render them
+// uniformly.
+// Send runs req without a cancellation context, as the API layer does.
+func Send(req model.SendRequest, proxyCfg *model.ProxySettings) model.SendResponse {
+	return SendContext(context.Background(), req, proxyCfg)
+}
+
+// SendContext is Send with a context: canceling it aborts the request, which
+// the native UI uses for its Cancel button.
+func SendContext(ctx context.Context, req model.SendRequest, proxyCfg *model.ProxySettings) model.SendResponse {
+	out := model.SendResponse{Headers: map[string]string{}}
+
+	if err := proxyCfg.Validate(); err != nil {
+		out.Error = "代理配置无效: " + err.Error()
+		return out
+	}
+	// Validate the endpoint here too, not only in the API layer: importers and
+	// tests reach Send directly, and a scheme check this late (client.Do) reports
+	// itself as a transport failure rather than a bad request.
+	if err := model.ValidateEndpoint(req.URL); err != nil {
+		out.Error = err.Error()
+		return out
+	}
+
+	method := req.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+
+	// The API layer clamps the value; this lower-level helper only supplies the
+	// default so direct callers (tests, importers) behave the same way.
+	timeout := time.Duration(req.TimeoutMS) * time.Millisecond
+	if timeout <= 0 {
+		timeout = time.Duration(model.DefaultTimeoutMS) * time.Millisecond
+	}
+
+	var bodyReader io.Reader
+	if req.Body != "" {
+		bodyReader = bytes.NewBufferString(req.Body)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, method, req.URL, bodyReader)
+	if err != nil {
+		out.Error = "构造请求失败: " + err.Error()
+		return out
+	}
+
+	applyHeaders(httpReq.Header, req.Headers)
+	// Apply content type last so an explicit value wins over a header map entry.
+	if req.ContentType != "" && httpReq.Header.Get("Content-Type") == "" {
+		httpReq.Header.Set("Content-Type", req.ContentType)
+	}
+
+	client, err := buildClient(proxyCfg, timeout)
+	if err != nil {
+		out.Error = "代理配置错误: " + err.Error()
+		return out
+	}
+
+	start := time.Now()
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		out.DurationMS = time.Since(start).Milliseconds()
+		if ctx.Err() != nil {
+			out.Error = "已取消"
+		} else {
+			out.Error = "请求失败: " + err.Error()
+		}
+		return out
+	}
+	defer resp.Body.Close()
+
+	// Snapshot status and headers before reading the body: if the read fails
+	// (timeout mid-stream, truncated connection) the caller still needs the
+	// status line and headers to understand what happened.
+	out.Status = resp.StatusCode
+	out.StatusText = http.StatusText(resp.StatusCode)
+	for k, vals := range resp.Header {
+		if len(vals) > 0 {
+			out.Headers[k] = vals[0]
+		}
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	out.DurationMS = time.Since(start).Milliseconds()
+	if err != nil {
+		// Keep whatever arrived so a truncated response is still inspectable.
+		out.Body = decodeBody(body, resp.Header.Get("Content-Type"))
+		out.Size = len(body)
+		out.Error = "读取响应失败: " + err.Error()
+		return out
+	}
+
+	out.Body = decodeBody(body, resp.Header.Get("Content-Type"))
+	out.Size = len(body)
+	if len(body) >= maxBodyBytes {
+		out.Truncated = true
+	}
+	return out
+}
+
+// maxBodyBytes caps how much of a response we read. Debugging payloads are
+// small; an unbounded io.ReadAll on a runaway endpoint would allocate gigabytes
+// and then be copied again into a string for JSON encoding.
+const maxBodyBytes = 16 << 20 // 16 MB
+
+// applyHeaders copies the request's header map onto dst deterministically.
+//
+// Set alone is not enough. http.Header.Set canonicalises its key, so
+// "content-type" and "Content-Type" land in the same slot, but the map we are
+// given can hold both as separate entries (the frontend builds it as a plain JS
+// object, where the two spellings are distinct keys). Ranging over that map made
+// the winner depend on Go's randomised iteration order: the same request sent 30
+// times produced a 27/3 split between the two values. Sorting the keys makes the
+// outcome fixed for a given input, so what the editor shows is what gets sent.
+//
+// Precedence within a case-insensitive group is by spelling, in this order:
+//
+//	1. the canonical MIME form (textproto.CanonicalMIMEHeaderKey), which is what
+//	   the UI itself emits for Content-Type, SOAPAction, Authorization and the
+//	   other standard headers;
+//	2. the spelling with the more conventional capitalization: any capitalization
+//	   beats all-lowercase, so a mixed-case "SoapAction" beats a bare
+//	   "soapaction". (Go canonicalises SOAPAction to "Soapaction", which no user
+//	   types, so matching the canonical form exactly rarely applies there.)
+//	3. the raw key, only so the order is total.
+//
+// A total order is what matters most: it removes the nondeterminism, and the
+// rules above make the survivor the one a user would expect to win.
+func applyHeaders(dst http.Header, headers map[string]string) {
+	if len(headers) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := keys[i], keys[j]
+		ca, cb := textproto.CanonicalMIMEHeaderKey(a), textproto.CanonicalMIMEHeaderKey(b)
+		if ca != cb {
+			// Different headers: order them by canonical name so the sort is
+			// stable regardless of map iteration.
+			return ca < cb
+		}
+		// Same header, different spelling. Lower rank wins (is applied last).
+		ra, rb := spellingRank(a, ca), spellingRank(b, cb)
+		if ra != rb {
+			return ra > rb
+		}
+		return a < b
+	})
+	for _, k := range keys {
+		dst.Set(k, headers[k])
+	}
+}
+
+// spellingRank orders the spellings of one canonical header from most to least
+// preferred. Lower is better.
+func spellingRank(raw, canonical string) int {
+	if raw == canonical {
+		return 0
+	}
+	if raw == strings.ToLower(raw) {
+		// All-lowercase reads least like the conventional form.
+		return 2
+	}
+	return 1
+}
+
+// decodeBody converts the response body to UTF-8.
+//
+// Legacy Chinese services commonly answer with charset=GBK (or declare
+// encoding="GBK" in the XML declaration) while the bytes themselves are not
+// UTF-8. Reading them as UTF-8 produces mojibake, so the charset is resolved
+// from the Content-Type header first, then from the XML declaration.
+func decodeBody(body []byte, contentType string) string {
+	if len(body) == 0 {
+		return ""
+	}
+	// The Content-Type header is authoritative when it names a charset.
+	if cs := charsetFromContentType(contentType); cs != "" {
+		return string(charset.Decode(body, cs))
+	}
+	// Otherwise fall back to the document's own XML declaration.
+	return string(charset.DecodeXML(body))
+}
+
+// charsetFromContentType extracts charset= from a Content-Type header value.
+func charsetFromContentType(contentType string) string {
+	for _, part := range strings.Split(contentType, ";") {
+		part = strings.TrimSpace(part)
+		if len(part) < 8 || !strings.EqualFold(part[:8], "charset=") {
+			continue
+		}
+		return strings.Trim(part[8:], `"' `)
+	}
+	return ""
+}
+
+// transports caches one *http.Transport per proxy configuration.
+//
+// Allocating a fresh Transport per request leaked three goroutines every time
+// (readLoop, writeLoop, persistConn) because the previous Transport was never
+// closed and its idle connections were never reaped. Debugging a service means
+// sending many requests, so the leak grew without bound. Transports are now
+// shared and their idle connections are reused.
+var transports = struct {
+	mu sync.Mutex
+	m  map[string]*http.Transport
+}{m: map[string]*http.Transport{}}
+
+// buildClient returns a client honouring the proxy settings and timeout.
+// The underlying Transport is shared; only the per-request timeout varies.
+func buildClient(cfg *model.ProxySettings, timeout time.Duration) (*http.Client, error) {
+	tr, err := transportFor(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Client{Transport: tr, Timeout: timeout}, nil
+}
+
+// NewClient returns an HTTP client that honours cfg's proxy settings.
+//
+// It is exported for importers that need the same proxy behaviour as the SOAP
+// sender (remote WSDL fetching), so a project's proxy configuration applies to
+// every outbound request, not only /api/send.
+func NewClient(cfg *model.ProxySettings, timeout time.Duration) (*http.Client, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return buildClient(cfg, timeout)
+}
+
+// transportFor returns the shared Transport for cfg, creating it on first use.
+func transportFor(cfg *model.ProxySettings) (*http.Transport, error) {
+	key := transportKey(cfg)
+
+	transports.mu.Lock()
+	defer transports.mu.Unlock()
+	if tr, ok := transports.m[key]; ok {
+		return tr, nil
+	}
+
+	tr := &http.Transport{
+		Proxy:               nil,
+		MaxIdleConns:        20,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 15 * time.Second,
+	}
+
+	mode := "system"
+	if cfg != nil && cfg.Mode != "" {
+		mode = cfg.Mode
+	}
+
+	switch mode {
+	case "direct":
+		// Proxy stays nil → always direct.
+	case "system":
+		tr.Proxy = http.ProxyFromEnvironment
+	case "custom":
+		addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
+		switch cfg.Type {
+		case "http":
+			u := &url.URL{Scheme: "http", Host: addr}
+			if cfg.Username != "" || cfg.Password != "" {
+				u.User = url.UserPassword(cfg.Username, cfg.Password)
+			}
+			tr.Proxy = http.ProxyURL(u)
+		case "socks5":
+			var auth *proxy.Auth
+			if cfg.Username != "" || cfg.Password != "" {
+				auth = &proxy.Auth{User: cfg.Username, Password: cfg.Password}
+			}
+			dialer, err := proxy.SOCKS5("tcp", addr, auth, proxy.Direct)
+			if err != nil {
+				return nil, err
+			}
+			tr.Proxy = nil // SOCKS5 is handled at the dialer level.
+			tr.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+				if cd, ok := dialer.(proxy.ContextDialer); ok {
+					return cd.DialContext(ctx, network, address)
+				}
+				return dialer.Dial(network, address)
+			}
+		default:
+			return nil, &proxyConfigError{"未知的代理类型: " + cfg.Type}
+		}
+	default:
+		return nil, &proxyConfigError{"未知的代理模式: " + mode}
+	}
+
+	transports.m[key] = tr
+	return tr, nil
+}
+
+// transportKey identifies a proxy configuration for the Transport cache.
+func transportKey(cfg *model.ProxySettings) string {
+	if cfg == nil {
+		return "system|"
+	}
+	return cfg.Mode + "|" + cfg.Type + "|" + cfg.Host + "|" +
+		strconv.Itoa(cfg.Port) + "|" + cfg.Username + "|" + cfg.Password
+}
+
+// CloseIdleConnections drops pooled connections held by every cached
+// Transport. Used by tests and on shutdown.
+func CloseIdleConnections() {
+	transports.mu.Lock()
+	defer transports.mu.Unlock()
+	for _, tr := range transports.m {
+		tr.CloseIdleConnections()
+	}
+}
+
+type proxyConfigError struct{ msg string }
+
+func (e *proxyConfigError) Error() string { return e.msg }
