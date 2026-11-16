@@ -7,7 +7,6 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
-
 )
 
 // Icons drawn as SVG, so the chrome does not fall back to the look of a
@@ -16,6 +15,7 @@ var (
 	iconSplitV = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 12h17"/></svg>`))
 	iconSplitH = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M12 4.5v15"/></svg>`))
 	iconPlus   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`))
+	iconCopy   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>`))
 )
 
 // ---- view ----
@@ -205,14 +205,14 @@ func (a *app) sidebar(c *ui.Context) {
 
 // treeItem is one rendered row of the project tree.
 type treeItem struct {
-	kind            string // project | service | operation | call
-	pid, sid, oid   string
-	cid             string
-	label, badge    string
-	depth           int
-	hasChildren     bool
-	expanded        bool
-	status          int
+	kind          string // project | service | operation | call
+	pid, sid, oid string
+	cid           string
+	label, badge  string
+	depth         int
+	hasChildren   bool
+	expanded      bool
+	status        int
 }
 
 func (a *app) treeItems() []treeItem {
@@ -533,7 +533,7 @@ func (a *app) requestPanel(c *ui.Context) {
 					ui.Button(c, "删除").OnClick(a.deleteCall)
 					ui.Checkbox(c, &a.autoFormat, "自动格式化")
 				})
-				editor.View(c, a.xmlEd).Grow(1).FillWidth()
+				a.editorWithCopy(c, a.xmlEd, "请求报文已复制", func() string { return a.xmlEd.Buffer.String() })
 			})
 		}
 	})
@@ -642,10 +642,6 @@ func (a *app) responsePanel(c *ui.Context) {
 				ui.Text(c, "尚未发送请求").FontSize(10.5).TextColor(t.TextMuted)
 			}
 			ui.Spacer(c)
-			ui.Button(c, "复制").OnClick(func() {
-				mygo.Clipboard.WriteText(a.resp.Body)
-				a.statusMsg = "响应已复制"
-			})
 			if !side {
 				ui.Button(c, "保存响应").OnClick(a.saveResponse)
 			}
@@ -664,7 +660,7 @@ func (a *app) responsePanel(c *ui.Context) {
 			return
 		}
 		ui.Column(c).Grow(1).Padding(8, 12, 10).Children(func() {
-			editor.View(c, a.respEd).Grow(1).FillWidth()
+			a.editorWithCopy(c, a.respEd, "响应已复制", func() string { return a.respEd.Buffer.String() })
 		})
 	})
 }
@@ -1027,6 +1023,42 @@ func (a *app) iconBtn(c *ui.Context, icon *ui.SVG, tip string, onClick func()) {
 	}
 	btn.Children(func() {
 		ui.Icon(c, icon).FontSize(13).TextColor(t.TextMuted)
+	})
+}
+
+// copyIcon is a small copy button overlaid on an editor's top-right corner,
+// after the copy control of a Markdown code block: it writes the editor's
+// text to the clipboard and reports it in the status bar.
+func (a *app) copyIcon(c *ui.Context, copied string, text func() string) ui.Element {
+	t := c.Theme()
+	btn := ui.Row(c).Width(26).Height(24).Center().Justify(ui.Center).Radius(6).
+		Background(t.Surface).Border(1, t.Border).Tooltip("复制").
+		OnClick(func() {
+			mygo.Clipboard.WriteText(text())
+			a.statusMsg = copied
+		})
+	if btn.Hovered() {
+		btn = btn.Background(t.SurfaceHover)
+	}
+	return btn.Children(func() {
+		ui.Icon(c, iconCopy).FontSize(13).TextColor(t.TextMuted)
+	})
+}
+
+// editorWithCopy puts an editor in a container whose copy button sits in its
+// top-right corner and shows only while the pointer is over the region, as a
+// Markdown code block's copy control does. The button stays built and
+// reachable for assistive technology; at rest it is transparent and lets the
+// press fall through to the editor.
+func (a *app) editorWithCopy(c *ui.Context, ed *editor.State, copied string, text func() string) {
+	box := ui.Column(c).Grow(1).FillWidth()
+	hovered := box.Hovered()
+	box.Children(func() {
+		editor.View(c, ed).Grow(1).FillWidth()
+		btn := a.copyIcon(c, copied, text).Absolute().Right(18).Top(8).IgnoreInput(!hovered)
+		if !hovered {
+			btn.Opacity(0)
+		}
 	})
 }
 
