@@ -17,7 +17,6 @@ SOAP / WSDL 接口调试桌面工具，用 **Go + MyGo 原生 UI**（纯 Go 绘�
 - **管理**：工作空间切换/新建/重命名/删除/导入/导出；工程、服务、操作、请求的增删改（树节点右键菜单）
 - **其它**：上下/左右分屏、深色/浅色主题、主题与分栏布局持久化、请求可取消
 
-更多截图：[请求头](docs/screenshots/headers.png) · [右键菜单](docs/screenshots/context-menu.png)
 
 ## 数据兼容
 
