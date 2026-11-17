@@ -52,6 +52,12 @@ func main() {
 			TitleBarHeight:  44,
 			Content:         ui.View(a.view),
 		})
+		// The executable carries no icon resource, so set the window's icon
+		// from the embedded PNG; without this the title bar and taskbar show a
+		// blank default.
+		if err := a.win.SetIcon(appIconPNG); err != nil {
+			log.Printf("设置窗口图标失败：%v", err)
+		}
 		a.applyWindowButtons()
 	})
 	err = mygo.App.Run()
