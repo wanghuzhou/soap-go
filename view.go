@@ -995,7 +995,7 @@ func (a *app) confirmModal(c *ui.Context) {
 func (a *app) settingsModal(c *ui.Context) {
 	t := c.Theme()
 	ui.Modal(c, &a.settingsOpen, func() {
-		ui.Row(c).Width(800).Height(560).AlignItems(ui.Stretch).Clip().Children(func() {
+		ui.Row(c).Width(760).Height(520).AlignItems(ui.Stretch).Clip().Children(func() {
 			a.settingsNav(c)
 			ui.Column(c).Width(1).FillHeight().Background(t.Border)
 			a.settingsContent(c)
@@ -1007,8 +1007,8 @@ func (a *app) settingsModal(c *ui.Context) {
 // sections, with the chosen one highlighted.
 func (a *app) settingsNav(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Width(238).FillHeight().Padding(14).Gap(4).Children(func() {
-		ui.TextInput(c, &a.settingsQuery).Placeholder("搜索设置").Margin(0, 0, 0, 8)
+	ui.Column(c).Width(220).FillHeight().Padding(12).Gap(6).Children(func() {
+		ui.TextInput(c, &a.settingsQuery).Placeholder("搜索设置").Margin(0, 0, 0, 6)
 		items := []struct {
 			idx   int
 			label string
@@ -1025,7 +1025,7 @@ func (a *app) settingsNav(c *ui.Context) {
 				continue
 			}
 			active := a.settingsSection == it.idx
-			row := ui.Row(c).Gap(11).AlignItems(ui.Center).Padding(9, 12).Radius(8).
+			row := ui.Row(c).Gap(10).AlignItems(ui.Center).Padding(7, 10).Radius(8).
 				OnClick(func() { a.settingsSection = it.idx })
 			switch {
 			case active:
@@ -1038,8 +1038,8 @@ func (a *app) settingsNav(c *ui.Context) {
 				if active {
 					col = t.Text
 				}
-				ui.Icon(c, it.icon).FontSize(a.us(15)).TextColor(col)
-				ui.Text(c, it.label).FontSize(a.us(14)).TextColor(col)
+				ui.Icon(c, it.icon).FontSize(a.us(14)).TextColor(col)
+				ui.Text(c, it.label).FontSize(a.us(12.5)).TextColor(col)
 			})
 		}
 	})
@@ -1049,7 +1049,7 @@ func (a *app) settingsNav(c *ui.Context) {
 // and the footer buttons.
 func (a *app) settingsContent(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Grow(1).FillHeight().Padding(20, 24).Gap(18).Children(func() {
+	ui.Column(c).Grow(1).FillHeight().Padding(18, 22).Gap(14).Children(func() {
 		title := "外观"
 		switch a.settingsSection {
 		case 1:
@@ -1057,12 +1057,12 @@ func (a *app) settingsContent(c *ui.Context) {
 		case 2:
 			title = "关于"
 		}
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, "设置").FontSize(a.us(14)).TextColor(t.TextMuted)
-			ui.Text(c, "›").FontSize(a.us(14)).TextColor(t.Border)
-			ui.Text(c, title).FontSize(a.us(20)).Bold()
+		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+			ui.Text(c, "设置").FontSize(a.us(12.5)).TextColor(t.TextMuted)
+			ui.Text(c, "›").FontSize(a.us(12)).TextColor(t.Border)
+			ui.Text(c, title).FontSize(a.us(15)).Bold()
 			ui.Spacer(c)
-			ui.Text(c, "×").FontSize(a.us(17)).TextColor(t.TextMuted).
+			ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
 				OnClick(func() { a.settingsOpen = false })
 		})
 
@@ -1076,7 +1076,7 @@ func (a *app) settingsContent(c *ui.Context) {
 		}
 
 		ui.Spacer(c)
-		ui.Row(c).Gap(10).Justify(ui.End).Children(func() {
+		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			if a.settingsSection != 2 && ui.Button(c, "恢复默认").Clicked() {
 				a.resetFontSettings()
 			}
@@ -1100,16 +1100,15 @@ func (a *app) appearanceSettings(c *ui.Context) {
 		})
 		ui.Divider(c)
 		a.settingsRow(c, "界面字体", func() {
-			ui.Select(c, &a.uiFontChoice, uiFontOptions).Width(210)
+			ui.Select(c, &a.uiFontChoice, uiFontOptions).Width(200)
 		})
 		ui.Divider(c)
 		a.settingsRow(c, "界面字号", func() {
-			ui.Stepper(c, &a.uiFontSize, 11, 20, 1)
-			ui.Text(c, fmt.Sprintf("%.0f", a.uiFontSize)).FontSize(a.themeFontSize()).Width(30).TextAlign(ui.End)
+			a.sizeStepper(c, &a.uiFontSize, 11, 20, 1)
 		})
 	})
 	ui.Text(c, "界面字号会等比缩放整个应用窗口里的文字。").
-		FontSize(a.us(12)).TextColor(t.TextMuted)
+		FontSize(a.us(10.5)).TextColor(t.TextMuted)
 }
 
 // editorSettings is the "编辑器" section: the code editor's font.
@@ -1117,16 +1116,15 @@ func (a *app) editorSettings(c *ui.Context) {
 	t := c.Theme()
 	a.settingsCard(c, func() {
 		a.settingsRow(c, "编辑器字体", func() {
-			ui.Select(c, &a.editorFontChoice, editorFontOptions).Width(210)
+			ui.Select(c, &a.editorFontChoice, editorFontOptions).Width(200)
 		})
 		ui.Divider(c)
 		a.settingsRow(c, "编辑器字号", func() {
-			ui.Stepper(c, &a.editorFontSize, 10, 28, 1)
-			ui.Text(c, fmt.Sprintf("%.0f", a.editorFontSize)).FontSize(a.themeFontSize()).Width(30).TextAlign(ui.End)
+			a.sizeStepper(c, &a.editorFontSize, 10, 28, 1)
 		})
 	})
 	ui.Text(c, "只影响请求与响应报文编辑区，不影响其它界面文字。").
-		FontSize(a.us(12)).TextColor(t.TextMuted)
+		FontSize(a.us(10.5)).TextColor(t.TextMuted)
 }
 
 // aboutSettings is the "关于" section: the app's name, version and purpose.
@@ -1134,15 +1132,15 @@ func (a *app) aboutSettings(c *ui.Context) {
 	t := c.Theme()
 	a.settingsCard(c, func() {
 		a.settingsRow(c, "名称", func() {
-			ui.Text(c, "soap-go").FontSize(a.themeFontSize()).TextColor(t.TextMuted)
+			ui.Text(c, "soap-go").FontSize(a.us(12.5)).TextColor(t.TextMuted)
 		})
 		ui.Divider(c)
 		a.settingsRow(c, "版本", func() {
-			ui.Text(c, appVersion).FontSize(a.themeFontSize()).TextColor(t.Text)
+			ui.Text(c, appVersion).FontSize(a.us(12.5)).TextColor(t.Text)
 		})
 		ui.Divider(c)
 		a.settingsRow(c, "说明", func() {
-			ui.Text(c, "SOAP / WSDL 接口调试桌面工具").FontSize(a.themeFontSize()).TextColor(t.TextMuted)
+			ui.Text(c, "SOAP / WSDL 接口调试桌面工具").FontSize(a.us(12.5)).TextColor(t.TextMuted)
 		})
 	})
 }
@@ -1150,23 +1148,59 @@ func (a *app) aboutSettings(c *ui.Context) {
 // settingsCard is a rounded group of rows inside a section.
 func (a *app) settingsCard(c *ui.Context, build func()) {
 	t := c.Theme()
-	ui.Column(c).Radius(12).Background(t.Surface).Border(1, t.Border).Clip().Children(build)
+	ui.Column(c).Radius(10).Background(t.Surface).Border(1, t.Border).Clip().Children(build)
 }
 
 // settingsRow is one label-on-the-left, control-on-the-right row of a card.
-// The label takes the same size as the widgets' text so the two match.
 func (a *app) settingsRow(c *ui.Context, label string, control func()) {
-	ui.Row(c).Padding(13, 16).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, label).FontSize(a.themeFontSize())
+	ui.Row(c).Padding(11, 14).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, label).FontSize(a.us(12.5))
 		ui.Spacer(c)
 		control()
+	})
+}
+
+// sizeStepper is the horizontal font-size control of the settings dialog: a
+// minus button, the value, and a plus button, after the reference.
+func (a *app) sizeStepper(c *ui.Context, value *float64, lo, hi, step float64) {
+	a.stepBtn(c, "−", *value > lo, func() {
+		if *value-step < lo {
+			*value = lo
+		} else {
+			*value -= step
+		}
+	})
+	ui.Text(c, fmt.Sprintf("%.0f", *value)).FontSize(a.us(12.5)).Width(44).TextAlign(ui.Center)
+	a.stepBtn(c, "+", *value < hi, func() {
+		if *value+step > hi {
+			*value = hi
+		} else {
+			*value += step
+		}
+	})
+}
+
+// stepBtn is one small square button of sizeStepper, dimmed when disabled.
+func (a *app) stepBtn(c *ui.Context, label string, enabled bool, onClick func()) {
+	t := c.Theme()
+	btn := ui.Row(c).Width(24).Height(24).Center().Justify(ui.Center).Radius(6)
+	col := t.TextMuted
+	if enabled {
+		col = t.Text
+		btn = btn.OnClick(onClick)
+		if btn.Hovered() {
+			btn = btn.Background(t.SurfaceHover)
+		}
+	}
+	btn.Children(func() {
+		ui.Text(c, label).FontSize(a.us(14)).TextColor(col)
 	})
 }
 
 // segment is one choice of a small segmented control.
 func (a *app) segment(c *ui.Context, label string, active bool, onClick func()) {
 	t := c.Theme()
-	box := ui.Row(c).Padding(4, 14).Radius(7).OnClick(onClick)
+	box := ui.Row(c).Padding(3, 12).Radius(6).OnClick(onClick)
 	switch {
 	case active:
 		box = box.Background(t.SurfacePressed)
@@ -1178,7 +1212,7 @@ func (a *app) segment(c *ui.Context, label string, active bool, onClick func()) 
 		if active {
 			col = t.Text
 		}
-		ui.Text(c, label).FontSize(a.themeFontSize()).TextColor(col)
+		ui.Text(c, label).FontSize(a.us(11.5)).TextColor(col)
 	})
 }
 

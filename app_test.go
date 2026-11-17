@@ -649,3 +649,29 @@ func TestFontSettingsApply(t *testing.T) {
 	tt.Frame()
 	tt.Frame()
 }
+
+// TestSettingsSizeStepper checks the minus and plus buttons of the font-size
+// control step the value by one and stop at the bounds.
+func TestSettingsSizeStepper(t *testing.T) {
+	a := newTestApp(t)
+	a.settingsOpen = true
+	a.settingsSection = 0
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+
+	start := a.uiFontSize
+	if err := tt.Click("−"); err != nil {
+		t.Fatalf("click minus: %v", err)
+	}
+	tt.Frame()
+	if a.uiFontSize != start-1 {
+		t.Fatalf("after minus = %v, want %v", a.uiFontSize, start-1)
+	}
+	if err := tt.Click("+"); err != nil {
+		t.Fatalf("click plus: %v", err)
+	}
+	tt.Frame()
+	if a.uiFontSize != start {
+		t.Fatalf("after plus = %v, want %v", a.uiFontSize, start)
+	}
+}

@@ -293,15 +293,6 @@ func (a *app) us(base float32) float32 {
 	return base * float32(size/uiBaseFontSize())
 }
 
-// themeFontSize is the interface font size in DIPs, the size the widgets' own
-// text uses. Settings rows use it so their labels match the controls.
-func (a *app) themeFontSize() float32 {
-	if a.uiFontSize > 0 {
-		return float32(a.uiFontSize)
-	}
-	return float32(uiBaseFontSize())
-}
-
 // syncEditorFont applies the editor font (a "" family is the system's
 // monospaced font) and size to the request and response editors. It runs each
 // frame so a change in the settings dialog shows at once.
