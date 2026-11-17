@@ -32,6 +32,18 @@ type headerRow struct {
 	Value string
 }
 
+// callDraft is one open tab's editable request form and the values it was last
+// saved with. Keeping a draft per tab means switching tabs keeps unsaved edits,
+// and the tab still knows whether it differs from what is stored.
+type callDraft struct {
+	endpoint, action, timeout   string
+	headers                     []headerRow
+	body                        string
+	savedSnapshot, savedAction  string
+	savedTimeout, savedEndpoint string
+	savedHeaders                []headerRow
+}
+
 // uiState is the part of the UI kept between runs: the theme and the split
 // layout, like the browser app's localStorage.
 type uiState struct {
@@ -88,9 +100,10 @@ type app struct {
 	sending    bool
 	sendCancel context.CancelFunc
 
-	// Tabs of open calls, keyed "pid/sid/oid/cid".
+	// Tabs of open calls, keyed "pid/sid/oid/cid", and their unsaved drafts.
 	tabs   []string
 	active int
+	drafts map[string]*callDraft
 
 	// Tree.
 	expanded  map[string]bool
@@ -170,6 +183,7 @@ func newApp(reg *workspace.Registry) *app {
 		xmlEd:            newXMLState("", false),
 		respEd:           newXMLState("", true),
 		expanded:         map[string]bool{},
+		drafts:           map[string]*callDraft{},
 		proxyModeSel:     "系统代理",
 		proxyTypeSel:     "HTTP",
 		importProxySel:   "直连（默认）",
@@ -437,11 +451,69 @@ func (a *app) openFirstCall() {
 	}
 }
 
-// openCall selects a call, opens a tab for it and loads it into the editor.
+// openCall opens a call in a tab, or switches to its tab if it is already open.
+// Each tab keeps its own draft, so switching never discards unsaved edits.
 func (a *app) openCall(pid, sid, oid, cid string) {
 	if a.renamingID != "" {
 		a.cancelInlineRename()
 	}
+	key := callKey(pid, sid, oid, cid)
+	if prev := a.activeTabKey(); prev != "" {
+		if prev == key {
+			// Already the active tab: keep the editor's unsaved edits.
+			a.pid, a.sid, a.oid, a.cid = pid, sid, oid, cid
+			return
+		}
+		// Remember the tab we are leaving, edits included.
+		a.drafts[prev] = a.captureDraft()
+	}
+	if !a.hasTabKey(key) {
+		a.tabs = append(a.tabs, key)
+	}
+	for i, k := range a.tabs {
+		if k == key {
+			a.active = i
+		}
+	}
+	a.loadTab(key)
+}
+
+// activeTabKey is the key of the tab shown in the editor, "" when none.
+func (a *app) activeTabKey() string {
+	if a.active >= 0 && a.active < len(a.tabs) {
+		return a.tabs[a.active]
+	}
+	return ""
+}
+
+// captureDraft snapshots the live request form for the active tab.
+func (a *app) captureDraft() *callDraft {
+	return &callDraft{
+		endpoint: a.endpoint, action: a.action, timeout: a.timeout,
+		headers:       append([]headerRow(nil), a.headers...),
+		body:          a.xmlEd.Buffer.String(),
+		savedSnapshot: a.savedSnapshot, savedAction: a.savedAction,
+		savedTimeout: a.savedTimeout, savedEndpoint: a.savedEndpoint,
+		savedHeaders: append([]headerRow(nil), a.savedHeaders...),
+	}
+}
+
+// applyDraft puts a tab's saved form back into the editor.
+func (a *app) applyDraft(d *callDraft) {
+	a.endpoint, a.action, a.timeout = d.endpoint, d.action, d.timeout
+	a.headers = append([]headerRow(nil), d.headers...)
+	a.xmlEd.Buffer.Reset(d.body)
+	a.xmlEd.Buffer.SetLanguage(editor.LanguageForText("request.xml", d.body))
+	a.savedSnapshot, a.savedAction = d.savedSnapshot, d.savedAction
+	a.savedTimeout, a.savedEndpoint = d.savedTimeout, d.savedEndpoint
+	a.savedHeaders = append([]headerRow(nil), d.savedHeaders...)
+}
+
+// loadTab makes key the active tab and shows its draft, or loads it from the
+// store the first time. It does not capture the outgoing tab; callers do that
+// first when they must keep it.
+func (a *app) loadTab(key string) {
+	pid, sid, oid, cid := splitKey(key)
 	a.pid, a.sid, a.oid, a.cid = pid, sid, oid, cid
 	_, _, _, c := a.locate()
 	if c == nil {
@@ -450,6 +522,18 @@ func (a *app) openCall(pid, sid, oid, cid string) {
 	if p := a.findProject(pid); p != nil {
 		a.projHeaders = append([]model.Header(nil), p.Headers...)
 	}
+	if d, ok := a.drafts[key]; ok {
+		a.applyDraft(d)
+	} else {
+		a.loadCallIntoForm(c)
+		a.drafts[key] = a.captureDraft()
+	}
+	a.loadResponse(c)
+	a.syncResponse()
+}
+
+// loadCallIntoForm fills the editable request fields from a stored call.
+func (a *app) loadCallIntoForm(c *model.Call) {
 	a.endpoint = c.Endpoint
 	a.action = c.Action
 	a.timeout = strconv.Itoa(model.ClampTimeout(c.TimeoutMS))
@@ -468,6 +552,10 @@ func (a *app) openCall(pid, sid, oid, cid string) {
 	a.savedTimeout = a.timeout
 	a.savedAction = a.action
 	a.savedEndpoint = a.endpoint
+}
+
+// loadResponse shows the call's last saved response, if any.
+func (a *app) loadResponse(c *model.Call) {
 	if c.Response != nil {
 		a.hasResp = true
 		a.resp = model.SendResponse{
@@ -483,17 +571,94 @@ func (a *app) openCall(pid, sid, oid, cid string) {
 		a.hasResp = false
 		a.resp = model.SendResponse{}
 	}
-	a.syncResponse()
+}
 
-	key := callKey(pid, sid, oid, cid)
-	if !a.hasTabKey(key) {
-		a.tabs = append(a.tabs, key)
+// closeTab closes tab i, asking first when it holds unsaved edits.
+func (a *app) closeTab(i int) {
+	if i < 0 || i >= len(a.tabs) {
+		return
 	}
-	for i, k := range a.tabs {
-		if k == key {
-			a.active = i
+	key := a.tabs[i]
+	if a.dirtyKey(key) {
+		a.askConfirm("该请求有未保存的修改，关闭标签会丢失。确定关闭？", func() {
+			for j, k := range a.tabs {
+				if k == key {
+					a.removeTabAt(j)
+					return
+				}
+			}
+		})
+		return
+	}
+	a.removeTabAt(i)
+}
+
+// removeTabAt removes tab i and keeps the active tab in step, discarding only
+// that tab's draft.
+func (a *app) removeTabAt(i int) {
+	if i < 0 || i >= len(a.tabs) {
+		return
+	}
+	key := a.tabs[i]
+	closingActive := i == a.active
+	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
+	delete(a.drafts, key)
+	if len(a.tabs) == 0 {
+		a.clearSelection()
+		return
+	}
+	if i < a.active {
+		a.active--
+	}
+	if closingActive {
+		if a.active >= len(a.tabs) {
+			a.active = len(a.tabs) - 1
 		}
+		a.loadTab(a.tabs[a.active])
 	}
+}
+
+// closeTabsUnder closes every tab whose key matches, keeping the others and
+// their drafts, and moving the selection back to a surviving tab.
+func (a *app) closeTabsUnder(match func(key string) bool) {
+	activeKey := a.activeTabKey()
+	if activeKey != "" {
+		a.drafts[activeKey] = a.captureDraft()
+	}
+	kept := make([]string, 0, len(a.tabs))
+	closed := false
+	for _, k := range a.tabs {
+		if match(k) {
+			delete(a.drafts, k)
+			closed = true
+			continue
+		}
+		kept = append(kept, k)
+	}
+	if !closed {
+		return
+	}
+	a.tabs = kept
+	if len(a.tabs) == 0 {
+		a.clearSelection()
+		return
+	}
+	if activeKey != "" && a.hasTabKey(activeKey) {
+		a.pid, a.sid, a.oid, a.cid = splitKey(activeKey)
+		for i, k := range a.tabs {
+			if k == activeKey {
+				a.active = i
+			}
+		}
+		return
+	}
+	if a.active >= len(a.tabs) {
+		a.active = len(a.tabs) - 1
+	}
+	if a.active < 0 {
+		a.active = 0
+	}
+	a.loadTab(a.tabs[a.active])
 }
 
 func callKey(pid, sid, oid, cid string) string {
@@ -515,35 +680,6 @@ func (a *app) hasTabKey(key string) bool {
 		}
 	}
 	return false
-}
-
-func (a *app) closeTab(i int) {
-	a.removeTabAt(i)
-}
-
-// removeTabAt removes tab i and keeps the active tab in step: closing the
-// active tab opens its neighbour (or clears the editor when it was the last),
-// while closing a tab before it keeps the user's current one open.
-func (a *app) removeTabAt(i int) {
-	if i < 0 || i >= len(a.tabs) {
-		return
-	}
-	closingActive := i == a.active
-	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
-	if len(a.tabs) == 0 {
-		a.clearSelection()
-		return
-	}
-	if i < a.active {
-		a.active--
-	}
-	if closingActive {
-		if a.active >= len(a.tabs) {
-			a.active = len(a.tabs) - 1
-		}
-		pid, sid, oid, cid := splitKey(a.tabs[a.active])
-		a.openCall(pid, sid, oid, cid)
-	}
 }
 
 // callTitle returns the name shown for a call key.
@@ -635,6 +771,14 @@ func renameTargetID(it treeItem) string {
 // saveCall writes the form back to the selected call.
 func (a *app) saveCall() {
 	p, s, o, c := a.locate()
+	if c == nil {
+		// The tree selection may be a project/service while a tab is open;
+		// save the tab's sample the editor is showing.
+		if key := a.activeTabKey(); key != "" {
+			a.pid, a.sid, a.oid, a.cid = splitKey(key)
+			p, s, o, c = a.locate()
+		}
+	}
 	if p == nil || s == nil || o == nil || c == nil {
 		a.errMsg = "请先选择一个请求样例"
 		return
@@ -654,6 +798,9 @@ func (a *app) saveCall() {
 	a.savedTimeout = a.timeout
 	a.savedAction = call.Action
 	a.savedEndpoint = call.Endpoint
+	if key := a.activeTabKey(); key != "" {
+		a.drafts[key] = a.captureDraft()
+	}
 	a.errMsg = ""
 	a.statusMsg = "已保存：" + call.Title
 	a.reload()
@@ -677,17 +824,32 @@ func (a *app) deleteCall() {
 	})
 }
 
-// aFromCallRemoved closes the deleted call's tab, or clears the editor when
-// it had no tab, and leaves a neighbouring tab open.
+// aFromCallRemoved closes the deleted call's tab, or keeps the tab actually
+// shown when the deleted call was not open, and leaves other tabs alone.
 func (a *app) aFromCallRemoved(pid, sid, oid, cid string) {
 	key := callKey(pid, sid, oid, cid)
-	for i, k := range a.tabs {
-		if k == key {
-			a.removeTabAt(i)
-			return
+	if a.hasTabKey(key) {
+		for i, k := range a.tabs {
+			if k == key {
+				a.removeTabAt(i)
+				break
+			}
 		}
+		if at := a.activeTabKey(); at != "" {
+			a.pid, a.sid, a.oid, a.cid = splitKey(at)
+		}
+		return
 	}
-	a.clearSelection()
+	// Not open: the tree selection was moved to it only to target the delete, so
+	// keep showing the active tab (and its unsaved edits) instead of blanking it.
+	if at := a.activeTabKey(); at != "" {
+		a.drafts[at] = a.captureDraft()
+		a.loadTab(at)
+		return
+	}
+	if a.pid == pid && a.sid == sid && a.oid == oid && a.cid == cid {
+		a.clearEditor()
+	}
 }
 
 // newCall adds a fresh sample under the selected operation.
@@ -736,14 +898,18 @@ func (a *app) deleteOperation() {
 		a.errMsg = "请先选择一个操作"
 		return
 	}
+	pid, sid, oid := p.ID, s.ID, o.ID
 	a.askConfirm("确定删除该操作及其下所有请求？", func() {
-		if err := a.st.DeleteOperation(p.ID, s.ID, o.ID); err != nil {
+		if err := a.st.DeleteOperation(pid, sid, oid); err != nil {
 			a.errMsg = "删除操作失败：" + err.Error()
 			return
 		}
-		a.clearSelection()
 		a.statusMsg = "已删除操作"
 		a.reload()
+		a.closeTabsUnder(func(k string) bool {
+			kp, ks, ko, _ := splitKey(k)
+			return kp == pid && ks == sid && ko == oid
+		})
 	})
 }
 
@@ -852,8 +1018,11 @@ func (a *app) exportProject(path string) {
 }
 
 // isDirty reports whether the editor holds changes not yet saved.
-func (a *app) isDirty() bool {
-	if a.cid == "" {
+func (a *app) isDirty() bool { return a.currentDirty() }
+
+// currentDirty compares the live editor to the active tab's saved values.
+func (a *app) currentDirty() bool {
+	if a.activeTabKey() == "" {
 		return false
 	}
 	if a.xmlEd.Buffer.String() != a.savedSnapshot {
@@ -868,15 +1037,39 @@ func (a *app) isDirty() bool {
 	if a.endpoint != a.savedEndpoint {
 		return true
 	}
-	if len(a.headers) != len(a.savedHeaders) {
+	return headersDirty(a.headers, a.savedHeaders)
+}
+
+// draftDirty reports whether a stored tab draft differs from its saved values.
+func draftDirty(d *callDraft) bool {
+	if d == nil {
+		return false
+	}
+	if d.body != d.savedSnapshot || d.timeout != d.savedTimeout ||
+		d.action != d.savedAction || d.endpoint != d.savedEndpoint {
 		return true
 	}
-	for i := range a.headers {
-		if a.headers[i] != a.savedHeaders[i] {
+	return headersDirty(d.headers, d.savedHeaders)
+}
+
+func headersDirty(live, saved []headerRow) bool {
+	if len(live) != len(saved) {
+		return true
+	}
+	for i := range live {
+		if live[i] != saved[i] {
 			return true
 		}
 	}
 	return false
+}
+
+// dirtyKey reports whether a tab holds unsaved changes.
+func (a *app) dirtyKey(key string) bool {
+	if key == a.activeTabKey() {
+		return a.currentDirty()
+	}
+	return draftDirty(a.drafts[key])
 }
 
 // askConfirm opens the confirmation dialog and runs fn if the user agrees.
@@ -893,20 +1086,24 @@ func (a *app) deleteService() {
 		a.errMsg = "请先选择一个服务"
 		return
 	}
+	pid, sid := p.ID, s.ID
 	a.askConfirm("确定删除该服务及其下所有操作？", func() {
-		if err := a.st.DeleteService(p.ID, s.ID); err != nil {
+		if err := a.st.DeleteService(pid, sid); err != nil {
 			a.errMsg = "删除服务失败：" + err.Error()
 			return
 		}
-		a.clearSelection()
 		a.statusMsg = "已删除服务"
 		a.reload()
+		a.closeTabsUnder(func(k string) bool {
+			kp, ks, _, _ := splitKey(k)
+			return kp == pid && ks == sid
+		})
 	})
 }
 
-// clearSelection resets the selection and every editor field, for actions
-// that delete what was selected or replace the active workspace.
-func (a *app) clearSelection() {
+// clearEditor empties the request form and response view without touching the
+// open tabs or their drafts.
+func (a *app) clearEditor() {
 	a.pid, a.sid, a.oid, a.cid = "", "", "", ""
 	a.endpoint, a.action = "", ""
 	a.headers = nil
@@ -918,8 +1115,15 @@ func (a *app) clearSelection() {
 	a.savedSnapshot, a.savedTimeout, a.savedAction = "", "", ""
 	a.savedEndpoint = ""
 	a.savedHeaders = nil
+}
+
+// clearSelection resets the editor and closes every tab, for actions that
+// replace the active workspace.
+func (a *app) clearSelection() {
+	a.clearEditor()
 	a.tabs = nil
 	a.active = -1
+	a.drafts = map[string]*callDraft{}
 }
 
 // persistResponse stores a sent response with its sample, so reopening it
@@ -949,6 +1153,12 @@ func (a *app) persistResponse(pid, sid, oid, cid string, resp model.SendResponse
 // sample headers, the default SOAPAction and Content-Type, and the editor body.
 func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error) {
 	p, s, o, c := a.locate()
+	if c == nil {
+		if key := a.activeTabKey(); key != "" {
+			a.pid, a.sid, a.oid, a.cid = splitKey(key)
+			p, s, o, c = a.locate()
+		}
+	}
 	if p == nil || s == nil || o == nil || c == nil {
 		return model.SendRequest{}, nil, fmt.Errorf("请先选择一个请求样例")
 	}
@@ -1193,14 +1403,18 @@ func (a *app) deleteProject() {
 		a.errMsg = "请先选择一个项目"
 		return
 	}
-	a.askConfirm("确定删除整个项目「"+p.Name+"」？", func() {
-		if err := a.st.DeleteProject(p.ID); err != nil {
+	pid, name := p.ID, p.Name
+	a.askConfirm("确定删除整个项目「"+name+"」？", func() {
+		if err := a.st.DeleteProject(pid); err != nil {
 			a.errMsg = "删除项目失败：" + err.Error()
 			return
 		}
-		a.clearSelection()
-		a.statusMsg = "已删除项目：" + p.Name
+		a.statusMsg = "已删除项目：" + name
 		a.reload()
+		a.closeTabsUnder(func(k string) bool {
+			kp, _, _, _ := splitKey(k)
+			return kp == pid
+		})
 	})
 }
 

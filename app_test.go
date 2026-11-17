@@ -775,6 +775,8 @@ func TestSendRequiresSelectedCall(t *testing.T) {
 	c, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C", Endpoint: "http://example.test/soap", Request: "<a/>"})
 	a.reload()
 	a.openCall(p.ID, s.ID, o.ID, c.ID)
+	// No open tab: the tree selection alone must not authorise a send.
+	a.clearSelection()
 
 	a.pid, a.sid, a.oid, a.cid = p.ID, "", "", ""
 	if _, _, err := a.buildSendRequest(); err == nil {
@@ -784,9 +786,185 @@ func TestSendRequiresSelectedCall(t *testing.T) {
 	if _, _, err := a.buildSendRequest(); err == nil {
 		t.Fatal("Send allowed with only a service selected")
 	}
-	a.pid, a.sid, a.oid, a.cid = p.ID, s.ID, o.ID, c.ID
+	a.openCall(p.ID, s.ID, o.ID, c.ID)
 	if _, _, err := a.buildSendRequest(); err != nil {
 		t.Fatalf("valid selection rejected: %v", err)
+	}
+}
+
+// TestTabSwitchKeepsDraft checks that switching tabs keeps each tab's unsaved
+// edits and that a background tab still reports dirty.
+func TestTabSwitchKeepsDraft(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	s, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	o, _ := a.st.AddOperation(p.ID, s.ID, model.Operation{Name: "O"})
+	c1, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C1", Request: "<a/>"})
+	c2, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C2", Request: "<b/>"})
+	a.reload()
+
+	a.openCall(p.ID, s.ID, o.ID, c1.ID)
+	a.xmlEd.Buffer.Reset("<edited/>")
+	a.openCall(p.ID, s.ID, o.ID, c2.ID)
+	if got := a.xmlEd.Buffer.String(); got != "<b/>" {
+		t.Fatalf("C2 body = %q", got)
+	}
+	if !a.dirtyKey(callKey(p.ID, s.ID, o.ID, c1.ID)) {
+		t.Fatal("inactive tab lost its dirty state")
+	}
+
+	a.openCall(p.ID, s.ID, o.ID, c1.ID)
+	if got := a.xmlEd.Buffer.String(); got != "<edited/>" {
+		t.Fatalf("unsaved edit lost on tab switch: %q", got)
+	}
+	if !a.isDirty() {
+		t.Fatal("restored draft is not dirty")
+	}
+}
+
+// TestDirtyDotOnInactiveTab checks the dot shows on a tab edited in the
+// background, not only on the active tab.
+func TestDirtyDotOnInactiveTab(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	s, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	o, _ := a.st.AddOperation(p.ID, s.ID, model.Operation{Name: "O"})
+	c1, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C1", Request: "<a/>"})
+	c2, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C2", Request: "<b/>"})
+	a.reload()
+	a.openCall(p.ID, s.ID, o.ID, c1.ID)
+	a.xmlEd.Buffer.Reset("<edited/>")
+	a.openCall(p.ID, s.ID, o.ID, c2.ID)
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("●") {
+		t.Fatal("inactive dirty tab shows no dot")
+	}
+}
+
+// TestCloseDirtyTabAsks checks closing a dirty tab asks first and only then
+// drops it.
+func TestCloseDirtyTabAsks(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	s, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	o, _ := a.st.AddOperation(p.ID, s.ID, model.Operation{Name: "O"})
+	c1, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C1", Request: "<a/>"})
+	a.reload()
+	a.openCall(p.ID, s.ID, o.ID, c1.ID)
+	a.xmlEd.Buffer.Reset("<edited/>")
+
+	a.closeTab(0)
+	if !a.confirmOpen {
+		t.Fatal("closing a dirty tab did not ask for confirmation")
+	}
+	if len(a.tabs) != 1 {
+		t.Fatalf("tab closed before confirming: tabs=%d", len(a.tabs))
+	}
+	fn := a.confirmAction
+	a.confirmAction = nil
+	a.confirmOpen = false
+	fn()
+	if len(a.tabs) != 0 {
+		t.Fatalf("tab not closed after confirming: tabs=%d", len(a.tabs))
+	}
+}
+
+// TestDeleteServiceKeepsOtherTabs checks deleting a service closes only its own
+// tabs.
+func TestDeleteServiceKeepsOtherTabs(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	s1, _ := a.st.AddService(p.ID, model.Service{Name: "S1"})
+	s2, _ := a.st.AddService(p.ID, model.Service{Name: "S2"})
+	o1, _ := a.st.AddOperation(p.ID, s1.ID, model.Operation{Name: "O1"})
+	o2, _ := a.st.AddOperation(p.ID, s2.ID, model.Operation{Name: "O2"})
+	c1, _ := a.st.AddCall(p.ID, s1.ID, o1.ID, model.Call{Title: "C1", Request: "<a/>"})
+	c2, _ := a.st.AddCall(p.ID, s2.ID, o2.ID, model.Call{Title: "C2", Request: "<b/>"})
+	a.reload()
+	a.openCall(p.ID, s1.ID, o1.ID, c1.ID)
+	a.openCall(p.ID, s2.ID, o2.ID, c2.ID)
+
+	a.pid, a.sid, a.oid, a.cid = p.ID, s1.ID, "", ""
+	a.deleteService()
+	fn := a.confirmAction
+	a.confirmAction = nil
+	a.confirmOpen = false
+	fn()
+
+	if len(a.tabs) != 1 || a.cid != c2.ID {
+		t.Fatalf("after deleting S1: tabs=%d cid=%q, want tabs=1 cid=%q", len(a.tabs), a.cid, c2.ID)
+	}
+	if got := a.xmlEd.Buffer.String(); got != "<b/>" {
+		t.Fatalf("active tab content = %q", got)
+	}
+}
+
+// TestDeleteUnopenedCallKeepsTabs checks deleting a call that is not open does
+// not disturb the open tab.
+func TestDeleteUnopenedCallKeepsTabs(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	s, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	o, _ := a.st.AddOperation(p.ID, s.ID, model.Operation{Name: "O"})
+	c1, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C1", Request: "<a/>"})
+	c2, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C2", Request: "<b/>"})
+	a.reload()
+	a.openCall(p.ID, s.ID, o.ID, c2.ID)
+
+	a.pid, a.sid, a.oid, a.cid = p.ID, s.ID, o.ID, c1.ID
+	a.deleteCall()
+	fn := a.confirmAction
+	a.confirmAction = nil
+	a.confirmOpen = false
+	fn()
+
+	if len(a.tabs) != 1 || a.cid != c2.ID {
+		t.Fatalf("after deleting unopened C1: tabs=%d cid=%q, want tabs=1 cid=%q", len(a.tabs), a.cid, c2.ID)
+	}
+	if got := a.xmlEd.Buffer.String(); got != "<b/>" {
+		t.Fatalf("open tab content = %q", got)
+	}
+}
+
+// TestDeleteProjectKeepsOtherProjectTabs checks deleting one project keeps the
+// other project's tabs.
+func TestDeleteProjectKeepsOtherProjectTabs(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P1")
+	a.createProject("P2")
+	a.reload()
+	p1, p2 := a.projects[0], a.projects[1]
+	s1, _ := a.st.AddService(p1.ID, model.Service{Name: "S1"})
+	o1, _ := a.st.AddOperation(p1.ID, s1.ID, model.Operation{Name: "O1"})
+	c1, _ := a.st.AddCall(p1.ID, s1.ID, o1.ID, model.Call{Title: "C1", Request: "<a/>"})
+	s2, _ := a.st.AddService(p2.ID, model.Service{Name: "S2"})
+	o2, _ := a.st.AddOperation(p2.ID, s2.ID, model.Operation{Name: "O2"})
+	c2, _ := a.st.AddCall(p2.ID, s2.ID, o2.ID, model.Call{Title: "C2", Request: "<b/>"})
+	a.reload()
+	a.openCall(p1.ID, s1.ID, o1.ID, c1.ID)
+	a.openCall(p2.ID, s2.ID, o2.ID, c2.ID)
+
+	a.pid, a.sid, a.oid, a.cid = p1.ID, "", "", ""
+	a.deleteProject()
+	fn := a.confirmAction
+	a.confirmAction = nil
+	a.confirmOpen = false
+	fn()
+
+	if len(a.tabs) != 1 || a.cid != c2.ID {
+		t.Fatalf("after deleting P1: tabs=%d cid=%q, want tabs=1 cid=%q", len(a.tabs), a.cid, c2.ID)
 	}
 }
 
