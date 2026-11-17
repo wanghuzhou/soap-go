@@ -1067,9 +1067,6 @@ func (a *app) settingsContent(c *ui.Context) {
 			ui.Text(c, "设置").FontSize(a.us(12.5)).TextColor(t.TextMuted)
 			ui.Text(c, "›").FontSize(a.us(12)).TextColor(t.Border)
 			ui.Text(c, title).FontSize(a.us(15)).Bold()
-			ui.Spacer(c)
-			ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
-				OnClick(func() { a.settingsOpen = false })
 		})
 
 		switch a.settingsSection {
