@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,6 +40,12 @@ type uiState struct {
 	SideW     float32 `json:"sideW"`
 	SplitV    float32 `json:"splitV"`
 	SplitH    float32 `json:"splitH"`
+	// Font preferences: the family ("" is the system's) and the size in DIPs,
+	// kept separately for the interface and for the code editor.
+	UIFont         string  `json:"uiFont,omitempty"`
+	UIFontSize     float64 `json:"uiFontSize,omitempty"`
+	EditorFont     string  `json:"editorFont,omitempty"`
+	EditorFontSize float64 `json:"editorFontSize,omitempty"`
 }
 
 // app is the whole application state; the view is a function of it.
@@ -115,6 +122,13 @@ type app struct {
 	wsImportPath   string
 	nameInput      string
 
+	// Settings dialog and font preferences (a "" family is the system's).
+	settingsOpen     bool
+	uiFontFamily     string
+	uiFontSize       float64
+	editorFontFamily string
+	editorFontSize   float64
+
 	// Editor preferences and dirty tracking.
 	maskSecrets   bool
 	savedSnapshot string
@@ -157,6 +171,8 @@ func newApp(reg *workspace.Registry) *app {
 		proxyTypeSel:   "HTTP",
 		importProxySel: "直连（默认）",
 		maskSecrets:    true,
+		uiFontSize:     uiBaseFontSize(),
+		editorFontSize: 13,
 	}
 	a.uiPath = filepath.Join(reg.DataDir(), "ui-state.json")
 	a.loadUIState()
@@ -166,7 +182,11 @@ func newApp(reg *workspace.Registry) *app {
 }
 
 func (a *app) currentUI() uiState {
-	return uiState{Dark: a.dark, SplitSide: a.splitSide, SideW: a.sideW, SplitV: a.splitV, SplitH: a.splitH}
+	return uiState{
+		Dark: a.dark, SplitSide: a.splitSide, SideW: a.sideW, SplitV: a.splitV, SplitH: a.splitH,
+		UIFont: a.uiFontFamily, UIFontSize: a.uiFontSize,
+		EditorFont: a.editorFontFamily, EditorFontSize: a.editorFontSize,
+	}
 }
 
 func (a *app) loadUIState() {
@@ -184,6 +204,14 @@ func (a *app) loadUIState() {
 			}
 			if st.SplitH > 5 && st.SplitH < 95 {
 				a.splitH = st.SplitH
+			}
+			a.uiFontFamily = st.UIFont
+			if st.UIFontSize > 0 {
+				a.uiFontSize = st.UIFontSize
+			}
+			a.editorFontFamily = st.EditorFont
+			if st.EditorFontSize > 0 {
+				a.editorFontSize = st.EditorFontSize
 			}
 		}
 	}
@@ -225,10 +253,63 @@ func newXMLState(text string, readOnly bool) *editor.State {
 }
 
 func (a *app) theme() *ui.Theme {
+	th := a.lightTheme
 	if a.dark {
-		return a.darkTheme
+		th = a.darkTheme
 	}
-	return a.lightTheme
+	// Apply the user's interface font ("" is the system's) and size. The size
+	// also becomes Context's default text size, and the explicit sizes written
+	// in the view are scaled by us() to match it.
+	th.Font = a.uiFontFamily
+	if a.uiFontSize > 0 {
+		th.FontSize = float32(a.uiFontSize)
+	}
+	return th
+}
+
+// uiBaseFontSize is the theme's default text size on this platform: the size
+// the view's explicit FontSize literals were written against, so us() leaves
+// them unchanged at the default setting.
+func uiBaseFontSize() float64 {
+	if runtime.GOOS == "darwin" {
+		return 13
+	}
+	return 14
+}
+
+// us scales a font size written in the view by the user's interface font-size
+// setting, so every label grows or shrinks in proportion. At the default the
+// base is returned unchanged.
+func (a *app) us(base float32) float32 {
+	size := a.uiFontSize
+	if size <= 0 {
+		size = uiBaseFontSize()
+	}
+	return base * float32(size/uiBaseFontSize())
+}
+
+// syncEditorFont applies the editor font (a "" family is the system's
+// monospaced font) and size to the request and response editors. It runs each
+// frame so a change in the settings dialog shows at once.
+func (a *app) syncEditorFont() {
+	f := ui.Font{Family: a.editorFontFamily}
+	if a.editorFontSize > 0 {
+		f.Size = float32(a.editorFontSize)
+	}
+	if a.xmlEd != nil {
+		a.xmlEd.Font = f
+	}
+	if a.respEd != nil {
+		a.respEd.Font = f
+	}
+}
+
+// resetFontSettings restores the interface and editor fonts to their defaults.
+func (a *app) resetFontSettings() {
+	a.uiFontFamily = ""
+	a.uiFontSize = uiBaseFontSize()
+	a.editorFontFamily = ""
+	a.editorFontSize = 13
 }
 
 // reload re-reads the active workspace's projects.

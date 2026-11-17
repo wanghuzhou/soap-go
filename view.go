@@ -12,18 +12,20 @@ import (
 // Icons drawn as SVG, so the chrome does not fall back to the look of a
 // platform button. They take the text color of their element.
 var (
-	iconSplitV = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 12h17"/></svg>`))
-	iconSplitH = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M12 4.5v15"/></svg>`))
-	iconPlus   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`))
-	iconCopy   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>`))
-	iconSun    = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2M12 19.4v2M2.6 12h2M19.4 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>`))
-	iconMoon   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>`))
+	iconSplitV   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 12h17"/></svg>`))
+	iconSplitH   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M12 4.5v15"/></svg>`))
+	iconPlus     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`))
+	iconCopy     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>`))
+	iconSun      = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2M12 19.4v2M2.6 12h2M19.4 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>`))
+	iconMoon     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>`))
+	iconSettings = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`))
 )
 
 // ---- view ----
 
 func (a *app) view(c *ui.Context) {
 	c.SetTheme(a.theme())
+	a.syncEditorFont()
 	// Editor shortcuts, as the browser app's: send and save.
 	c.OnWindowShortcut(ui.Ctrl, ui.KeyEnter, func() { a.sendRequest() })
 	c.OnWindowShortcut(ui.Ctrl, ui.KeyS, func() { a.saveCall() })
@@ -46,6 +48,7 @@ func (a *app) view(c *ui.Context) {
 		a.workspaceModal(c)
 		a.treeModal(c)
 		a.confirmModal(c)
+		a.settingsModal(c)
 	})
 	a.maybeSaveUIState()
 }
@@ -64,14 +67,14 @@ func (a *app) topBar(c *ui.Context) {
 		Background(t.Surface).DragWindow().Children(func() {
 		ui.Row(c).Width(22).Height(22).Center().Justify(ui.Center).
 			Gradient(ui.Hex("#6366f1"), ui.Hex("#a855f7"), 135).Radius(6).Children(func() {
-			ui.Text(c, "S").FontSize(12).Bold().TextColor(t.AccentText)
+			ui.Text(c, "S").FontSize(a.us(12)).Bold().TextColor(t.AccentText)
 		})
-		ui.Text(c, "soap-go").FontSize(13).Bold()
-		ui.Text(c, "/").FontSize(12).TextColor(t.Border)
-		ui.Text(c, a.info.Name).FontSize(12).TextColor(t.TextMuted)
+		ui.Text(c, "soap-go").FontSize(a.us(13)).Bold()
+		ui.Text(c, "/").FontSize(a.us(12)).TextColor(t.Border)
+		ui.Text(c, a.info.Name).FontSize(a.us(12)).TextColor(t.TextMuted)
 		if p := a.selectedProject(); p != nil {
-			ui.Text(c, "›").FontSize(12).TextColor(t.Border)
-			ui.Text(c, p.Name).FontSize(12).TextColor(t.TextMuted).SingleLine()
+			ui.Text(c, "›").FontSize(a.us(12)).TextColor(t.Border)
+			ui.Text(c, p.Name).FontSize(a.us(12)).TextColor(t.TextMuted).SingleLine()
 		}
 
 		// File menu.
@@ -140,6 +143,8 @@ func (a *app) topBar(c *ui.Context) {
 		}).BorderWidth(0)
 		ui.Spacer(c)
 
+		a.iconBtn(c, iconSettings, "设置", func() { a.settingsOpen = true })
+
 		toggleTheme := func() {
 			a.dark = !a.dark
 			a.applyWindowButtons()
@@ -158,7 +163,7 @@ func (a *app) sidebar(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Width(a.sideW).Shrink(0).FillHeight().Background(t.Surface).Children(func() {
 		ui.Row(c).Padding(10, 12, 4, 14).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "项目").FontSize(11.5).Bold()
+			ui.Text(c, "项目").FontSize(a.us(11.5)).Bold()
 			ui.Badge(c, fmt.Sprint(len(a.projects)))
 			ui.Spacer(c)
 			a.iconBtn(c, iconPlus, "新建项目", func() {
@@ -172,8 +177,8 @@ func (a *app) sidebar(c *ui.Context) {
 			items := a.treeItems()
 			if len(items) == 0 {
 				ui.Column(c).Padding(16).Gap(6).Children(func() {
-					ui.Text(c, "还没有项目").FontSize(12.5).Bold()
-					ui.Text(c, "用「文件 › 导入」导入 SoapUI 项目或 WSDL。").FontSize(10.5).TextColor(t.TextMuted).Wrap()
+					ui.Text(c, "还没有项目").FontSize(a.us(12.5)).Bold()
+					ui.Text(c, "用「文件 › 导入」导入 SoapUI 项目或 WSDL。").FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
 				})
 				return
 			}
@@ -270,7 +275,7 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			if it.expanded {
 				caret = "▾"
 			}
-			ct := ui.Text(c, caret).FontSize(9.5).TextColor(t.TextMuted).Width(11)
+			ct := ui.Text(c, caret).FontSize(a.us(9.5)).TextColor(t.TextMuted).Width(11)
 			if !editing {
 				ct.OnClick(func() {
 					switch it.kind {
@@ -283,9 +288,9 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			ui.Text(c, "").Width(11)
 		}
 		if it.kind == "call" {
-			ui.Text(c, "POST").FontSize(9).Bold().TextColor(t.Accent).Width(30)
+			ui.Text(c, "POST").FontSize(a.us(9)).Bold().TextColor(t.Accent).Width(30)
 		} else {
-			ui.Text(c, kindGlyph(it.kind)).FontSize(11).TextColor(kindColor(t, it.kind)).Width(14)
+			ui.Text(c, kindGlyph(it.kind)).FontSize(a.us(11)).TextColor(kindColor(t, it.kind)).Width(14)
 		}
 		if editing {
 			inp := ui.TextInput(c, &a.renameInput).Grow(1).MinWidth(0).Ref(&a.renameRef).
@@ -303,7 +308,7 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			if it.kind == "call" {
 				lc = t.TextMuted
 			}
-			lbl := ui.Text(c, it.label).FontSize(12.5).TextColor(lc).Grow(1).MinWidth(0).SingleLine()
+			lbl := ui.Text(c, it.label).FontSize(a.us(12.5)).TextColor(lc).Grow(1).MinWidth(0).SingleLine()
 			if selected || it.kind == "project" || it.kind == "operation" {
 				lbl = lbl.Bold()
 			}
@@ -315,9 +320,9 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			if it.status >= 400 {
 				col = t.Danger
 			}
-			ui.Text(c, fmt.Sprint(it.status)).FontSize(10).TextColor(col).Shrink(0)
+			ui.Text(c, fmt.Sprint(it.status)).FontSize(a.us(10)).TextColor(col).Shrink(0)
 		case it.badge != "":
-			ui.Text(c, it.badge).FontSize(9.5).TextColor(t.TextMuted).Shrink(0)
+			ui.Text(c, it.badge).FontSize(a.us(9.5)).TextColor(t.TextMuted).Shrink(0)
 		}
 	})
 }
@@ -469,13 +474,13 @@ func (a *app) tabStrip(c *ui.Context) {
 				tab = tab.Background(t.SurfaceHover).Radius(6)
 			}
 			tab.Children(func() {
-				ui.Text(c, "POST").FontSize(8.5).Bold().TextColor(t.Accent)
+				ui.Text(c, "POST").FontSize(a.us(8.5)).Bold().TextColor(t.Accent)
 				lc := t.TextMuted
 				if active {
 					lc = t.Text
 				}
-				ui.Text(c, a.callTitle(key)).FontSize(12).TextColor(lc).SingleLine().MaxWidth(180)
-				ui.Text(c, "×").FontSize(12).TextColor(t.TextMuted).
+				ui.Text(c, a.callTitle(key)).FontSize(a.us(12)).TextColor(lc).SingleLine().MaxWidth(180)
+				ui.Text(c, "×").FontSize(a.us(12)).TextColor(t.TextMuted).
 					OnClick(func() { a.closeTab(i) })
 			})
 		}
@@ -489,7 +494,7 @@ func (a *app) tabStrip(c *ui.Context) {
 func (a *app) urlBar(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Shrink(0).Padding(10, 14).Gap(8).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "POST").FontSize(10).Bold().TextColor(t.AccentText).
+		ui.Text(c, "POST").FontSize(a.us(10)).Bold().TextColor(t.AccentText).
 			Padding(6, 10).Background(t.Accent).Radius(7)
 		ui.TextInput(c, &a.endpoint).Placeholder("http://host/service.asmx").Grow(1).OnSubmit(func() { a.sendRequest() })
 		if a.sending {
@@ -514,21 +519,21 @@ func (a *app) requestPanel(c *ui.Context) {
 				"设置",
 			).Shrink(0)
 			ui.Spacer(c)
-			ui.Text(c, a.contentType).FontSize(10).TextColor(t.TextMuted)
+			ui.Text(c, a.contentType).FontSize(a.us(10)).TextColor(t.TextMuted)
 		})
 		switch a.reqSection {
 		case 1:
 			a.headersPanel(c)
 		case 2:
 			ui.Column(c).Grow(1).Center().Justify(ui.Center).Children(func() {
-				ui.Text(c, "SOAP 使用 HTTP Basic / WS-Security，认证配置后续接入").FontSize(11).TextColor(t.TextMuted)
+				ui.Text(c, "SOAP 使用 HTTP Basic / WS-Security，认证配置后续接入").FontSize(a.us(11)).TextColor(t.TextMuted)
 			})
 		case 3:
 			a.settingsPanel(c)
 		default:
 			ui.Column(c).Grow(1).Padding(10, 12, 10).Gap(8).Children(func() {
 				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "XML 报文").FontSize(11).TextColor(t.TextMuted).Bold()
+					ui.Text(c, "XML 报文").FontSize(a.us(11)).TextColor(t.TextMuted).Bold()
 					ui.Spacer(c)
 					a.flatButton(c, "格式化", a.formatBody)
 					a.flatButton(c, "压缩", a.minifyBody)
@@ -545,7 +550,7 @@ func (a *app) headersPanel(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).Padding(14, 14, 10).Gap(8).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "请求头").FontSize(11.5).Bold()
+			ui.Text(c, "请求头").FontSize(a.us(11.5)).Bold()
 			ui.Spacer(c)
 			ui.Checkbox(c, &a.maskSecrets, "遮蔽敏感头")
 			if ui.Button(c, "＋ 添加请求头").Clicked() {
@@ -558,21 +563,21 @@ func (a *app) headersPanel(c *ui.Context) {
 
 		// Default SOAP headers.
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "SOAPAction").FontSize(10.5).TextColor(t.TextMuted).Width(110)
+			ui.Text(c, "SOAPAction").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
 			ui.TextInput(c, &a.action).Placeholder("http://tempuri.org/Op").Grow(1)
-			ui.Text(c, "默认").FontSize(9).TextColor(t.Accent).Shrink(0)
+			ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
 		})
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "Content-Type").FontSize(10.5).TextColor(t.TextMuted).Width(110)
+			ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
 			ui.Select(c, &a.contentType, []string{
 				"text/xml; charset=utf-8",
 				"application/soap+xml; charset=utf-8",
 			}).Grow(1)
-			ui.Text(c, "默认").FontSize(9).TextColor(t.Accent).Shrink(0)
+			ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
 		})
 
 		if len(a.projHeaders) > 0 {
-			ui.Text(c, "项目默认头").FontSize(10.5).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
+			ui.Text(c, "项目默认头").FontSize(a.us(10.5)).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
 			for _, h := range a.projHeaders {
 				h := h
 				value := h.Value
@@ -580,22 +585,22 @@ func (a *app) headersPanel(c *ui.Context) {
 					value = "••••••（已遮蔽）"
 				}
 				ui.Row(c).Gap(8).Children(func() {
-					ui.Text(c, h.Name+": "+value).FontSize(11).TextColor(t.TextMuted)
+					ui.Text(c, h.Name+": "+value).FontSize(a.us(11)).TextColor(t.TextMuted)
 				})
 			}
 		}
 
-		ui.Text(c, "样例头").FontSize(10.5).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
+		ui.Text(c, "样例头").FontSize(a.us(10.5)).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
 		for i := range a.headers {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.TextInput(c, &a.headers[i].Name).Placeholder("Header-Name").Width(190)
 				if a.maskSecrets && isSensitiveName(a.headers[i].Name) {
-					ui.Text(c, "••••••（已遮蔽）").FontSize(11).TextColor(t.TextMuted).Grow(1)
+					ui.Text(c, "••••••（已遮蔽）").FontSize(a.us(11)).TextColor(t.TextMuted).Grow(1)
 				} else {
 					ui.TextInput(c, &a.headers[i].Value).Placeholder("值").Grow(1)
 				}
-				ui.Text(c, "×").FontSize(13).TextColor(t.TextMuted).Width(18).
+				ui.Text(c, "×").FontSize(a.us(13)).TextColor(t.TextMuted).Width(18).
 					OnClick(func() {
 						if i >= 0 && i < len(a.headers) {
 							a.headers = append(a.headers[:i], a.headers[i+1:]...)
@@ -610,17 +615,17 @@ func (a *app) headersPanel(c *ui.Context) {
 func (a *app) settingsPanel(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).Padding(14, 14, 10).Gap(14).Children(func() {
-		ui.Text(c, "请求设置").FontSize(11.5).Bold()
+		ui.Text(c, "请求设置").FontSize(a.us(11.5)).Bold()
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "超时").FontSize(11).TextColor(t.TextMuted).Width(72)
+			ui.Text(c, "超时").FontSize(a.us(11)).TextColor(t.TextMuted).Width(72)
 			ui.TextInput(c, &a.timeout).Placeholder("60000").Width(110)
-			ui.Text(c, "ms").FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, "ms").FontSize(a.us(11)).TextColor(t.TextMuted)
 			ui.Spacer(c)
-			ui.Text(c, "范围 1000 – 600000").FontSize(10.5).TextColor(t.TextMuted)
+			ui.Text(c, "范围 1000 – 600000").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 		})
 		ui.Divider(c)
-		ui.Text(c, "请求方式").FontSize(11.5).Bold()
-		ui.Text(c, "SOAP 请求固定为 POST。").FontSize(10.5).TextColor(t.TextMuted)
+		ui.Text(c, "请求方式").FontSize(a.us(11.5)).Bold()
+		ui.Text(c, "SOAP 请求固定为 POST。").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 		ui.Spacer(c)
 	})
 }
@@ -632,21 +637,21 @@ func (a *app) responsePanel(c *ui.Context) {
 		ui.Divider(c)
 		ui.Row(c).Shrink(0).Padding(6, 14).Gap(12).AlignItems(ui.Center).Children(func() {
 			if a.hasResp && a.resp.Error != "" {
-				ui.Text(c, "发送失败："+a.resp.Error).FontSize(10.5).TextColor(t.Danger).SingleLine()
+				ui.Text(c, "发送失败："+a.resp.Error).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
 			} else if a.hasResp && a.resp.Error == "" {
 				col := t.Success
 				if a.resp.Status >= 400 {
 					col = t.Danger
 				}
 				a.statusPill(c, fmt.Sprintf("%d %s", a.resp.Status, a.resp.StatusText), col)
-				ui.Text(c, fmt.Sprintf("%d ms", a.resp.DurationMS)).FontSize(10.5).TextColor(t.TextMuted)
+				ui.Text(c, fmt.Sprintf("%d ms", a.resp.DurationMS)).FontSize(a.us(10.5)).TextColor(t.TextMuted)
 				if !side {
-					ui.Text(c, humanSize(a.resp.Size)).FontSize(10.5).TextColor(t.TextMuted)
+					ui.Text(c, humanSize(a.resp.Size)).FontSize(a.us(10.5)).TextColor(t.TextMuted)
 				}
 			} else if a.sending {
-				ui.Text(c, "发送中…").FontSize(10.5).TextColor(t.TextMuted)
+				ui.Text(c, "发送中…").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			} else {
-				ui.Text(c, "尚未发送请求").FontSize(10.5).TextColor(t.TextMuted)
+				ui.Text(c, "尚未发送请求").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			}
 		})
 		ui.Row(c).Shrink(0).Padding(0, 14, 0).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -655,12 +660,12 @@ func (a *app) responsePanel(c *ui.Context) {
 			}
 			ui.Spacer(c)
 			if a.resp.Truncated {
-				ui.Text(c, "内容已截断").FontSize(10).TextColor(t.Warning)
+				ui.Text(c, "内容已截断").FontSize(a.us(10)).TextColor(t.Warning)
 			}
 		})
 		if !a.hasResp {
 			ui.Column(c).Grow(1).Center().Justify(ui.Center).Gap(6).Children(func() {
-				ui.Text(c, "发送请求后，响应会显示在这里").FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, "发送请求后，响应会显示在这里").FontSize(a.us(12)).TextColor(t.TextMuted)
 			})
 			return
 		}
@@ -675,17 +680,17 @@ func (a *app) statusBar(c *ui.Context) {
 	ui.Divider(c)
 	ui.Row(c).Shrink(0).Height(26).Padding(0, 14).Gap(8).AlignItems(ui.Center).
 		Background(t.Surface).Children(func() {
-		ui.Text(c, "◈").FontSize(9).TextColor(t.Accent)
-		ui.Text(c, a.info.Name).FontSize(10.5).TextColor(t.Text)
-		ui.Text(c, "·").FontSize(10.5).TextColor(t.Border)
-		ui.Text(c, "UTF-8").FontSize(10.5).TextColor(t.TextMuted)
+		ui.Text(c, "◈").FontSize(a.us(9)).TextColor(t.Accent)
+		ui.Text(c, a.info.Name).FontSize(a.us(10.5)).TextColor(t.Text)
+		ui.Text(c, "·").FontSize(a.us(10.5)).TextColor(t.Border)
+		ui.Text(c, "UTF-8").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 		ui.Spacer(c)
 		if a.errMsg != "" {
-			ui.Text(c, a.errMsg).FontSize(10.5).TextColor(t.Danger).SingleLine()
+			ui.Text(c, a.errMsg).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
 		} else if a.statusMsg != "" {
-			ui.Text(c, a.statusMsg).FontSize(10.5).TextColor(t.Success).SingleLine()
+			ui.Text(c, a.statusMsg).FontSize(a.us(10.5)).TextColor(t.Success).SingleLine()
 		}
-		ui.Text(c, fmt.Sprintf("%d 个项目", len(a.projects))).FontSize(10.5).TextColor(t.TextMuted)
+		ui.Text(c, fmt.Sprintf("%d 个项目", len(a.projects))).FontSize(a.us(10.5)).TextColor(t.TextMuted)
 	})
 }
 
@@ -696,18 +701,18 @@ func (a *app) importModal(c *ui.Context) {
 	ui.Modal(c, &a.importOpen, func() {
 		ui.Column(c).Width(520).Gap(14).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "导入").FontSize(17).Bold()
+				ui.Text(c, "导入").FontSize(a.us(17)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(15).TextColor(t.TextMuted).
+				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
 					OnClick(func() { a.importOpen = false })
 			})
-			ui.Text(c, "选择一种方式把接口定义带进来。").FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, "选择一种方式把接口定义带进来。").FontSize(a.us(11)).TextColor(t.TextMuted)
 
 			if a.importKind == 3 {
 				ui.Column(c).Gap(8).Children(func() {
-					ui.Text(c, "WSDL URL").FontSize(10.5).TextColor(t.TextMuted)
+					ui.Text(c, "WSDL URL").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 					ui.TextInput(c, &a.importURL).Placeholder("http://127.0.0.1:8080/services/ws/api?wsdl").Grow(1)
-					ui.Text(c, "代理").FontSize(10.5).TextColor(t.TextMuted)
+					ui.Text(c, "代理").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 					ui.Select(c, &a.importProxySel, []string{"直连（默认）", "系统代理", "当前项目代理"})
 				})
 				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
@@ -765,13 +770,13 @@ func (a *app) importOption(c *ui.Context, icon, title, desc string, onClick func
 	row.Children(func() {
 		ui.Row(c).Width(34).Height(34).Center().Justify(ui.Center).
 			Background(t.Accent.Alpha(0.12)).Radius(8).Children(func() {
-			ui.Text(c, icon).FontSize(15).TextColor(t.Accent)
+			ui.Text(c, icon).FontSize(a.us(15)).TextColor(t.Accent)
 		})
 		ui.Column(c).Gap(2).Grow(1).Children(func() {
-			ui.Text(c, title).FontSize(12.5).Bold()
-			ui.Text(c, desc).FontSize(10.5).TextColor(t.TextMuted).Wrap()
+			ui.Text(c, title).FontSize(a.us(12.5)).Bold()
+			ui.Text(c, desc).FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
 		})
-		ui.Text(c, "›").FontSize(15).TextColor(t.TextMuted)
+		ui.Text(c, "›").FontSize(a.us(15)).TextColor(t.TextMuted)
 	})
 }
 
@@ -780,9 +785,9 @@ func (a *app) exportModal(c *ui.Context) {
 	ui.Modal(c, &a.exportOpen, func() {
 		ui.Column(c).Width(460).Gap(14).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "导出工作空间").FontSize(17).Bold()
+				ui.Text(c, "导出工作空间").FontSize(a.us(17)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(15).TextColor(t.TextMuted).
+				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
 					OnClick(func() { a.exportOpen = false })
 			})
 			ui.Text(c, "把当前工作空间的项目导出为 JSON，可在另一台机器或另一个实例导入。").
@@ -811,35 +816,35 @@ func (a *app) proxyModal(c *ui.Context) {
 	ui.Modal(c, &a.proxyOpen, func() {
 		ui.Column(c).Width(480).Gap(10).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "项目代理设置").FontSize(16).Bold()
+				ui.Text(c, "项目代理设置").FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(15).TextColor(t.TextMuted).
+				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
 					OnClick(func() { a.proxyOpen = false })
 			})
-			ui.Text(c, "代理模式").FontSize(10.5).TextColor(t.TextMuted)
+			ui.Text(c, "代理模式").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.Select(c, &a.proxyModeSel, []string{"系统代理", "直连", "自定义代理"})
 			if a.proxyModeSel == "自定义代理" {
 				ui.Row(c).Gap(8).Children(func() {
 					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "类型").FontSize(10.5).TextColor(t.TextMuted)
+						ui.Text(c, "类型").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 						ui.Select(c, &a.proxyTypeSel, []string{"HTTP", "SOCKS5"})
 					})
 					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "主机").FontSize(10.5).TextColor(t.TextMuted)
+						ui.Text(c, "主机").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 						ui.TextInput(c, &a.proxyHost).Placeholder("127.0.0.1")
 					})
 					ui.Column(c).Width(100).Gap(4).Children(func() {
-						ui.Text(c, "端口").FontSize(10.5).TextColor(t.TextMuted)
+						ui.Text(c, "端口").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 						ui.TextInput(c, &a.proxyPort).Placeholder("8080")
 					})
 				})
 				ui.Row(c).Gap(8).Children(func() {
 					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "用户名").FontSize(10.5).TextColor(t.TextMuted)
+						ui.Text(c, "用户名").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 						ui.TextInput(c, &a.proxyUser).Placeholder("可留空")
 					})
 					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "密码").FontSize(10.5).TextColor(t.TextMuted)
+						ui.Text(c, "密码").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 						ui.TextInput(c, &a.proxyPass).Placeholder("可留空")
 					})
 				})
@@ -861,12 +866,12 @@ func (a *app) newProjectModal(c *ui.Context) {
 	ui.Modal(c, &a.newProjectOpen, func() {
 		ui.Column(c).Width(420).Gap(12).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "项目").FontSize(16).Bold()
+				ui.Text(c, "项目").FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(15).TextColor(t.TextMuted).
+				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
 					OnClick(func() { a.newProjectOpen = false })
 			})
-			ui.Text(c, "项目名称").FontSize(10.5).TextColor(t.TextMuted)
+			ui.Text(c, "项目名称").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder("新建项目").Grow(1)
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
@@ -892,12 +897,12 @@ func (a *app) workspaceModal(c *ui.Context) {
 		}
 		ui.Column(c).Width(420).Gap(12).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, title).FontSize(16).Bold()
+				ui.Text(c, title).FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(15).TextColor(t.TextMuted).
+				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
 					OnClick(func() { a.wsOpen = false })
 			})
-			ui.Text(c, "名称").FontSize(10.5).TextColor(t.TextMuted)
+			ui.Text(c, "名称").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder("工作空间名称").Grow(1)
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
@@ -930,12 +935,12 @@ func (a *app) treeModal(c *ui.Context) {
 		}
 		ui.Column(c).Width(420).Gap(12).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, title).FontSize(16).Bold()
+				ui.Text(c, title).FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(15).TextColor(t.TextMuted).
+				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
 					OnClick(func() { a.treeModalOpen = false })
 			})
-			ui.Text(c, placeholder).FontSize(10.5).TextColor(t.TextMuted)
+			ui.Text(c, placeholder).FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder(placeholder).Grow(1)
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
@@ -960,8 +965,8 @@ func (a *app) confirmModal(c *ui.Context) {
 	t := c.Theme()
 	ui.Modal(c, &a.confirmOpen, func() {
 		ui.Column(c).Width(440).Gap(14).Children(func() {
-			ui.Text(c, "请确认").FontSize(16).Bold()
-			ui.Text(c, a.confirmText).FontSize(11.5).TextColor(t.TextMuted).Wrap()
+			ui.Text(c, "请确认").FontSize(a.us(16)).Bold()
+			ui.Text(c, a.confirmText).FontSize(a.us(11.5)).TextColor(t.TextMuted).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
 					a.confirmOpen = false
@@ -981,6 +986,59 @@ func (a *app) confirmModal(c *ui.Context) {
 }
 
 // ---- chrome ----
+
+// settingsModal lets the user pick the interface and editor fonts and sizes,
+// kept separately. Changes apply live, because the view reads them every
+// frame, and are persisted with the rest of the UI state.
+func (a *app) settingsModal(c *ui.Context) {
+	t := c.Theme()
+	ui.Modal(c, &a.settingsOpen, func() {
+		ui.Column(c).Width(440).Gap(16).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "设置").FontSize(a.us(17)).Bold()
+				ui.Spacer(c)
+				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
+					OnClick(func() { a.settingsOpen = false })
+			})
+
+			a.settingsGroup(c, "界面", "整个应用窗口的文字",
+				&a.uiFontFamily, &a.uiFontSize, "留空使用系统字体，如 Segoe UI", 11, 20)
+
+			ui.Divider(c)
+
+			a.settingsGroup(c, "编辑器", "请求与响应报文编辑区",
+				&a.editorFontFamily, &a.editorFontSize, "留空使用系统等宽字体，如 Consolas", 10, 28)
+
+			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+				if ui.Button(c, "恢复默认").Clicked() {
+					a.resetFontSettings()
+				}
+				if ui.PrimaryButton(c, "完成").Clicked() {
+					a.settingsOpen = false
+				}
+			})
+		})
+	})
+}
+
+// settingsGroup builds one "font family + size" group of the settings dialog,
+// bound to the given string and number. lo and hi bound the size stepper.
+func (a *app) settingsGroup(c *ui.Context, title, desc string, family *string, size *float64, familyPlaceholder string, lo, hi float64) {
+	t := c.Theme()
+	ui.Column(c).Gap(8).Children(func() {
+		ui.Text(c, title).FontSize(a.us(12.5)).Bold()
+		ui.Text(c, desc).FontSize(a.us(10.5)).TextColor(t.TextMuted)
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "字体").FontSize(a.us(11)).TextColor(t.TextMuted).Width(40)
+			ui.TextInput(c, family).Placeholder(familyPlaceholder).Grow(1)
+		})
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "大小").FontSize(a.us(11)).TextColor(t.TextMuted).Width(40)
+			ui.Stepper(c, size, lo, hi, 1)
+			ui.Text(c, fmt.Sprintf("%.0f", *size)).FontSize(a.us(11)).Width(30)
+		})
+	})
+}
 
 func (a *app) splitSwitch(c *ui.Context) {
 	t := c.Theme()
@@ -1006,7 +1064,7 @@ func (a *app) splitOption(c *ui.Context, mode int, icon *ui.SVG, tip string) {
 		if active {
 			col = t.Accent
 		}
-		ui.Icon(c, icon).FontSize(14).TextColor(col)
+		ui.Icon(c, icon).FontSize(a.us(14)).TextColor(col)
 	})
 }
 
@@ -1018,7 +1076,7 @@ func (a *app) iconBtn(c *ui.Context, icon *ui.SVG, tip string, onClick func()) {
 		btn = btn.Background(t.SurfaceHover)
 	}
 	btn.Children(func() {
-		ui.Icon(c, icon).FontSize(13).TextColor(t.TextMuted)
+		ui.Icon(c, icon).FontSize(a.us(13)).TextColor(t.TextMuted)
 	})
 }
 
@@ -1031,7 +1089,7 @@ func (a *app) flatButton(c *ui.Context, label string, onClick func()) {
 		btn = btn.Background(t.SurfaceHover)
 	}
 	btn.Children(func() {
-		ui.Text(c, label).FontSize(11).TextColor(t.Text)
+		ui.Text(c, label).FontSize(a.us(11)).TextColor(t.Text)
 	})
 	if btn.Clicked() {
 		onClick()
@@ -1053,7 +1111,7 @@ func (a *app) copyIcon(c *ui.Context, copied string, text func() string) ui.Elem
 		btn = btn.Background(t.SurfaceHover)
 	}
 	return btn.Children(func() {
-		ui.Icon(c, iconCopy).FontSize(13).TextColor(t.TextMuted)
+		ui.Icon(c, iconCopy).FontSize(a.us(13)).TextColor(t.TextMuted)
 	})
 }
 
@@ -1076,8 +1134,8 @@ func (a *app) editorWithCopy(c *ui.Context, ed *editor.State, copied string, tex
 
 func (a *app) statusPill(c *ui.Context, s string, col ui.Color) {
 	ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(2, 8).Radius(6).Background(col.Alpha(0.15)).Children(func() {
-		ui.Text(c, "●").FontSize(8).TextColor(col)
-		ui.Text(c, s).FontSize(10.5).TextColor(col).Bold()
+		ui.Text(c, "●").FontSize(a.us(8)).TextColor(col)
+		ui.Text(c, s).FontSize(a.us(10.5)).TextColor(col).Bold()
 	})
 }
 

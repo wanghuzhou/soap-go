@@ -15,14 +15,14 @@ SOAP / WSDL 接口调试桌面工具，用 **Go + MyGo 原生 UI**（纯 Go 绘�
 - **导入**：SoapUI 项目（.xml）、WSDL 文件、WSDL URL（可选代理）
 - **导出**：工作空间 JSON（可选保留代理）、单个项目导出为 SoapUI XML
 - **管理**：工作空间切换/新建/重命名/删除/导入/导出；项目、服务、操作、请求的增删改（树节点右键菜单）
-- **其它**：上下/左右分屏、深色/浅色主题、主题与分栏布局持久化、请求可取消
+- **其它**：上下/左右分屏、深色/浅色主题、界面与编辑器字体设置（字体和字号分别可调）、主题与分栏布局持久化、请求可取消
 
 
 ## 数据兼容
 
 数据格式与 soap-web **完全一致**（`settings.json`、`projects.json`）。
 
-把 soap-web 的 `bin/data` 下的 `settings.json` 与 `projects.json` 复制到 soap-go 的数据目录，即可看到原有项目。主题和分栏布局保存在数据目录的 `ui-state.json`。
+把 soap-web 的 `bin/data` 下的 `settings.json` 与 `projects.json` 复制到 soap-go 的数据目录，即可看到原有项目。主题、分栏布局和字体设置保存在数据目录的 `ui-state.json`。
 
 数据目录默认为可执行文件旁 `data/`，也可用 `-data <目录>` 指定。
 

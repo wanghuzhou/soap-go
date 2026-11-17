@@ -586,6 +586,10 @@ func TestUIStatePersists(t *testing.T) {
 	a.sideW = 333
 	a.splitV = 55
 	a.splitH = 44
+	a.uiFontFamily = "Consolas"
+	a.uiFontSize = 16
+	a.editorFontFamily = "Cascadia Code"
+	a.editorFontSize = 18
 	a.saveUIState()
 
 	reg2, err := workspace.Open(dir, "")
@@ -596,4 +600,46 @@ func TestUIStatePersists(t *testing.T) {
 	if b.dark != false || b.splitSide != 1 || b.sideW != 333 || b.splitV != 55 || b.splitH != 44 {
 		t.Fatalf("restored = %+v", b.currentUI())
 	}
+	if b.uiFontFamily != "Consolas" || b.uiFontSize != 16 ||
+		b.editorFontFamily != "Cascadia Code" || b.editorFontSize != 18 {
+		t.Fatalf("restored fonts = %q %v %q %v", b.uiFontFamily, b.uiFontSize, b.editorFontFamily, b.editorFontSize)
+	}
+}
+
+// TestFontSettingsApply checks the interface and editor font settings take
+// effect separately: the theme's size and the scaled view sizes follow the
+// interface setting, and the editor states follow the editor setting.
+func TestFontSettingsApply(t *testing.T) {
+	a := newTestApp(t)
+	a.uiFontSize = 18
+	a.editorFontFamily = "Consolas"
+	a.editorFontSize = 20
+
+	if got := a.theme().FontSize; got != 18 {
+		t.Fatalf("theme FontSize = %v, want 18", got)
+	}
+	want := 10 * float32(18/uiBaseFontSize())
+	if got := a.us(10); got != want {
+		t.Fatalf("us(10) = %v, want %v", got, want)
+	}
+	// At the default size the view's literals are unchanged.
+	a.uiFontSize = uiBaseFontSize()
+	if got := a.us(10); got != 10 {
+		t.Fatalf("us(10) at default = %v, want 10", got)
+	}
+
+	a.uiFontSize = 18
+	a.syncEditorFont()
+	if a.xmlEd.Font.Size != 20 || a.xmlEd.Font.Family != "Consolas" {
+		t.Fatalf("xmlEd font = %+v", a.xmlEd.Font)
+	}
+	if a.respEd.Font.Size != 20 || a.respEd.Font.Family != "Consolas" {
+		t.Fatalf("respEd font = %+v", a.respEd.Font)
+	}
+
+	// The settings dialog must build without panicking.
+	a.settingsOpen = true
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	tt.Frame()
 }
