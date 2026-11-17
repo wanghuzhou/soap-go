@@ -506,8 +506,6 @@ func (a *app) requestPanel(c *ui.Context) {
 				"认证",
 				"设置",
 			).Shrink(0)
-			ui.Spacer(c)
-			ui.Text(c, a.contentType).FontSize(a.us(10)).TextColor(t.TextMuted)
 		})
 		switch a.reqSection {
 		case 1:
