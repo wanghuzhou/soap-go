@@ -122,11 +122,14 @@ type app struct {
 	wsImportPath   string
 	nameInput      string
 
-	// Settings dialog and font preferences (a "" family is the system's).
+	// Settings dialog: the section shown, the search filter, and the font
+	// preferences (a choice is "系统默认" or a family name).
 	settingsOpen     bool
-	uiFontFamily     string
+	settingsSection  int
+	settingsQuery    string
+	uiFontChoice     string
 	uiFontSize       float64
-	editorFontFamily string
+	editorFontChoice string
 	editorFontSize   float64
 
 	// Editor preferences and dirty tracking.
@@ -152,27 +155,29 @@ type app struct {
 func newApp(reg *workspace.Registry) *app {
 	st, info := reg.Active()
 	a := &app{
-		reg:            reg,
-		st:             st,
-		info:           info,
-		dark:           true,
-		darkTheme:      newDarkTheme(),
-		lightTheme:     newLightTheme(),
-		sideW:          272,
-		splitV:         60,
-		splitH:         62,
-		splitSide:      0,
-		timeout:        "60000",
-		contentType:    "text/xml; charset=utf-8",
-		xmlEd:          newXMLState("", false),
-		respEd:         newXMLState("", true),
-		expanded:       map[string]bool{},
-		proxyModeSel:   "系统代理",
-		proxyTypeSel:   "HTTP",
-		importProxySel: "直连（默认）",
-		maskSecrets:    true,
-		uiFontSize:     uiBaseFontSize(),
-		editorFontSize: 13,
+		reg:              reg,
+		st:               st,
+		info:             info,
+		dark:             true,
+		darkTheme:        newDarkTheme(),
+		lightTheme:       newLightTheme(),
+		sideW:            272,
+		splitV:           60,
+		splitH:           62,
+		splitSide:        0,
+		timeout:          "60000",
+		contentType:      "text/xml; charset=utf-8",
+		xmlEd:            newXMLState("", false),
+		respEd:           newXMLState("", true),
+		expanded:         map[string]bool{},
+		proxyModeSel:     "系统代理",
+		proxyTypeSel:     "HTTP",
+		importProxySel:   "直连（默认）",
+		maskSecrets:      true,
+		uiFontChoice:     systemFontLabel,
+		uiFontSize:       uiBaseFontSize(),
+		editorFontChoice: systemFontLabel,
+		editorFontSize:   13,
 	}
 	a.uiPath = filepath.Join(reg.DataDir(), "ui-state.json")
 	a.loadUIState()
@@ -184,8 +189,8 @@ func newApp(reg *workspace.Registry) *app {
 func (a *app) currentUI() uiState {
 	return uiState{
 		Dark: a.dark, SplitSide: a.splitSide, SideW: a.sideW, SplitV: a.splitV, SplitH: a.splitH,
-		UIFont: a.uiFontFamily, UIFontSize: a.uiFontSize,
-		EditorFont: a.editorFontFamily, EditorFontSize: a.editorFontSize,
+		UIFont: a.uiFontChoice, UIFontSize: a.uiFontSize,
+		EditorFont: a.editorFontChoice, EditorFontSize: a.editorFontSize,
 	}
 }
 
@@ -205,11 +210,11 @@ func (a *app) loadUIState() {
 			if st.SplitH > 5 && st.SplitH < 95 {
 				a.splitH = st.SplitH
 			}
-			a.uiFontFamily = st.UIFont
+			a.uiFontChoice = normalizeFontChoice(st.UIFont)
 			if st.UIFontSize > 0 {
 				a.uiFontSize = st.UIFontSize
 			}
-			a.editorFontFamily = st.EditorFont
+			a.editorFontChoice = normalizeFontChoice(st.EditorFont)
 			if st.EditorFontSize > 0 {
 				a.editorFontSize = st.EditorFontSize
 			}
@@ -260,7 +265,7 @@ func (a *app) theme() *ui.Theme {
 	// Apply the user's interface font ("" is the system's) and size. The size
 	// also becomes Context's default text size, and the explicit sizes written
 	// in the view are scaled by us() to match it.
-	th.Font = a.uiFontFamily
+	th.Font = fontFamily(a.uiFontChoice)
 	if a.uiFontSize > 0 {
 		th.FontSize = float32(a.uiFontSize)
 	}
@@ -292,7 +297,7 @@ func (a *app) us(base float32) float32 {
 // monospaced font) and size to the request and response editors. It runs each
 // frame so a change in the settings dialog shows at once.
 func (a *app) syncEditorFont() {
-	f := ui.Font{Family: a.editorFontFamily}
+	f := ui.Font{Family: fontFamily(a.editorFontChoice)}
 	if a.editorFontSize > 0 {
 		f.Size = float32(a.editorFontSize)
 	}
@@ -306,10 +311,51 @@ func (a *app) syncEditorFont() {
 
 // resetFontSettings restores the interface and editor fonts to their defaults.
 func (a *app) resetFontSettings() {
-	a.uiFontFamily = ""
+	a.uiFontChoice = systemFontLabel
 	a.uiFontSize = uiBaseFontSize()
-	a.editorFontFamily = ""
+	a.editorFontChoice = systemFontLabel
 	a.editorFontSize = 13
+}
+
+// systemFontLabel is the dropdown choice that means the system's own font.
+const systemFontLabel = "系统默认"
+
+// uiFontOptions and editorFontOptions are the families the settings dialog
+// offers; the first choice is the system's own font.
+var uiFontOptions = []string{
+	systemFontLabel, "Segoe UI", "Microsoft YaHei UI", "微软雅黑", "Arial", "Tahoma", "Verdana",
+}
+
+var editorFontOptions = []string{
+	systemFontLabel, "Cascadia Code", "Consolas", "JetBrains Mono", "Fira Code", "Courier New", "Source Code Pro",
+}
+
+// fontFamily maps a dropdown choice to a theme font family; "" is the
+// system's.
+func fontFamily(choice string) string {
+	if choice == "" || choice == systemFontLabel {
+		return ""
+	}
+	return choice
+}
+
+// normalizeFontChoice maps a stored family back to a dropdown choice.
+func normalizeFontChoice(family string) string {
+	if family == "" {
+		return systemFontLabel
+	}
+	return family
+}
+
+// setDark switches the theme and persists the choice; both the top bar toggle
+// and the settings dialog use it.
+func (a *app) setDark(dark bool) {
+	if a.dark == dark {
+		return
+	}
+	a.dark = dark
+	a.applyWindowButtons()
+	a.saveUIState()
 }
 
 // reload re-reads the active workspace's projects.

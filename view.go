@@ -12,6 +12,8 @@ import (
 // Icons drawn as SVG, so the chrome does not fall back to the look of a
 // platform button. They take the text color of their element.
 var (
+	iconSliders  = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`))
+	iconCode     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`))
 	iconSplitV   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 12h17"/></svg>`))
 	iconSplitH   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M12 4.5v15"/></svg>`))
 	iconPlus     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`))
@@ -146,9 +148,7 @@ func (a *app) topBar(c *ui.Context) {
 		a.iconBtn(c, iconSettings, "设置", func() { a.settingsOpen = true })
 
 		toggleTheme := func() {
-			a.dark = !a.dark
-			a.applyWindowButtons()
-			a.saveUIState()
+			a.setDark(!a.dark)
 		}
 		if a.dark {
 			a.iconBtn(c, iconSun, "切换到浅色主题", toggleTheme)
@@ -987,56 +987,171 @@ func (a *app) confirmModal(c *ui.Context) {
 
 // ---- chrome ----
 
-// settingsModal lets the user pick the interface and editor fonts and sizes,
-// kept separately. Changes apply live, because the view reads them every
-// frame, and are persisted with the rest of the UI state.
+// settingsModal is a two-pane settings window: a navigation list on the left
+// and the chosen section's rows on the right, after a reference the user
+// gave. Changes apply live, because the view reads them every frame, and are
+// persisted with the rest of the UI state.
 func (a *app) settingsModal(c *ui.Context) {
 	t := c.Theme()
 	ui.Modal(c, &a.settingsOpen, func() {
-		ui.Column(c).Width(440).Gap(16).Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "设置").FontSize(a.us(17)).Bold()
-				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
-					OnClick(func() { a.settingsOpen = false })
-			})
-
-			a.settingsGroup(c, "界面", "整个应用窗口的文字",
-				&a.uiFontFamily, &a.uiFontSize, "留空使用系统字体，如 Segoe UI", 11, 20)
-
-			ui.Divider(c)
-
-			a.settingsGroup(c, "编辑器", "请求与响应报文编辑区",
-				&a.editorFontFamily, &a.editorFontSize, "留空使用系统等宽字体，如 Consolas", 10, 28)
-
-			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				if ui.Button(c, "恢复默认").Clicked() {
-					a.resetFontSettings()
-				}
-				if ui.PrimaryButton(c, "完成").Clicked() {
-					a.settingsOpen = false
-				}
-			})
+		ui.Row(c).Width(760).Height(520).AlignItems(ui.Stretch).Clip().Children(func() {
+			a.settingsNav(c)
+			ui.Column(c).Width(1).FillHeight().Background(t.Border)
+			a.settingsContent(c)
 		})
 	})
 }
 
-// settingsGroup builds one "font family + size" group of the settings dialog,
-// bound to the given string and number. lo and hi bound the size stepper.
-func (a *app) settingsGroup(c *ui.Context, title, desc string, family *string, size *float64, familyPlaceholder string, lo, hi float64) {
+// settingsNav is the left list of the settings window: a search field and the
+// sections, with the chosen one highlighted.
+func (a *app) settingsNav(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Gap(8).Children(func() {
-		ui.Text(c, title).FontSize(a.us(12.5)).Bold()
-		ui.Text(c, desc).FontSize(a.us(10.5)).TextColor(t.TextMuted)
-		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "字体").FontSize(a.us(11)).TextColor(t.TextMuted).Width(40)
-			ui.TextInput(c, family).Placeholder(familyPlaceholder).Grow(1)
+	ui.Column(c).Width(220).FillHeight().Padding(12).Gap(6).Children(func() {
+		ui.TextInput(c, &a.settingsQuery).Placeholder("搜索设置").Margin(0, 0, 0, 6)
+		items := []struct {
+			idx   int
+			label string
+			icon  *ui.SVG
+		}{
+			{0, "外观", iconSliders},
+			{1, "编辑器", iconCode},
+		}
+		q := strings.ToLower(strings.TrimSpace(a.settingsQuery))
+		for _, it := range items {
+			it := it
+			if q != "" && !strings.Contains(strings.ToLower(it.label), q) {
+				continue
+			}
+			active := a.settingsSection == it.idx
+			row := ui.Row(c).Gap(10).AlignItems(ui.Center).Padding(7, 10).Radius(8).
+				OnClick(func() { a.settingsSection = it.idx })
+			switch {
+			case active:
+				row = row.Background(t.Surface).Border(1, t.Border)
+			case row.Hovered():
+				row = row.Background(t.SurfaceHover)
+			}
+			row.Children(func() {
+				col := t.TextMuted
+				if active {
+					col = t.Text
+				}
+				ui.Icon(c, it.icon).FontSize(a.us(14)).TextColor(col)
+				ui.Text(c, it.label).FontSize(a.us(12.5)).TextColor(col)
+			})
+		}
+	})
+}
+
+// settingsContent is the right pane: a breadcrumb, the chosen section's cards,
+// and the footer buttons.
+func (a *app) settingsContent(c *ui.Context) {
+	t := c.Theme()
+	ui.Column(c).Grow(1).FillHeight().Padding(18, 22).Gap(14).Children(func() {
+		title := "外观"
+		if a.settingsSection == 1 {
+			title = "编辑器"
+		}
+		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+			ui.Text(c, "设置").FontSize(a.us(12.5)).TextColor(t.TextMuted)
+			ui.Text(c, "›").FontSize(a.us(12)).TextColor(t.Border)
+			ui.Text(c, title).FontSize(a.us(15)).Bold()
+			ui.Spacer(c)
+			ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
+				OnClick(func() { a.settingsOpen = false })
 		})
-		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "大小").FontSize(a.us(11)).TextColor(t.TextMuted).Width(40)
-			ui.Stepper(c, size, lo, hi, 1)
-			ui.Text(c, fmt.Sprintf("%.0f", *size)).FontSize(a.us(11)).Width(30)
+
+		if a.settingsSection == 1 {
+			a.editorSettings(c)
+		} else {
+			a.appearanceSettings(c)
+		}
+
+		ui.Spacer(c)
+		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+			if ui.Button(c, "恢复默认").Clicked() {
+				a.resetFontSettings()
+			}
+			if ui.PrimaryButton(c, "完成").Clicked() {
+				a.settingsOpen = false
+			}
 		})
+	})
+}
+
+// appearanceSettings is the "外观" section: the color mode and the interface
+// font.
+func (a *app) appearanceSettings(c *ui.Context) {
+	t := c.Theme()
+	a.settingsCard(c, func() {
+		a.settingsRow(c, "颜色模式", func() {
+			ui.Row(c).Padding(2).Gap(2).Radius(8).Background(t.Background).Border(1, t.Border).Children(func() {
+				a.segment(c, "浅色", !a.dark, func() { a.setDark(false) })
+				a.segment(c, "深色", a.dark, func() { a.setDark(true) })
+			})
+		})
+		ui.Divider(c)
+		a.settingsRow(c, "界面字体", func() {
+			ui.Select(c, &a.uiFontChoice, uiFontOptions).Width(200)
+		})
+		ui.Divider(c)
+		a.settingsRow(c, "界面字号", func() {
+			ui.Stepper(c, &a.uiFontSize, 11, 20, 1)
+			ui.Text(c, fmt.Sprintf("%.0f", a.uiFontSize)).FontSize(a.us(12)).Width(30).TextAlign(ui.End)
+		})
+	})
+	ui.Text(c, "界面字号会等比缩放整个应用窗口里的文字。").
+		FontSize(a.us(10.5)).TextColor(t.TextMuted)
+}
+
+// editorSettings is the "编辑器" section: the code editor's font.
+func (a *app) editorSettings(c *ui.Context) {
+	t := c.Theme()
+	a.settingsCard(c, func() {
+		a.settingsRow(c, "编辑器字体", func() {
+			ui.Select(c, &a.editorFontChoice, editorFontOptions).Width(200)
+		})
+		ui.Divider(c)
+		a.settingsRow(c, "编辑器字号", func() {
+			ui.Stepper(c, &a.editorFontSize, 10, 28, 1)
+			ui.Text(c, fmt.Sprintf("%.0f", a.editorFontSize)).FontSize(a.us(12)).Width(30).TextAlign(ui.End)
+		})
+	})
+	ui.Text(c, "只影响请求与响应报文编辑区，不影响其它界面文字。").
+		FontSize(a.us(10.5)).TextColor(t.TextMuted)
+}
+
+// settingsCard is a rounded group of rows inside a section.
+func (a *app) settingsCard(c *ui.Context, build func()) {
+	t := c.Theme()
+	ui.Column(c).Radius(10).Background(t.Surface).Border(1, t.Border).Clip().Children(build)
+}
+
+// settingsRow is one label-on-the-left, control-on-the-right row of a card.
+func (a *app) settingsRow(c *ui.Context, label string, control func()) {
+	ui.Row(c).Padding(11, 14).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, label).FontSize(a.us(12.5))
+		ui.Spacer(c)
+		control()
+	})
+}
+
+// segment is one choice of a small segmented control.
+func (a *app) segment(c *ui.Context, label string, active bool, onClick func()) {
+	t := c.Theme()
+	box := ui.Row(c).Padding(3, 12).Radius(6).OnClick(onClick)
+	switch {
+	case active:
+		box = box.Background(t.SurfacePressed)
+	case box.Hovered():
+		box = box.Background(t.SurfaceHover)
+	}
+	box.Children(func() {
+		col := t.TextMuted
+		if active {
+			col = t.Text
+		}
+		ui.Text(c, label).FontSize(a.us(11.5)).TextColor(col)
 	})
 }
 

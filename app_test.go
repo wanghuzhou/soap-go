@@ -586,9 +586,9 @@ func TestUIStatePersists(t *testing.T) {
 	a.sideW = 333
 	a.splitV = 55
 	a.splitH = 44
-	a.uiFontFamily = "Consolas"
+	a.uiFontChoice = "Consolas"
 	a.uiFontSize = 16
-	a.editorFontFamily = "Cascadia Code"
+	a.editorFontChoice = "Cascadia Code"
 	a.editorFontSize = 18
 	a.saveUIState()
 
@@ -600,9 +600,9 @@ func TestUIStatePersists(t *testing.T) {
 	if b.dark != false || b.splitSide != 1 || b.sideW != 333 || b.splitV != 55 || b.splitH != 44 {
 		t.Fatalf("restored = %+v", b.currentUI())
 	}
-	if b.uiFontFamily != "Consolas" || b.uiFontSize != 16 ||
-		b.editorFontFamily != "Cascadia Code" || b.editorFontSize != 18 {
-		t.Fatalf("restored fonts = %q %v %q %v", b.uiFontFamily, b.uiFontSize, b.editorFontFamily, b.editorFontSize)
+	if b.uiFontChoice != "Consolas" || b.uiFontSize != 16 ||
+		b.editorFontChoice != "Cascadia Code" || b.editorFontSize != 18 {
+		t.Fatalf("restored fonts = %q %v %q %v", b.uiFontChoice, b.uiFontSize, b.editorFontChoice, b.editorFontSize)
 	}
 }
 
@@ -612,11 +612,14 @@ func TestUIStatePersists(t *testing.T) {
 func TestFontSettingsApply(t *testing.T) {
 	a := newTestApp(t)
 	a.uiFontSize = 18
-	a.editorFontFamily = "Consolas"
+	a.editorFontChoice = "Consolas"
 	a.editorFontSize = 20
 
 	if got := a.theme().FontSize; got != 18 {
 		t.Fatalf("theme FontSize = %v, want 18", got)
+	}
+	if fontFamily(systemFontLabel) != "" {
+		t.Fatalf("system font choice = %q, want empty family", fontFamily(systemFontLabel))
 	}
 	want := 10 * float32(18/uiBaseFontSize())
 	if got := a.us(10); got != want {
@@ -637,9 +640,12 @@ func TestFontSettingsApply(t *testing.T) {
 		t.Fatalf("respEd font = %+v", a.respEd.Font)
 	}
 
-	// The settings dialog must build without panicking.
+	// The settings dialog must build without panicking, in both sections.
 	a.settingsOpen = true
 	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	tt.Frame()
+	a.settingsSection = 1
 	tt.Frame()
 	tt.Frame()
 }
