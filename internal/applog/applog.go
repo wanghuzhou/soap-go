@@ -22,7 +22,7 @@ const (
 	// DirName is the log directory created next to the data directory.
 	DirName = "logs"
 	// FileName is the active log file inside DirName.
-	FileName = "soap-web.log"
+	FileName = "soap.log"
 	// maxSize rotates the file once it grows past this many bytes; network
 	// failures on a long-running instance can add up quickly.
 	maxSize = 4 << 20
@@ -59,7 +59,7 @@ func Close() {
 	}
 }
 
-// Init points the standard logger at the console and at <dir>/soap-web.log.
+// Init points the standard logger at the console and at <dir>/soap.log.
 // It returns the file path; on failure the console logger is left untouched so
 // the caller can report the error and carry on.
 func Init(dir string) (string, error) {
@@ -97,7 +97,7 @@ func Init(dir string) (string, error) {
 	return path, nil
 }
 
-// rotate renames the current log to soap-web-<时间>.log, replacing an older file
+// rotate renames the current log to soap-<时间>.log, replacing an older file
 // with the same name. A failure is returned so the caller can decide whether to
 // keep appending to the current file; losing history beats refusing to log.
 func rotate(path string) error {

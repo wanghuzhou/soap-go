@@ -42,7 +42,7 @@ bin\soap-go.exe
 go build -trimpath -ldflags "-H windowsgui" -o bin/soap-go.exe .
 ```
 
-`-H windowsgui` 让 Windows 不额外弹出控制台窗口；日志写入数据目录旁的 `logs/soap-web.log`。
+`-H windowsgui` 让 Windows 不额外弹出控制台窗口；日志写入数据目录旁的 `logs/soap.log`。
 
 需要 **Go 1.27.3+**（MyGo 的版本要求）。
 
