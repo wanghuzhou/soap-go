@@ -166,7 +166,7 @@ func (a *app) sidebar(c *ui.Context) {
 			})
 		})
 		ui.Row(c).Padding(0, 12, 8, 12).Children(func() {
-			ui.TextInput(c, &a.search).Placeholder("搜索项目 / 服务 / 操作 / 请求").Grow(1).Ref(&a.searchRef)
+			ui.TextInput(c, &a.search).Placeholder("搜索接口").Grow(1).Ref(&a.searchRef)
 		})
 		ui.Scroll(c).Grow(1).Padding(4, 6, 6).Children(func() {
 			items := a.treeItems()
@@ -518,14 +518,14 @@ func (a *app) requestPanel(c *ui.Context) {
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, "XML 报文").FontSize(11).TextColor(t.TextMuted).Bold()
 					ui.Spacer(c)
-					if ui.Button(c, "格式化").Clicked() {
+					if ui.Button(c, "格式化").BorderWidth(0).Clicked() {
 						a.formatBody()
 					}
-					if ui.Button(c, "压缩").Clicked() {
+					if ui.Button(c, "压缩").BorderWidth(0).Clicked() {
 						a.minifyBody()
 					}
-					ui.Button(c, "复制为 curl").OnClick(a.copyCurl)
-					ui.Button(c, "保存请求").OnClick(a.saveCall)
+					ui.Button(c, "复制为 curl").BorderWidth(0).OnClick(a.copyCurl)
+					ui.Button(c, "保存请求").BorderWidth(0).OnClick(a.saveCall)
 				})
 				a.editorWithCopy(c, a.xmlEd, "请求报文已复制", func() string { return a.xmlEd.Buffer.String() })
 			})
