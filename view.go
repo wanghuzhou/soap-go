@@ -16,6 +16,8 @@ var (
 	iconSplitH = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M12 4.5v15"/></svg>`))
 	iconPlus   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`))
 	iconCopy   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>`))
+	iconSun    = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2M12 19.4v2M2.6 12h2M19.4 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>`))
+	iconMoon   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>`))
 )
 
 // ---- view ----
@@ -99,7 +101,7 @@ func (a *app) topBar(c *ui.Context) {
 			if m.Item("导出…").Chosen() {
 				a.exportOpen = true
 			}
-		})
+		}).BorderWidth(0)
 
 		// Workspace menu.
 		ui.PopoverMenuButton(c, "工作空间 · "+a.info.Name, func(m *ui.Menu) {
@@ -135,26 +137,18 @@ func (a *app) topBar(c *ui.Context) {
 			if m.Item("删除当前工作空间").Danger().Chosen() {
 				a.deleteWorkspace()
 			}
-		})
+		}).BorderWidth(0)
 		ui.Spacer(c)
 
-		// Search / command palette affordance.
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(4, 10).
-			Background(t.Background).Border(1, t.Border).Radius(7).
-			OnClick(func() { a.searchRef.SelectAll() }).Tooltip("聚焦搜索").Children(func() {
-			ui.Text(c, "搜索或跳转").FontSize(11.5).TextColor(t.TextMuted)
-			ui.Text(c, "Ctrl K").FontSize(10).TextColor(t.TextMuted).
-				Padding(1, 5).Background(t.SurfaceHover).Radius(4)
-		})
-
-		label := "深色"
-		if a.dark {
-			label = "浅色"
-		}
-		if ui.Button(c, label).Clicked() {
+		toggleTheme := func() {
 			a.dark = !a.dark
 			a.applyWindowButtons()
 			a.saveUIState()
+		}
+		if a.dark {
+			a.iconBtn(c, iconSun, "切换到浅色主题", toggleTheme)
+		} else {
+			a.iconBtn(c, iconMoon, "切换到深色主题", toggleTheme)
 		}
 	})
 	ui.Divider(c)
