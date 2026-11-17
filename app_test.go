@@ -262,7 +262,21 @@ func TestFormatXML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("formatXML: %v", err)
 	}
-	want := "<a>\n  <b>\n    1\n  </b>\n  <c x=\"1\"/>\n</a>"
+	want := "<a>\n  <b>1</b>\n  <c x=\"1\"/>\n</a>"
+	if out != want {
+		t.Fatalf("formatXML = %q, want %q", out, want)
+	}
+}
+
+// TestFormatXMLEmptyAndInline checks an empty <a></a> stays expanded, a source
+// <b/> stays self-closing, and text-only elements stay on one line.
+func TestFormatXMLEmptyAndInline(t *testing.T) {
+	in := `<r><a></a><b/><c>t</c><d>  </d></r>`
+	out, err := formatXML(in)
+	if err != nil {
+		t.Fatalf("formatXML: %v", err)
+	}
+	want := "<r>\n  <a></a>\n  <b/>\n  <c>t</c>\n  <d></d>\n</r>"
 	if out != want {
 		t.Fatalf("formatXML = %q, want %q", out, want)
 	}

@@ -1845,7 +1845,9 @@ func xmlTokenize(s string) ([]xmlTok, error) {
 }
 
 // formatXML re-indents an XML document while keeping every tag, namespace
-// prefix, attribute and CDATA section as written.
+// prefix, attribute and CDATA section as written. An element whose only content
+// is text stays on one line (`<a>test</a>`), and an empty `<a></a>` keeps that
+// form; a source `<b/>` stays self-closing.
 func formatXML(s string) (string, error) {
 	toks, err := xmlTokenize(strings.TrimSpace(s))
 	if err != nil {
@@ -1856,32 +1858,70 @@ func formatXML(s string) (string, error) {
 	}
 	var b strings.Builder
 	depth := 0
-	for _, tk := range toks {
+	indent := func() { b.WriteString(strings.Repeat("  ", depth)) }
+	for i := 0; i < len(toks); i++ {
+		tk := toks[i]
 		raw := strings.TrimSpace(tk.raw)
+		if tk.kind == 's' {
+			// Look ahead past structural whitespace: an empty element or an
+			// element with only inline content (text/CDATA/comment) is one line.
+			j := i + 1
+			var inline strings.Builder
+			for j < len(toks) {
+				n := toks[j]
+				if n.kind == 't' && strings.TrimSpace(n.raw) == "" {
+					j++
+					continue
+				}
+				if isInlineXMLToken(n) {
+					inline.WriteString(n.raw)
+					j++
+					continue
+				}
+				break
+			}
+			if j < len(toks) && toks[j].kind == 'e' {
+				indent()
+				b.WriteString(raw)
+				b.WriteString(inline.String())
+				b.WriteString(strings.TrimSpace(toks[j].raw))
+				b.WriteString("\n")
+				i = j
+				continue
+			}
+			indent()
+			b.WriteString(raw)
+			b.WriteString("\n")
+			depth++
+			continue
+		}
 		if raw == "" {
 			continue
 		}
-		switch tk.kind {
-		case 'e':
+		if tk.kind == 'e' {
 			depth--
 			if depth < 0 {
 				depth = 0
 			}
-			b.WriteString(strings.Repeat("  ", depth))
-			b.WriteString(raw)
-			b.WriteString("\n")
-		case 's':
-			b.WriteString(strings.Repeat("  ", depth))
-			b.WriteString(raw)
-			b.WriteString("\n")
-			depth++
-		default: // self-closing, text, comment, CDATA, processing instruction
-			b.WriteString(strings.Repeat("  ", depth))
-			b.WriteString(raw)
-			b.WriteString("\n")
 		}
+		indent()
+		b.WriteString(raw)
+		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// isInlineXMLToken reports whether a token is content that may sit inside an
+// otherwise empty element on one line: text, a CDATA section or a comment.
+func isInlineXMLToken(tk xmlTok) bool {
+	switch tk.kind {
+	case 't':
+		return strings.TrimSpace(tk.raw) != ""
+	case 'q':
+		r := strings.TrimSpace(tk.raw)
+		return strings.HasPrefix(r, "<![CDATA[") || strings.HasPrefix(r, "<!--")
+	}
+	return false
 }
 
 // prettyXML formats a response for display, leaving malformed bodies as-is.
