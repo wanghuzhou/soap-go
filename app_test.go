@@ -277,6 +277,39 @@ func TestMinify(t *testing.T) {
 	}
 }
 
+// TestFormatXMLPreservesEdgeCases checks the tokenizer keeps namespace
+// prefixes, a ">" inside an attribute value and a CDATA section intact, which a
+// regex tokenizer used to break.
+func TestFormatXMLPreservesEdgeCases(t *testing.T) {
+	in := `<soap:Envelope xmlns:soap="http://x" a="1>2"><soap:Body><![CDATA[ x > < y ]]></soap:Body></soap:Envelope>`
+	out, err := formatXML(in)
+	if err != nil {
+		t.Fatalf("formatXML: %v", err)
+	}
+	for _, want := range []string{
+		"<soap:Envelope",
+		`a="1>2"`,
+		"<![CDATA[ x > < y ]]>",
+		"</soap:Envelope>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("formatXML lost %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestMinifyPreservesCDataAndText checks minify drops only structural
+// whitespace and keeps the exact text and CDATA content.
+func TestMinifyPreservesCDataAndText(t *testing.T) {
+	a := newTestApp(t)
+	a.xmlEd.Buffer.Reset("<a>\n  <b> hi </b>\n  <c><![CDATA[ x > < y ]]></c>\n</a>")
+	a.minifyBody()
+	want := `<a><b> hi </b><c><![CDATA[ x > < y ]]></c></a>`
+	if got := a.xmlEd.Buffer.String(); got != want {
+		t.Fatalf("minify = %q, want %q", got, want)
+	}
+}
+
 // TestBuildSendRequest checks the payload the Send button hands to transport:
 // project headers, sample headers, the default SOAPAction and Content-Type, and
 // the editor body.

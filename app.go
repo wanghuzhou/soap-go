@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -1354,11 +1355,26 @@ func (a *app) formatBody() {
 	a.xmlEd.Buffer.Reset(out)
 }
 
-// minifyBody collapses inter-tag whitespace.
+// minifyBody removes structural whitespace between tags, keeping text and
+// CDATA content exactly as written.
 func (a *app) minifyBody() {
-	re := regexp.MustCompile(`>\s+<`)
-	s := strings.TrimSpace(a.xmlEd.Buffer.String())
-	a.xmlEd.Buffer.Reset(re.ReplaceAllString(s, "><"))
+	toks, err := xmlTokenize(strings.TrimSpace(a.xmlEd.Buffer.String()))
+	if err != nil {
+		a.errMsg = "压缩失败：" + err.Error()
+		return
+	}
+	var b strings.Builder
+	for _, tk := range toks {
+		if tk.kind == 't' {
+			if strings.TrimSpace(tk.raw) == "" {
+				continue // structural whitespace only
+			}
+			b.WriteString(tk.raw) // keep the text value's own spaces
+			continue
+		}
+		b.WriteString(strings.TrimSpace(tk.raw))
+	}
+	a.xmlEd.Buffer.Reset(b.String())
 }
 
 // copyCurl puts an equivalent curl command on the clipboard.
@@ -1776,41 +1792,92 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-var tagRe = regexp.MustCompile(`(?s)<[^>]*>|[^<]+`)
+// xmlTok is one lexical token of an XML document, with its original bytes.
+type xmlTok struct {
+	kind byte   // 's' start, 'e' end, 'x' self-closing, 't' text, 'q' comment/CDATA/PI/directive
+	raw  string // the token exactly as written
+}
 
-// formatXML re-indents an XML document while keeping every tag and prefix as
-// written (encoding/xml would rewrite names, which breaks SOAP).
+// xmlTokenize splits a document into tokens with encoding/xml's tokenizer, but
+// keeps each token's original bytes (via Decoder.InputOffset), so namespace
+// prefixes, attribute quoting, entity references and CDATA sections survive.
+// A regex cannot tokenize XML correctly: a ">" may sit inside an attribute
+// value, and "<" inside CDATA or a comment.
+func xmlTokenize(s string) ([]xmlTok, error) {
+	s = strings.TrimPrefix(s, "\ufeff")
+	dec := xml.NewDecoder(strings.NewReader(s))
+	dec.Strict = false
+	var toks []xmlTok
+	prev := int64(0)
+	for {
+		t, err := dec.RawToken()
+		if err == io.EOF {
+			return toks, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		end := dec.InputOffset()
+		raw := s[prev:end]
+		prev = end
+		switch t.(type) {
+		case xml.StartElement:
+			if strings.HasSuffix(strings.TrimSpace(raw), "/>") {
+				toks = append(toks, xmlTok{'x', raw})
+			} else {
+				toks = append(toks, xmlTok{'s', raw})
+			}
+		case xml.EndElement:
+			if strings.TrimSpace(raw) == "" {
+				continue // synthetic end tag of a self-closing element
+			}
+			toks = append(toks, xmlTok{'e', raw})
+		case xml.CharData:
+			if strings.HasPrefix(strings.TrimSpace(raw), "<![CDATA[") {
+				toks = append(toks, xmlTok{'q', raw})
+			} else {
+				toks = append(toks, xmlTok{'t', raw})
+			}
+		default: // xml.Comment, xml.ProcInst, xml.Directive
+			toks = append(toks, xmlTok{'q', raw})
+		}
+	}
+}
+
+// formatXML re-indents an XML document while keeping every tag, namespace
+// prefix, attribute and CDATA section as written.
 func formatXML(s string) (string, error) {
-	tokens := tagRe.FindAllString(strings.TrimSpace(s), -1)
-	if len(tokens) == 0 {
+	toks, err := xmlTokenize(strings.TrimSpace(s))
+	if err != nil {
+		return "", err
+	}
+	if len(toks) == 0 {
 		return s, nil
 	}
 	var b strings.Builder
 	depth := 0
-	for _, tok := range tokens {
-		t := strings.TrimSpace(tok)
-		if t == "" {
+	for _, tk := range toks {
+		raw := strings.TrimSpace(tk.raw)
+		if raw == "" {
 			continue
 		}
-		if strings.HasPrefix(t, "<") {
-			closing := strings.HasPrefix(t, "</")
-			self := strings.HasSuffix(t, "/>")
-			decl := strings.HasPrefix(t, "<?") || strings.HasPrefix(t, "<!")
-			if closing {
-				depth--
-				if depth < 0 {
-					depth = 0
-				}
+		switch tk.kind {
+		case 'e':
+			depth--
+			if depth < 0 {
+				depth = 0
 			}
 			b.WriteString(strings.Repeat("  ", depth))
-			b.WriteString(t)
+			b.WriteString(raw)
 			b.WriteString("\n")
-			if !closing && !self && !decl {
-				depth++
-			}
-		} else {
+		case 's':
 			b.WriteString(strings.Repeat("  ", depth))
-			b.WriteString(t)
+			b.WriteString(raw)
+			b.WriteString("\n")
+			depth++
+		default: // self-closing, text, comment, CDATA, processing instruction
+			b.WriteString(strings.Repeat("  ", depth))
+			b.WriteString(raw)
 			b.WriteString("\n")
 		}
 	}
