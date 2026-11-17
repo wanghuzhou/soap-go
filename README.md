@@ -1,8 +1,6 @@
 # soap-go
 
-SOAP / WSDL 接口调试桌面工具，用 **Go + MyGo 原生 UI**（纯 Go 绘制，无 WebView）重写 soap-web，并复用其同一套业务包与数据格式。
-
-> 一句话：soap-web 的原生桌面版本。
+SOAP / WSDL 接口调试桌面工具，用 **Go + MyGo 原生 UI**（纯 Go 绘制，无 WebView）
 
 ![主界面](docs/screenshots/example1.png)
 
@@ -92,6 +90,6 @@ internal/      从 soap-web 移植的业务包
 - 自动创建 GitHub Release，附 `SHA256SUMS.txt`
 ## 说明
 
-- 界面由 MyGo 的原生 UI 工具包绘制，不依赖 WebView；业务包直接复用 soap-web，避免重复实现。
+- 界面由 MyGo 的原生 UI 工具包绘制，不依赖 WebView
 - 项目树节点的「新建服务 / 新建操作 / 新建请求 / 重命名 / 复制 / 删除」在**右键菜单**里。
 - 已知差异：原 web 版的树键盘导航未实现；提示采用底部状态栏而非浮层 Toast。
