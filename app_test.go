@@ -637,6 +637,7 @@ func TestUIStatePersists(t *testing.T) {
 	a.uiFontSize = 16
 	a.editorFontChoice = "Cascadia Code"
 	a.editorFontSize = 18
+	a.accent = "#10b981"
 	a.saveUIState()
 
 	reg2, err := workspace.Open(dir, "")
@@ -650,6 +651,35 @@ func TestUIStatePersists(t *testing.T) {
 	if b.uiFontChoice != "Consolas" || b.uiFontSize != 16 ||
 		b.editorFontChoice != "Cascadia Code" || b.editorFontSize != 18 {
 		t.Fatalf("restored fonts = %q %v %q %v", b.uiFontChoice, b.uiFontSize, b.editorFontChoice, b.editorFontSize)
+	}
+	if b.accent != "#10b981" {
+		t.Fatalf("restored accent = %q", b.accent)
+	}
+}
+
+// TestAccentSettingApplies checks the picked theme color reaches the accent
+// fields used by POST tags, primary buttons and splitters, in both modes, and
+// that resetting brings the default purple back.
+func TestAccentSettingApplies(t *testing.T) {
+	a := newTestApp(t)
+	a.setAccent("#10b981")
+	for _, dark := range []bool{false, true} {
+		a.dark = dark
+		if got := a.theme().Accent; got != ui.Hex("#10b981") {
+			t.Fatalf("dark=%v accent = %v, want #10b981", dark, got)
+		}
+	}
+	// An unknown color is ignored rather than written into the theme.
+	a.setAccent("#zzzzzz")
+	if a.accent != "#10b981" {
+		t.Fatalf("invalid accent changed the choice to %q", a.accent)
+	}
+	a.setAccent("")
+	if a.accent != "" {
+		t.Fatalf("reset left accent = %q", a.accent)
+	}
+	if got := a.theme().Accent; got != ui.Hex(defaultAccent) {
+		t.Fatalf("default accent = %v, want %v", got, ui.Hex(defaultAccent))
 	}
 }
 

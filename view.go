@@ -1085,6 +1085,9 @@ func (a *app) settingsContent(c *ui.Context) {
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			if a.settingsSection != 2 && ui.Button(c, "恢复默认").Clicked() {
 				a.resetFontSettings()
+				if a.settingsSection == 0 {
+					a.setAccent("")
+				}
 			}
 			if ui.PrimaryButton(c, "完成").Clicked() {
 				a.settingsOpen = false
@@ -1105,6 +1108,10 @@ func (a *app) appearanceSettings(c *ui.Context) {
 			})
 		})
 		ui.Divider(c)
+		a.settingsRow(c, "主题色", func() {
+			a.accentSwatches(c)
+		})
+		ui.Divider(c)
 		a.settingsRow(c, "界面字体", func() {
 			ui.Select(c, &a.uiFontChoice, uiFontOptions).Width(200)
 		})
@@ -1115,6 +1122,34 @@ func (a *app) appearanceSettings(c *ui.Context) {
 	})
 	ui.Text(c, "界面字号会等比缩放整个应用窗口里的文字。").
 		FontSize(a.us(10.5)).TextColor(t.TextMuted)
+}
+
+// accentSwatches is the theme color picker: one round swatch per preset, with a
+// check on the active one.
+func (a *app) accentSwatches(c *ui.Context) {
+	t := c.Theme()
+	active := accentHex(a.accent)
+	ui.Row(c).Gap(9).AlignItems(ui.Center).Children(func() {
+		for _, p := range accentPresets {
+			p := p
+			selected := p.Color == active
+			ring := ui.Row(c).Width(24).Height(24).Center().Justify(ui.Center).Radius(12).
+				OnClick(func() { a.setAccent(p.Color) }).Tooltip(p.Name)
+			if selected {
+				ring = ring.Border(2, t.Text)
+			}
+			ring.Children(func() {
+				dot := ui.Row(c).Width(16).Height(16).Center().Justify(ui.Center).Radius(8).
+					Background(ui.Hex(p.Color))
+				dot.Children(func() {
+					if selected {
+						ui.Text(c, "✓").FontSize(a.us(9)).Bold().
+							TextColor(contrastText(ui.Hex(p.Color)))
+					}
+				})
+			})
+		}
+	})
 }
 
 // editorSettings is the "编辑器" section: the code editor's font.

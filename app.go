@@ -59,6 +59,8 @@ type uiState struct {
 	UIFontSize     float64 `json:"uiFontSize,omitempty"`
 	EditorFont     string  `json:"editorFont,omitempty"`
 	EditorFontSize float64 `json:"editorFontSize,omitempty"`
+	// Accent is the picked theme color, or "" for the theme's default.
+	Accent string `json:"accent,omitempty"`
 }
 
 // app is the whole application state; the view is a function of it.
@@ -72,6 +74,8 @@ type app struct {
 	dark       bool
 	darkTheme  *ui.Theme
 	lightTheme *ui.Theme
+	// accent is the picked theme color ("" for the theme's default).
+	accent string
 
 	sideW     float32
 	splitV    float32
@@ -206,6 +210,7 @@ func (a *app) currentUI() uiState {
 		Dark: a.dark, SplitSide: a.splitSide, SideW: a.sideW, SplitV: a.splitV, SplitH: a.splitH,
 		UIFont: a.uiFontChoice, UIFontSize: a.uiFontSize,
 		EditorFont: a.editorFontChoice, EditorFontSize: a.editorFontSize,
+		Accent: a.accent,
 	}
 }
 
@@ -233,6 +238,7 @@ func (a *app) loadUIState() {
 			if st.EditorFontSize > 0 {
 				a.editorFontSize = st.EditorFontSize
 			}
+			a.accent = normalizeAccent(st.Accent)
 		}
 	}
 	a.savedUI = a.currentUI()
@@ -284,6 +290,9 @@ func (a *app) theme() *ui.Theme {
 	if a.uiFontSize > 0 {
 		th.FontSize = float32(a.uiFontSize)
 	}
+	// The accent covers POST tags, primary buttons, splitters and focus rings,
+	// so one pick repaints the whole chrome.
+	applyAccent(th, accentHex(a.accent))
 	return th
 }
 
@@ -374,6 +383,19 @@ func (a *app) setDark(dark bool) {
 	}
 	a.dark = dark
 	a.applyWindowButtons()
+	a.saveUIState()
+}
+
+// setAccent picks the theme color and persists it. An empty string restores
+// the current theme's default accent.
+func (a *app) setAccent(hex string) {
+	if hex != "" && normalizeAccent(hex) == "" {
+		return
+	}
+	if a.accent == hex {
+		return
+	}
+	a.accent = hex
 	a.saveUIState()
 }
 

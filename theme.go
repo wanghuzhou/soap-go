@@ -36,6 +36,75 @@ func newDarkTheme() *ui.Theme {
 	return t
 }
 
+// accentPreset is one theme color the settings dialog offers: a display name
+// and the hex color it uses in both the light and the dark theme.
+type accentPreset struct {
+	Name  string
+	Color string
+}
+
+// accentPresets are the theme colors, in the order the settings dialog shows
+// them. The first is the default.
+var accentPresets = []accentPreset{
+	{"紫", "#6366f1"},
+	{"蓝", "#3b82f6"},
+	{"青", "#06b6d4"},
+	{"绿", "#10b981"},
+	{"橙", "#f97316"},
+	{"玫红", "#ec4899"},
+	{"红", "#ef4444"},
+	{"灰蓝", "#64748b"},
+}
+
+// defaultAccent is the theme color used until the user picks another. It is
+// the same purple as the first preset, so that preset always shows as the
+// active swatch.
+const defaultAccent = "#6366f1"
+
+// normalizeAccent keeps only a known preset, so a hand-edited ui-state.json
+// cannot make ui.Hex panic, and an empty string means the theme's default.
+func normalizeAccent(choice string) string {
+	for _, p := range accentPresets {
+		if p.Color == choice {
+			return choice
+		}
+	}
+	return ""
+}
+
+// accentHex resolves the user's choice (or the default) to a color.
+func accentHex(choice string) string {
+	if normalizeAccent(choice) != "" {
+		return choice
+	}
+	return defaultAccent
+}
+
+// contrastText returns near-black or white, whichever reads better on c.
+func contrastText(c ui.Color) ui.Color {
+	l := 0.2126*float32(c.R) + 0.7152*float32(c.G) + 0.0722*float32(c.B)
+	if l > 150 {
+		return ui.Hex("#111827")
+	}
+	return ui.Hex("#ffffff")
+}
+
+// applyAccent repaints the accent-dependent fields of a theme from one base
+// color, so the whole app (POST tags, primary buttons, splitters, focus rings)
+// follows the picked theme color. It runs every frame from one base hex, so a
+// change or a reset never leaves a stale hover/pressed shade behind.
+func applyAccent(t *ui.Theme, hex string) {
+	accent := ui.Hex(hex)
+	t.Accent = accent
+	t.AccentHover = accent.Mix(ui.Hex("#ffffff"), 0.16)
+	t.AccentPressed = accent.Mix(ui.Hex("#000000"), 0.16)
+	t.AccentText = contrastText(accent)
+	// The inactive variant fades toward the canvas, and the selection is a
+	// light tint of the accent over it.
+	t.InactiveAccent = accent.Mix(t.Background, 0.65)
+	t.Selection = accent.Mix(t.Background, 0.8)
+}
+
 func newLightTheme() *ui.Theme {
 	t := ui.LightTheme()
 	// The workbench background matches the sidebar's surface: the user wants
