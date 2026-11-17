@@ -182,6 +182,80 @@ func TestToolbarButtonClicks(t *testing.T) {
 	}
 }
 
+// TestInlineRenameCommits checks the inline rename commits through the same
+// store path as the old dialogs, for both a request sample and a project.
+func TestInlineRenameCommits(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	svc, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	op, _ := a.st.AddOperation(p.ID, svc.ID, model.Operation{Name: "O"})
+	call, _ := a.st.AddCall(p.ID, svc.ID, op.ID, model.Call{Title: "旧名字", Request: "<a/>"})
+	a.reload()
+
+	a.startInlineRename(call.ID, "旧名字")
+	a.renameInput = "新名字"
+	a.commitInlineRename(treeItem{kind: "call", pid: p.ID, sid: svc.ID, oid: op.ID, cid: call.ID})
+	if got := a.projects[0].Services[0].Operations[0].Calls[0].Title; got != "新名字" {
+		t.Fatalf("call title = %q", got)
+	}
+	if a.renamingID != "" {
+		t.Fatal("inline rename did not finish")
+	}
+
+	a.startInlineRename(p.ID, "P")
+	a.renameInput = "新项目"
+	a.commitInlineRename(treeItem{kind: "project", pid: p.ID})
+	if got := a.projects[0].Name; got != "新项目" {
+		t.Fatalf("project name = %q", got)
+	}
+
+	// Rendering a row as an inline editor must not panic.
+	a.startInlineRename(call.ID, "旧名字")
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	tt.Frame()
+
+	// Escape/cancel drops the draft without touching the tree.
+	a.startInlineRename(p.ID, "不要")
+	a.renameInput = "不要"
+	a.cancelInlineRename()
+	if a.renamingID != "" || a.renameInput != "" {
+		t.Fatal("cancel left rename state")
+	}
+	if got := a.projects[0].Name; got != "新项目" {
+		t.Fatalf("cancel changed the name to %q", got)
+	}
+}
+
+// TestInlineRenameViaUI drives the inline editor through the real view: focus
+// the input, type a new title and press Enter.
+func TestInlineRenameViaUI(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	svc, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	op, _ := a.st.AddOperation(p.ID, svc.ID, model.Operation{Name: "O"})
+	call, _ := a.st.AddCall(p.ID, svc.ID, op.ID, model.Call{Title: "旧名字", Request: "<a/>"})
+	a.reload()
+	a.openCall(p.ID, svc.ID, op.ID, call.ID)
+	a.startInlineRename(call.ID, "旧名字")
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	tt.Frame()
+	tt.Type("新名字")
+	tt.Frame()
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+
+	if got := a.projects[0].Services[0].Operations[0].Calls[0].Title; got != "新名字" {
+		t.Fatalf("call title = %q", got)
+	}
+}
+
 func TestFormatXML(t *testing.T) {
 	in := `<a><b>1</b><c x="1"/></a>`
 	out, err := formatXML(in)

@@ -77,11 +77,11 @@ func (a *app) topBar(c *ui.Context) {
 		// File menu.
 		ui.PopoverMenuButton(c, "文件", func(m *ui.Menu) {
 			if m.Item("新建项目…").Chosen() {
-				a.newProjectOpen, a.projectModalKind, a.nameInput = true, 0, ""
+				a.newProjectOpen, a.nameInput = true, ""
 			}
 			if m.Item("重命名项目…").Chosen() {
 				if p := a.selectedProject(); p != nil {
-					a.newProjectOpen, a.projectModalKind, a.nameInput = true, 1, p.Name
+					a.startInlineRename(p.ID, p.Name)
 				}
 			}
 			if m.Item("删除项目").Danger().Chosen() {
@@ -162,7 +162,7 @@ func (a *app) sidebar(c *ui.Context) {
 			ui.Badge(c, fmt.Sprint(len(a.projects)))
 			ui.Spacer(c)
 			a.iconBtn(c, iconPlus, "新建项目", func() {
-				a.newProjectOpen, a.projectModalKind, a.nameInput = true, 0, ""
+				a.newProjectOpen, a.nameInput = true, ""
 			})
 		})
 		ui.Row(c).Padding(0, 12, 8, 12).Children(func() {
@@ -246,14 +246,17 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 		(it.kind == "service" && it.pid == a.pid && it.sid == a.sid && a.oid == "") ||
 		(it.kind == "operation" && it.oid == a.oid && a.cid == "")
 
+	editing := a.renamingID != "" && a.renamingID == renameTargetID(it)
 	row := ui.Row(c).Gap(6).AlignItems(ui.Center).
-		Padding(4, 6, 4, float32(4+it.depth*14)).
-		OnClick(func() { a.selectTree(it) }).
-		ContextMenu(func(m *ui.Menu) { a.treeContextMenu(m, it) })
+		Padding(4, 6, 4, float32(4+it.depth*14))
+	if !editing {
+		row = row.OnClick(func() { a.selectTree(it) }).
+			ContextMenu(func(m *ui.Menu) { a.treeContextMenu(m, it) })
+	}
 	switch {
 	case selected:
 		row = row.Background(t.Accent.Alpha(0.14)).Radius(6)
-	case row.Hovered():
+	case !editing && row.Hovered():
 		row = row.Background(t.SurfaceHover).Radius(6)
 	}
 	row.Children(func() {
@@ -267,13 +270,15 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			if it.expanded {
 				caret = "▾"
 			}
-			ui.Text(c, caret).FontSize(9.5).TextColor(t.TextMuted).Width(11).
-				OnClick(func() {
+			ct := ui.Text(c, caret).FontSize(9.5).TextColor(t.TextMuted).Width(11)
+			if !editing {
+				ct.OnClick(func() {
 					switch it.kind {
 					case "project", "service", "operation":
 						a.toggleExpanded(nodeKey(it), true)
 					}
 				})
+			}
 		} else {
 			ui.Text(c, "").Width(11)
 		}
@@ -282,15 +287,28 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 		} else {
 			ui.Text(c, kindGlyph(it.kind)).FontSize(11).TextColor(kindColor(t, it.kind)).Width(14)
 		}
-		lc := t.Text
-		if it.kind == "call" {
-			lc = t.TextMuted
+		if editing {
+			inp := ui.TextInput(c, &a.renameInput).Grow(1).MinWidth(0).Ref(&a.renameRef).
+				OnSubmit(func() { a.commitInlineRename(it) }).
+				OnShortcut(0, ui.KeyEscape, func() { a.cancelInlineRename() })
+			if inp.Focused() {
+				a.renameFocused = true
+			} else if a.renameFocused {
+				// Clicking outside the tree commits the draft, like blur in an
+				// inline editor.
+				a.commitInlineRename(it)
+			}
+		} else {
+			lc := t.Text
+			if it.kind == "call" {
+				lc = t.TextMuted
+			}
+			lbl := ui.Text(c, it.label).FontSize(12.5).TextColor(lc).Grow(1).MinWidth(0).SingleLine()
+			if selected || it.kind == "project" || it.kind == "operation" {
+				lbl = lbl.Bold()
+			}
+			_ = lbl
 		}
-		lbl := ui.Text(c, it.label).FontSize(12.5).TextColor(lc).Grow(1).MinWidth(0).SingleLine()
-		if selected || it.kind == "project" || it.kind == "operation" {
-			lbl = lbl.Bold()
-		}
-		_ = lbl
 		switch {
 		case it.kind == "call" && it.status > 0:
 			col := t.Success
@@ -307,6 +325,9 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 // treeContextMenu is the right-click menu of a tree row: the create/rename/
 // delete actions of that node, where the node is.
 func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
+	if a.renamingID != "" {
+		a.cancelInlineRename()
+	}
 	switch it.kind {
 	case "project":
 		a.pid, a.sid, a.oid, a.cid = it.pid, "", "", ""
@@ -318,7 +339,7 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			if p := a.findProject(it.pid); p != nil {
 				name = p.Name
 			}
-			a.newProjectOpen, a.projectModalKind, a.nameInput = true, 1, name
+			a.startInlineRename(it.pid, name)
 		}
 		if m.Item("代理设置…").Chosen() {
 			a.openProxy()
@@ -354,7 +375,7 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			a.openCall(it.pid, it.sid, it.oid, it.cid)
 		}
 		if m.Item("重命名请求…").Chosen() {
-			a.treeModalOpen, a.treeModalKind, a.nameInput = true, 3, it.label
+			a.startInlineRename(it.cid, it.label)
 		}
 		if m.Item("复制请求样例").Chosen() {
 			a.duplicateCall()
@@ -391,6 +412,9 @@ func nodeKey(it treeItem) string {
 }
 
 func (a *app) selectTree(it treeItem) {
+	if a.renamingID != "" {
+		a.cancelInlineRename()
+	}
 	switch it.kind {
 	case "project":
 		a.pid, a.sid, a.oid, a.cid = it.pid, "", "", ""
@@ -849,11 +873,7 @@ func (a *app) newProjectModal(c *ui.Context) {
 					a.newProjectOpen = false
 				}
 				if ui.PrimaryButton(c, "确定").Clicked() {
-					if a.projectModalKind == 1 {
-						a.renameProject(a.nameInput)
-					} else {
-						a.createProject(a.nameInput)
-					}
+					a.createProject(a.nameInput)
 					a.newProjectOpen = false
 				}
 			})
@@ -899,8 +919,7 @@ func (a *app) workspaceModal(c *ui.Context) {
 	})
 }
 
-// treeModal handles the small name prompts for services, operations and
-// request titles.
+// treeModal handles the small name prompts for services and operations.
 func (a *app) treeModal(c *ui.Context) {
 	t := c.Theme()
 	ui.Modal(c, &a.treeModalOpen, func() {
@@ -908,8 +927,6 @@ func (a *app) treeModal(c *ui.Context) {
 		switch a.treeModalKind {
 		case 2:
 			title, placeholder = "新建操作", "操作名称"
-		case 3:
-			title, placeholder = "重命名请求", "请求名称"
 		}
 		ui.Column(c).Width(420).Gap(12).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -930,8 +947,6 @@ func (a *app) treeModal(c *ui.Context) {
 						a.addService(a.nameInput)
 					case 2:
 						a.addOperation(a.nameInput)
-					case 3:
-						a.renameCall(a.nameInput)
 					}
 					a.treeModalOpen = false
 				}

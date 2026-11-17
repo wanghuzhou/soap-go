@@ -90,25 +90,30 @@ type app struct {
 	search    string
 	searchRef ui.Ref
 
+	// Inline rename in the tree: the node id being edited and its draft name.
+	renamingID    string
+	renameInput   string
+	renameFocused bool
+	renameRef     ui.Ref
+
 	// Dialogs.
-	importOpen       bool
-	importKind       int // 0 chooser, 1 soapUI, 2 WSDL file, 3 WSDL URL
-	importURL        string
-	importProxySel   string
-	exportOpen       bool
-	keepProxy        bool
-	proxyOpen        bool
-	newProjectOpen   bool
-	projectModalKind int // 0 create, 1 rename
-	treeModalOpen    bool
-	treeModalKind    int // 1 add service, 2 add operation, 3 rename call
-	confirmOpen      bool
-	confirmText      string
-	confirmAction    func()
-	wsOpen           bool
-	wsKind           int // 0 create, 1 rename, 2 import
-	wsImportPath     string
-	nameInput        string
+	importOpen     bool
+	importKind     int // 0 chooser, 1 soapUI, 2 WSDL file, 3 WSDL URL
+	importURL      string
+	importProxySel string
+	exportOpen     bool
+	keepProxy      bool
+	proxyOpen      bool
+	newProjectOpen bool
+	treeModalOpen  bool
+	treeModalKind  int // 1 add service, 2 add operation
+	confirmOpen    bool
+	confirmText    string
+	confirmAction  func()
+	wsOpen         bool
+	wsKind         int // 0 create, 1 rename, 2 import
+	wsImportPath   string
+	nameInput      string
 
 	// Editor preferences and dirty tracking.
 	maskSecrets   bool
@@ -303,6 +308,9 @@ func (a *app) openFirstCall() {
 
 // openCall selects a call, opens a tab for it and loads it into the editor.
 func (a *app) openCall(pid, sid, oid, cid string) {
+	if a.renamingID != "" {
+		a.cancelInlineRename()
+	}
 	a.pid, a.sid, a.oid, a.cid = pid, sid, oid, cid
 	_, _, _, c := a.locate()
 	if c == nil {
@@ -436,6 +444,60 @@ func (a *app) callTitle(key string) string {
 // selectedProject returns the project of the selection, if any.
 func (a *app) selectedProject() *model.Project {
 	return a.findProject(a.pid)
+}
+
+// startInlineRename turns the tree node id into an input holding name, focused
+// with its text selected, instead of opening a dialog.
+func (a *app) startInlineRename(id, name string) {
+	if id == "" {
+		return
+	}
+	a.renamingID = id
+	a.renameInput = name
+	a.renameFocused = false
+	a.renameRef.SelectAll()
+}
+
+// cancelInlineRename drops an inline rename without changing the tree.
+func (a *app) cancelInlineRename() {
+	a.renamingID = ""
+	a.renameInput = ""
+	a.renameFocused = false
+}
+
+// commitInlineRename writes the draft name back to the node being edited.
+func (a *app) commitInlineRename(it treeItem) {
+	id := renameTargetID(it)
+	if id == "" || a.renamingID != id {
+		return
+	}
+	name := strings.TrimSpace(a.renameInput)
+	a.renamingID = ""
+	a.renameInput = ""
+	a.renameFocused = false
+	if name == "" {
+		return
+	}
+	switch it.kind {
+	case "project":
+		a.pid, a.sid, a.oid, a.cid = it.pid, "", "", ""
+		a.renameProject(name)
+	case "call":
+		a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, it.cid
+		a.renameCall(name)
+	}
+}
+
+// renameTargetID returns the id an inline rename edits, or "" when the row is
+// not renameable.
+func renameTargetID(it treeItem) string {
+	switch it.kind {
+	case "project":
+		return it.pid
+	case "call":
+		return it.cid
+	}
+	return ""
 }
 
 // saveCall writes the form back to the selected call.
