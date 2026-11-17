@@ -715,6 +715,81 @@ func TestTabDirtyDot(t *testing.T) {
 	}
 }
 
+// TestContextMenuRightClickKeepsSelection checks that opening a node's context
+// menu does not move the selection, so a following save cannot overwrite the
+// right-clicked call with the editor's other call.
+func TestContextMenuRightClickKeepsSelection(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	s, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	o, _ := a.st.AddOperation(p.ID, s.ID, model.Operation{Name: "O"})
+	c1, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C1", Request: "<first/>"})
+	c2, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C2", Request: "<second/>"})
+	a.reload()
+	a.openCall(p.ID, s.ID, o.ID, c1.ID)
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	tt.Frame()
+	if err := tt.RightClick("C2"); err != nil {
+		t.Fatalf("right-click C2: %v", err)
+	}
+	tt.Frame()
+	tt.CloseMenu()
+
+	if a.cid != c1.ID {
+		t.Fatalf("right-click moved selection to %q, want %q", a.cid, c1.ID)
+	}
+	if got := a.xmlEd.Buffer.String(); got != "<first/>" {
+		t.Fatalf("right-click changed the editor: %q", got)
+	}
+
+	// Saving after a right-click must keep C1 and leave C2 untouched.
+	a.saveCall()
+	got, _ := a.st.Get(p.ID)
+	for _, c := range got.Services[0].Operations[0].Calls {
+		switch c.ID {
+		case c1.ID:
+			if c.Request != "<first/>" {
+				t.Fatalf("C1 request changed to %q", c.Request)
+			}
+		case c2.ID:
+			if c.Request != "<second/>" {
+				t.Fatalf("C2 overwritten with %q", c.Request)
+			}
+		}
+	}
+}
+
+// TestSendRequiresSelectedCall checks Send refuses when no request sample is
+// open, instead of sending the editor's previous payload.
+func TestSendRequiresSelectedCall(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	s, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	o, _ := a.st.AddOperation(p.ID, s.ID, model.Operation{Name: "O", Endpoint: "http://example.test/soap"})
+	c, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C", Endpoint: "http://example.test/soap", Request: "<a/>"})
+	a.reload()
+	a.openCall(p.ID, s.ID, o.ID, c.ID)
+
+	a.pid, a.sid, a.oid, a.cid = p.ID, "", "", ""
+	if _, _, err := a.buildSendRequest(); err == nil {
+		t.Fatal("Send allowed with only a project selected")
+	}
+	a.pid, a.sid, a.oid, a.cid = p.ID, s.ID, "", ""
+	if _, _, err := a.buildSendRequest(); err == nil {
+		t.Fatal("Send allowed with only a service selected")
+	}
+	a.pid, a.sid, a.oid, a.cid = p.ID, s.ID, o.ID, c.ID
+	if _, _, err := a.buildSendRequest(); err != nil {
+		t.Fatalf("valid selection rejected: %v", err)
+	}
+}
+
 // TestSettingsSizeStepper checks the minus and plus buttons of the font-size
 // control step the value by one and stop at the bounds.
 func TestSettingsSizeStepper(t *testing.T) {

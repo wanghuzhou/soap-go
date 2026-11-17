@@ -614,8 +614,9 @@ func (a *app) commitInlineRename(it treeItem) {
 		a.pid, a.sid, a.oid, a.cid = it.pid, "", "", ""
 		a.renameProject(name)
 	case "call":
-		a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, it.cid
-		a.renameCall(name)
+		// Rename by id, without moving the selection: the editor may still hold
+		// another call, and leaving cid on this one would let Ctrl+S overwrite it.
+		a.renameCallAt(it.pid, it.sid, it.oid, it.cid, name)
 	}
 }
 
@@ -786,24 +787,49 @@ func (a *app) addOperation(name string) {
 
 // renameCall changes the selected sample's title.
 func (a *app) renameCall(title string) {
-	p, s, o, c := a.locate()
-	if p == nil || s == nil || o == nil || c == nil {
-		a.errMsg = "请先选择一个请求样例"
-		return
-	}
+	a.renameCallAt(a.pid, a.sid, a.oid, a.cid, title)
+}
+
+// renameCallAt renames one sample by id without touching the current selection,
+// so a context-menu rename cannot leave the selection on a sample whose body
+// the editor does not hold.
+func (a *app) renameCallAt(pid, sid, oid, cid, title string) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		a.errMsg = "请求名称不能为空"
 		return
 	}
-	call := *c
-	call.Title = title
-	if err := a.st.UpdateCall(p.ID, s.ID, o.ID, call); err != nil {
-		a.errMsg = "重命名失败：" + err.Error()
+	p := a.findProject(pid)
+	if p == nil {
+		a.errMsg = "请先选择一个请求样例"
 		return
 	}
-	a.statusMsg = "已重命名请求"
-	a.reload()
+	for si := range p.Services {
+		if p.Services[si].ID != sid {
+			continue
+		}
+		for oi := range p.Services[si].Operations {
+			if p.Services[si].Operations[oi].ID != oid {
+				continue
+			}
+			op := &p.Services[si].Operations[oi]
+			for ci := range op.Calls {
+				if op.Calls[ci].ID != cid {
+					continue
+				}
+				call := op.Calls[ci]
+				call.Title = title
+				if err := a.st.UpdateCall(pid, sid, oid, call); err != nil {
+					a.errMsg = "重命名失败：" + err.Error()
+					return
+				}
+				a.statusMsg = "已重命名请求"
+				a.reload()
+				return
+			}
+		}
+	}
+	a.errMsg = "找不到要重命名的请求样例"
 }
 
 // exportProject writes the selected project as SoapUI-compatible XML.
@@ -922,8 +948,8 @@ func (a *app) persistResponse(pid, sid, oid, cid string, resp model.SendResponse
 // buildSendRequest assembles the payload the transport sends: project headers,
 // sample headers, the default SOAPAction and Content-Type, and the editor body.
 func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error) {
-	p, _, _, _ := a.locate()
-	if p == nil {
+	p, s, o, c := a.locate()
+	if p == nil || s == nil || o == nil || c == nil {
 		return model.SendRequest{}, nil, fmt.Errorf("请先选择一个请求样例")
 	}
 	url := strings.TrimSpace(a.endpoint)

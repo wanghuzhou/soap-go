@@ -313,14 +313,19 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 
 // treeContextMenu is the right-click menu of a tree row: the create/rename/
 // delete actions of that node, where the node is.
+//
+// Merely opening the menu must not move the selection: a right-click that only
+// looks at another node used to make Ctrl+S save the editor's content into that
+// node, overwriting it. Each action selects its own target first instead.
 func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 	if a.renamingID != "" {
 		a.cancelInlineRename()
 	}
 	switch it.kind {
 	case "project":
-		a.pid, a.sid, a.oid, a.cid = it.pid, "", "", ""
+		pick := func() { a.pid, a.sid, a.oid, a.cid = it.pid, "", "", "" }
 		if m.Item("新建服务…").Chosen() {
+			pick()
 			a.treeModalOpen, a.treeModalKind, a.nameInput = true, 1, ""
 		}
 		if m.Item("重命名项目…").Chosen() {
@@ -331,35 +336,44 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			a.startInlineRename(it.pid, name)
 		}
 		if m.Item("代理设置…").Chosen() {
+			pick()
 			a.openProxy()
 		}
 		if m.Item("导出 SoapUI XML…").Chosen() {
+			pick()
 			a.saveProjectXML()
 		}
 		m.Separator()
 		if m.Item("删除项目").Danger().Chosen() {
+			pick()
 			a.deleteProject()
 		}
 	case "service":
-		a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, "", ""
+		pick := func() { a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, "", "" }
 		if m.Item("新建操作…").Chosen() {
+			pick()
 			a.treeModalOpen, a.treeModalKind, a.nameInput = true, 2, ""
 		}
 		m.Separator()
 		if m.Item("删除服务").Danger().Chosen() {
+			pick()
 			a.deleteService()
 		}
 	case "operation":
-		a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, ""
+		pick := func() { a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, "" }
 		if m.Item("新建请求样例").Chosen() {
+			pick()
 			a.newCall()
 		}
 		m.Separator()
 		if m.Item("删除操作").Danger().Chosen() {
+			pick()
 			a.deleteOperation()
 		}
 	case "call":
-		a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, it.cid
+		// A call action must target it by id, never leave cid pointing at it
+		// while the editor still holds another call. Rename and open do not
+		// need the selection; copy replaces the editor itself; delete drops it.
 		if m.Item("打开").Chosen() {
 			a.openCall(it.pid, it.sid, it.oid, it.cid)
 		}
@@ -367,10 +381,12 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			a.startInlineRename(it.cid, it.label)
 		}
 		if m.Item("复制请求样例").Chosen() {
+			a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, it.cid
 			a.duplicateCall()
 		}
 		m.Separator()
 		if m.Item("删除请求样例").Danger().Chosen() {
+			a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, it.cid
 			a.deleteCall()
 		}
 	}
