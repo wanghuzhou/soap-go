@@ -650,6 +650,39 @@ func TestFontSettingsApply(t *testing.T) {
 	tt.Frame()
 }
 
+// TestTopBarMenus checks the file menu is gone, the "more" menu beside "+"
+// holds import and SoapUI export, and the workspace menu holds workspace export.
+func TestTopBarMenus(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+
+	if tt.HasText("文件") {
+		t.Fatal("top bar still shows 文件")
+	}
+
+	if err := tt.Click("更多"); err != nil {
+		t.Fatalf("click 更多: %v", err)
+	}
+	tt.Frame()
+	items := strings.Join(tt.Menu(), ",")
+	if !strings.Contains(items, "导入…") || !strings.Contains(items, "导出 SoapUI XML…") {
+		t.Fatalf("more menu = %v", tt.Menu())
+	}
+	tt.CloseMenu()
+	tt.Frame()
+
+	if err := tt.Click("工作空间 · 默认"); err != nil {
+		t.Fatalf("click workspace menu: %v", err)
+	}
+	tt.Frame()
+	if !strings.Contains(strings.Join(tt.Menu(), ","), "导出工作空间…") {
+		t.Fatalf("workspace menu = %v", tt.Menu())
+	}
+}
+
 // TestSettingsSizeStepper checks the minus and plus buttons of the font-size
 // control step the value by one and stop at the bounds.
 func TestSettingsSizeStepper(t *testing.T) {

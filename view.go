@@ -15,6 +15,7 @@ var (
 	iconSliders  = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`))
 	iconCode     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`))
 	iconInfo     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><line x1="12" y1="7.5" x2="12" y2="7.6"/></svg>`))
+	iconMore     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>`))
 	iconSplitV   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 12h17"/></svg>`))
 	iconSplitH   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M12 4.5v15"/></svg>`))
 	iconPlus     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`))
@@ -56,8 +57,8 @@ func (a *app) view(c *ui.Context) {
 	a.maybeSaveUIState()
 }
 
-// topBar is a slim, draggable breadcrumb bar with the file and workspace
-// menus, after Yaak.
+// topBar is a slim, draggable breadcrumb bar with the workspace menu, after
+// Yaak.
 func (a *app) topBar(c *ui.Context) {
 	t := c.Theme()
 	bar := c.TitleBar()
@@ -79,35 +80,6 @@ func (a *app) topBar(c *ui.Context) {
 			ui.Text(c, "›").FontSize(a.us(12)).TextColor(t.Border)
 			ui.Text(c, p.Name).FontSize(a.us(12)).TextColor(t.TextMuted).SingleLine()
 		}
-
-		// File menu.
-		ui.PopoverMenuButton(c, "文件", func(m *ui.Menu) {
-			if m.Item("新建项目…").Chosen() {
-				a.newProjectOpen, a.nameInput = true, ""
-			}
-			if m.Item("重命名项目…").Chosen() {
-				if p := a.selectedProject(); p != nil {
-					a.startInlineRename(p.ID, p.Name)
-				}
-			}
-			if m.Item("删除项目").Danger().Chosen() {
-				a.deleteProject()
-			}
-			m.Separator()
-			if m.Item("导出 SoapUI XML…").Chosen() {
-				a.saveProjectXML()
-			}
-			if m.Item("代理设置…").Chosen() {
-				a.openProxy()
-			}
-			m.Separator()
-			if m.Item("导入…").Chosen() {
-				a.importOpen, a.importKind = true, 0
-			}
-			if m.Item("导出…").Chosen() {
-				a.exportOpen = true
-			}
-		}).BorderWidth(0)
 
 		// Workspace menu.
 		ui.PopoverMenuButton(c, "工作空间 · "+a.info.Name, func(m *ui.Menu) {
@@ -140,6 +112,9 @@ func (a *app) topBar(c *ui.Context) {
 					a.wsOpen, a.wsKind, a.nameInput = true, 2, base
 				}
 			}
+			if m.Item("导出工作空间…").Chosen() {
+				a.exportOpen = true
+			}
 			if m.Item("删除当前工作空间").Danger().Chosen() {
 				a.deleteWorkspace()
 			}
@@ -170,6 +145,14 @@ func (a *app) sidebar(c *ui.Context) {
 			a.iconBtn(c, iconPlus, "新建项目", func() {
 				a.newProjectOpen, a.nameInput = true, ""
 			})
+			a.iconMenuBtn(c, iconMore, "更多", func(m *ui.Menu) {
+				if m.Item("导入…").Chosen() {
+					a.importOpen, a.importKind = true, 0
+				}
+				if m.Item("导出 SoapUI XML…").Chosen() {
+					a.saveProjectXML()
+				}
+			})
 		})
 		ui.Row(c).Padding(0, 12, 8, 12).Children(func() {
 			ui.TextInput(c, &a.search).Placeholder("搜索接口").Grow(1).Ref(&a.searchRef)
@@ -179,7 +162,7 @@ func (a *app) sidebar(c *ui.Context) {
 			if len(items) == 0 {
 				ui.Column(c).Padding(16).Gap(6).Children(func() {
 					ui.Text(c, "还没有项目").FontSize(a.us(12.5)).Bold()
-					ui.Text(c, "用「文件 › 导入」导入 SoapUI 项目或 WSDL。").FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
+					ui.Text(c, "用「更多」菜单导入 SoapUI 项目或 WSDL。").FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
 				})
 				return
 			}
@@ -1254,6 +1237,21 @@ func (a *app) iconBtn(c *ui.Context, icon *ui.SVG, tip string, onClick func()) {
 	btn.Children(func() {
 		ui.Icon(c, icon).FontSize(a.us(13)).TextColor(t.TextMuted)
 	})
+}
+
+// iconMenuBtn is an icon button that opens a popover menu on click, for the
+// "more" actions of a toolbar or a panel header.
+func (a *app) iconMenuBtn(c *ui.Context, icon *ui.SVG, tip string, build func(m *ui.Menu)) {
+	t := c.Theme()
+	btn := ui.ButtonBase(c).Width(26).Height(24).Center().Justify(ui.Center).Radius(6).
+		BorderWidth(0).Background(ui.Transparent).Label(tip).Tooltip(tip)
+	if btn.Hovered() {
+		btn = btn.Background(t.SurfaceHover)
+	}
+	btn.Children(func() {
+		ui.Icon(c, icon).FontSize(a.us(13)).TextColor(t.TextMuted)
+	})
+	btn.PopoverMenuButton(build)
 }
 
 // flatButton is a compact, borderless text button for dense toolbars: small
