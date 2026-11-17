@@ -38,7 +38,10 @@ func newDarkTheme() *ui.Theme {
 
 func newLightTheme() *ui.Theme {
 	t := ui.LightTheme()
-	t.Background = ui.Hex("#f6f7fb")
+	// The workbench background matches the sidebar's surface: the user wants
+	// one white canvas on the right, not a slightly grey page beside a white
+	// sidebar.
+	t.Background = ui.Hex("#ffffff")
 
 	t.Surface = ui.Hex("#ffffff")
 	t.SurfaceHover = ui.Hex("#eef1f7")
