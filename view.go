@@ -40,10 +40,15 @@ func (a *app) view(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Background(t.Background).Children(func() {
 		a.topBar(c)
-		ui.Row(c).Grow(1).Fill().AlignItems(ui.Stretch).Children(func() {
+		// A draggable divider between the tree and the request area. Before it
+		// was a plain row, so once the light theme made the sidebar surface and
+		// the workbench background the same white there was nothing left to see
+		// between them. Split draws that line and lets the user resize it.
+		ui.Split(c, &a.sideW, func() {
 			a.sidebar(c)
+		}, func() {
 			a.main(c)
-		})
+		}).Grow(1).Fill().SplitReset(272)
 		a.statusBar(c)
 		a.importModal(c)
 		a.exportModal(c)
@@ -137,7 +142,7 @@ func (a *app) topBar(c *ui.Context) {
 
 func (a *app) sidebar(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Width(a.sideW).Shrink(0).FillHeight().Background(t.Surface).Children(func() {
+	ui.Column(c).FillHeight().FillWidth().Background(t.Surface).Children(func() {
 		ui.Row(c).Padding(10, 12, 4, 14).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "项目").FontSize(a.us(11.5)).Bold()
 			ui.Badge(c, fmt.Sprint(len(a.projects)))
