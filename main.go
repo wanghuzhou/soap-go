@@ -8,7 +8,6 @@ import (
 	"flag"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -37,13 +36,6 @@ func main() {
 	log.Printf("数据目录：%s", reg.DataDir())
 	log.Printf("当前工作空间：%s", reg.CurrentInfo().Name)
 
-	// Keep WebView2's profile under the data directory, as the Wails build
-	// does: a stale profile in the default location makes controller creation
-	// fail with 8000ffff.
-	webviewData := filepath.Join(dir, "webview2")
-	_ = os.MkdirAll(webviewData, 0o755)
-	_ = os.Setenv("WEBVIEW2_USER_DATA_FOLDER", webviewData)
-
 	a := newApp(reg)
 	// Persist the theme and split layout when the app quits, as a backstop for
 	// changes the running view has not written yet.
@@ -56,9 +48,9 @@ func main() {
 			MinWidth:        1040,
 			MinHeight:       680,
 			BackgroundColor: "#0b0e14",
-			TitleBarStyle:  mygo.TitleBarHidden,
-			TitleBarHeight: 44,
-			Content:        ui.View(a.view),
+			TitleBarStyle:   mygo.TitleBarHidden,
+			TitleBarHeight:  44,
+			Content:         ui.View(a.view),
 		})
 		a.applyWindowButtons()
 	})

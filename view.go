@@ -28,6 +28,7 @@ func (a *app) view(c *ui.Context) {
 	c.OnWindowShortcut(ui.Super, ui.KeyEnter, func() { a.sendRequest() })
 	c.OnWindowShortcut(ui.Super, ui.KeyS, func() { a.saveCall() })
 	c.OnWindowShortcut(ui.Ctrl|ui.Shift, ui.KeyF, func() { a.formatBody() })
+	c.OnWindowShortcut(ui.Ctrl, ui.KeyK, func() { a.searchRef.SelectAll() })
 	t := c.Theme()
 	ui.Column(c).Fill().Background(t.Background).Children(func() {
 		a.topBar(c)
@@ -139,7 +140,8 @@ func (a *app) topBar(c *ui.Context) {
 
 		// Search / command palette affordance.
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(4, 10).
-			Background(t.Background).Border(1, t.Border).Radius(7).Children(func() {
+			Background(t.Background).Border(1, t.Border).Radius(7).
+			OnClick(func() { a.searchRef.SelectAll() }).Tooltip("聚焦搜索").Children(func() {
 			ui.Text(c, "搜索或跳转").FontSize(11.5).TextColor(t.TextMuted)
 			ui.Text(c, "Ctrl K").FontSize(10).TextColor(t.TextMuted).
 				Padding(1, 5).Background(t.SurfaceHover).Radius(4)
@@ -170,7 +172,7 @@ func (a *app) sidebar(c *ui.Context) {
 			})
 		})
 		ui.Row(c).Padding(0, 12, 8, 12).Children(func() {
-			ui.TextInput(c, &a.search).Placeholder("搜索项目 / 服务 / 操作 / 请求").Grow(1)
+			ui.TextInput(c, &a.search).Placeholder("搜索项目 / 服务 / 操作 / 请求").Grow(1).Ref(&a.searchRef)
 		})
 		ui.Scroll(c).Grow(1).Padding(4, 6, 6).Children(func() {
 			items := a.treeItems()
@@ -570,8 +572,13 @@ func (a *app) headersPanel(c *ui.Context) {
 		if len(a.projHeaders) > 0 {
 			ui.Text(c, "项目默认头").FontSize(10.5).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
 			for _, h := range a.projHeaders {
+				h := h
+				value := h.Value
+				if a.maskSecrets && isSensitiveName(h.Name) {
+					value = "••••••（已遮蔽）"
+				}
 				ui.Row(c).Gap(8).Children(func() {
-					ui.Text(c, h.Name+": "+h.Value).FontSize(11).TextColor(t.TextMuted)
+					ui.Text(c, h.Name+": "+value).FontSize(11).TextColor(t.TextMuted)
 				})
 			}
 		}
@@ -641,7 +648,9 @@ func (a *app) responsePanel(c *ui.Context) {
 			}
 		})
 		ui.Row(c).Shrink(0).Padding(0, 14, 0).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Tabs(c, &a.respTab, "格式化", "原始", "请求", "Headers").Shrink(0)
+			if ui.Tabs(c, &a.respTab, "格式化", "原始", "请求", "Headers").Shrink(0).Changed() {
+				a.syncResponse()
+			}
 			ui.Spacer(c)
 			if a.resp.Truncated {
 				ui.Text(c, "内容已截断").FontSize(10).TextColor(t.Warning)

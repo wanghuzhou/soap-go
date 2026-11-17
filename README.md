@@ -42,7 +42,7 @@ bin\soap-go.exe
 go build -trimpath -ldflags "-H windowsgui" -o bin/soap-go.exe .
 ```
 
-`-H windowsgui` 让 Windows 不额外弹出控制台窗口；日志写入 `<数据目录>/logs/soap-web.log`。
+`-H windowsgui` 让 Windows 不额外弹出控制台窗口；日志写入数据目录旁的 `logs/soap-web.log`。
 
 需要 **Go 1.27.3+**（MyGo 的版本要求）。
 
@@ -60,13 +60,14 @@ go test ./...
 | `Ctrl+Enter` | 发送请求 |
 | `Ctrl+S` | 保存请求样例 |
 | `Ctrl+Shift+F` | 格式化 XML |
+| `Ctrl+K` | 聚焦项目树搜索 |
 
 ## 目录结构
 
 ```
 main.go        入口：数据目录、日志、窗口、退出时保存布局
 app.go         应用状态与操作（加载/保存/发送/导入/CRUD/工作空间/持久化）
-view.go        原生 UI：三栏工作台、请求 Tab、分区、弹窗、右键菜单
+view.go        原生 UI：工作台、请求 Tab、分区、弹窗、右键菜单
 theme.go       深色 / 浅色主题
 internal/      从 soap-web 移植的业务包
   model        数据模型

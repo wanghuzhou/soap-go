@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/ui"
+
 	"soapgo/internal/model"
 	"soapgo/internal/transport"
 	"soapgo/internal/workspace"
@@ -120,6 +122,47 @@ func TestDeleteCallClearsEditor(t *testing.T) {
 	}
 	if len(a.projects[0].Services[0].Operations[0].Calls) != 0 {
 		t.Fatal("call still in store")
+	}
+}
+
+// TestCloseTabKeepsActiveTab checks closing a tab before the active one keeps
+// the same call open, closing the active one falls to a neighbour, and
+// closing the last one clears the editor.
+func TestCloseTabKeepsActiveTab(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	svc, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	op, _ := a.st.AddOperation(p.ID, svc.ID, model.Operation{Name: "O"})
+	c1, _ := a.st.AddCall(p.ID, svc.ID, op.ID, model.Call{Title: "c1", Request: "<a/>"})
+	c2, _ := a.st.AddCall(p.ID, svc.ID, op.ID, model.Call{Title: "c2", Request: "<b/>"})
+	c3, _ := a.st.AddCall(p.ID, svc.ID, op.ID, model.Call{Title: "c3", Request: "<c/>"})
+	a.reload()
+
+	a.openCall(p.ID, svc.ID, op.ID, c1.ID)
+	a.openCall(p.ID, svc.ID, op.ID, c2.ID)
+	a.openCall(p.ID, svc.ID, op.ID, c3.ID)
+	if len(a.tabs) != 3 || a.active != 2 {
+		t.Fatalf("tabs=%d active=%d", len(a.tabs), a.active)
+	}
+
+	// Closing an inactive tab before the active one keeps c3 open.
+	a.closeTab(0)
+	if a.cid != c3.ID || a.active != 1 || len(a.tabs) != 2 {
+		t.Fatalf("after close before: cid=%q active=%d tabs=%d", a.cid, a.active, len(a.tabs))
+	}
+
+	// Closing the active tab falls to the remaining neighbour.
+	a.closeTab(1)
+	if a.cid != c2.ID || a.active != 0 || len(a.tabs) != 1 {
+		t.Fatalf("after close active: cid=%q active=%d tabs=%d", a.cid, a.active, len(a.tabs))
+	}
+
+	// Closing the last tab clears the selection and the editor.
+	a.closeTab(0)
+	if a.cid != "" || len(a.tabs) != 0 || a.xmlEd.Buffer.String() != "" {
+		t.Fatalf("after last close: cid=%q tabs=%d body=%q", a.cid, len(a.tabs), a.xmlEd.Buffer.String())
 	}
 }
 
@@ -309,6 +352,84 @@ func TestPersistResponseAutoSaves(t *testing.T) {
 	}
 }
 
+// TestResponseTextTabs checks what each response tab shows: formatted XML,
+// the raw body, the request preview and the response headers.
+func TestResponseTextTabs(t *testing.T) {
+	a := newTestApp(t)
+	a.hasResp = true
+	a.resp = model.SendResponse{
+		Status: 200, StatusText: "OK",
+		Headers: map[string]string{"Content-Type": "text/xml"},
+		Body:    "<a><b>1</b></a>",
+	}
+	a.endpoint = "http://example.test/soap"
+	a.action = "urn:a"
+	a.headers = []headerRow{{Name: "X-Test", Value: "1"}}
+	a.xmlEd.Buffer.Reset("<req/>")
+
+	a.respTab = 0
+	if got := a.responseText(); !strings.Contains(got, "\n") {
+		t.Fatalf("formatted = %q", got)
+	}
+	a.respTab = 1
+	if got := a.responseText(); got != "<a><b>1</b></a>" {
+		t.Fatalf("raw = %q", got)
+	}
+	a.respTab = 2
+	if got := a.responseText(); !strings.Contains(got, "POST http://example.test/soap") ||
+		!strings.Contains(got, "<req/>") ||
+		!strings.Contains(got, "SOAPAction: urn:a") {
+		t.Fatalf("request preview = %q", got)
+	}
+	a.respTab = 3
+	if got := a.responseText(); !strings.Contains(got, "Content-Type: text/xml") {
+		t.Fatalf("headers = %q", got)
+	}
+}
+
+// TestResponseTabClickSwitchesEditor clicks the response tabs in a headless
+// build of the real view and checks the editor follows the choice: the bug
+// was that the tab value changed but the editor was never re-synced.
+func TestResponseTabClickSwitchesEditor(t *testing.T) {
+	a := newTestApp(t)
+	a.hasResp = true
+	a.resp = model.SendResponse{
+		Status: 200, StatusText: "OK",
+		Headers: map[string]string{"X-Test": "1"},
+		Body:    "<a><b>1</b></a>",
+	}
+	a.endpoint = "http://example.test/soap"
+	a.xmlEd.Buffer.Reset("<req/>")
+	a.syncResponse()
+	if got := a.respEd.Buffer.String(); got == "<a><b>1</b></a>" {
+		t.Fatalf("precondition: formatted body should differ from raw, got %q", got)
+	}
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if err := tt.Click("原始"); err != nil {
+		t.Fatalf("click 原始: %v", err)
+	}
+	tt.Frame()
+	if a.respTab != 1 {
+		t.Fatalf("respTab = %d, want 1", a.respTab)
+	}
+	if got := a.respEd.Buffer.String(); got != "<a><b>1</b></a>" {
+		t.Fatalf("raw editor = %q", got)
+	}
+
+	if err := tt.Click("Headers"); err != nil {
+		t.Fatalf("click Headers: %v", err)
+	}
+	tt.Frame()
+	if a.respTab != 3 {
+		t.Fatalf("respTab = %d, want 3", a.respTab)
+	}
+	if got := a.respEd.Buffer.String(); !strings.Contains(got, "X-Test: 1") {
+		t.Fatalf("headers editor = %q", got)
+	}
+}
+
 func TestIsDirtyAndSaveClears(t *testing.T) {
 	a := newTestApp(t)
 	a.createProject("P")
@@ -325,6 +446,14 @@ func TestIsDirtyAndSaveClears(t *testing.T) {
 	a.xmlEd.Buffer.Reset("<b/>")
 	if !a.isDirty() {
 		t.Fatal("edited body is not dirty")
+	}
+	a.action = "urn:changed"
+	if !a.isDirty() {
+		t.Fatal("edited SOAPAction is not dirty")
+	}
+	a.endpoint = "http://changed"
+	if !a.isDirty() {
+		t.Fatal("edited endpoint is not dirty")
 	}
 	a.saveCall()
 	if a.isDirty() {

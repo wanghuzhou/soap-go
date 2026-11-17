@@ -4,15 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 
 	"soapgo/internal/model"
 	"soapgo/internal/soapuiproj"
@@ -84,14 +86,14 @@ type app struct {
 	active int
 
 	// Tree.
-	expanded map[string]bool
-	search   string
+	expanded  map[string]bool
+	search    string
+	searchRef ui.Ref
 
 	// Dialogs.
 	importOpen       bool
 	importKind       int // 0 chooser, 1 soapUI, 2 WSDL file, 3 WSDL URL
 	importURL        string
-	importProxy      int // 0 direct, 1 system, 2 current project
 	importProxySel   string
 	exportOpen       bool
 	keepProxy        bool
@@ -113,6 +115,8 @@ type app struct {
 	savedSnapshot string
 	savedHeaders  []headerRow
 	savedTimeout  string
+	savedAction   string
+	savedEndpoint string
 
 	// Proxy form.
 	proxyModeSel, proxyTypeSel, proxyHost, proxyUser, proxyPass string
@@ -323,6 +327,8 @@ func (a *app) openCall(pid, sid, oid, cid string) {
 	a.savedSnapshot = body
 	a.savedHeaders = append([]headerRow(nil), a.headers...)
 	a.savedTimeout = a.timeout
+	a.savedAction = a.action
+	a.savedEndpoint = a.endpoint
 	if c.Response != nil {
 		a.hasResp = true
 		a.resp = model.SendResponse{
@@ -373,19 +379,32 @@ func (a *app) hasTabKey(key string) bool {
 }
 
 func (a *app) closeTab(i int) {
+	a.removeTabAt(i)
+}
+
+// removeTabAt removes tab i and keeps the active tab in step: closing the
+// active tab opens its neighbour (or clears the editor when it was the last),
+// while closing a tab before it keeps the user's current one open.
+func (a *app) removeTabAt(i int) {
 	if i < 0 || i >= len(a.tabs) {
 		return
 	}
+	closingActive := i == a.active
 	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 	if len(a.tabs) == 0 {
-		a.active = -1
+		a.clearSelection()
 		return
 	}
-	if a.active >= len(a.tabs) {
-		a.active = len(a.tabs) - 1
+	if i < a.active {
+		a.active--
 	}
-	pid, sid, oid, cid := splitKey(a.tabs[a.active])
-	a.openCall(pid, sid, oid, cid)
+	if closingActive {
+		if a.active >= len(a.tabs) {
+			a.active = len(a.tabs) - 1
+		}
+		pid, sid, oid, cid := splitKey(a.tabs[a.active])
+		a.openCall(pid, sid, oid, cid)
+	}
 }
 
 // callTitle returns the name shown for a call key.
@@ -439,6 +458,8 @@ func (a *app) saveCall() {
 	a.savedSnapshot = call.Request
 	a.savedHeaders = append([]headerRow(nil), a.headers...)
 	a.savedTimeout = a.timeout
+	a.savedAction = call.Action
+	a.savedEndpoint = call.Endpoint
 	a.errMsg = ""
 	a.statusMsg = "已保存：" + call.Title
 	a.reload()
@@ -457,25 +478,22 @@ func (a *app) deleteCall() {
 			return
 		}
 		a.statusMsg = "已删除请求样例"
-		a.aFromCallRemoved(p.ID, s.ID, o.ID, c.ID)
 		a.reload()
+		a.aFromCallRemoved(p.ID, s.ID, o.ID, c.ID)
 	})
 }
 
-// aFromCallRemoved clears the editor when its call is gone.
+// aFromCallRemoved closes the deleted call's tab, or clears the editor when
+// it had no tab, and leaves a neighbouring tab open.
 func (a *app) aFromCallRemoved(pid, sid, oid, cid string) {
 	key := callKey(pid, sid, oid, cid)
 	for i, k := range a.tabs {
 		if k == key {
-			a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
-			break
+			a.removeTabAt(i)
+			return
 		}
 	}
-	a.pid, a.sid, a.oid, a.cid = "", "", "", ""
-	a.endpoint, a.action = "", ""
-	a.headers = nil
-	a.xmlEd.Buffer.Reset("")
-	a.hasResp = false
+	a.clearSelection()
 }
 
 // newCall adds a fresh sample under the selected operation.
@@ -529,7 +547,7 @@ func (a *app) deleteOperation() {
 			a.errMsg = "删除操作失败：" + err.Error()
 			return
 		}
-		a.clearAfterDelete()
+		a.clearSelection()
 		a.statusMsg = "已删除操作"
 		a.reload()
 	})
@@ -625,6 +643,12 @@ func (a *app) isDirty() bool {
 	if a.timeout != a.savedTimeout {
 		return true
 	}
+	if a.action != a.savedAction {
+		return true
+	}
+	if a.endpoint != a.savedEndpoint {
+		return true
+	}
 	if len(a.headers) != len(a.savedHeaders) {
 		return true
 	}
@@ -655,20 +679,26 @@ func (a *app) deleteService() {
 			a.errMsg = "删除服务失败：" + err.Error()
 			return
 		}
-		a.clearAfterDelete()
+		a.clearSelection()
 		a.statusMsg = "已删除服务"
 		a.reload()
 	})
 }
 
-// clearAfterDelete resets the editor and tabs after a structural delete.
-func (a *app) clearAfterDelete() {
+// clearSelection resets the selection and every editor field, for actions
+// that delete what was selected or replace the active workspace.
+func (a *app) clearSelection() {
 	a.pid, a.sid, a.oid, a.cid = "", "", "", ""
 	a.endpoint, a.action = "", ""
 	a.headers = nil
 	a.projHeaders = nil
 	a.xmlEd.Buffer.Reset("")
+	a.respEd.Buffer.Reset("")
 	a.hasResp = false
+	a.resp = model.SendResponse{}
+	a.savedSnapshot, a.savedTimeout, a.savedAction = "", "", ""
+	a.savedEndpoint = ""
+	a.savedHeaders = nil
 	a.tabs = nil
 	a.active = -1
 }
@@ -762,19 +792,34 @@ func (a *app) sendRequest() {
 		mygo.RunOnMain(func() {
 			a.sending = false
 			a.sendCancel = nil
-			a.hasResp = true
-			a.resp = resp
-			switch {
-			case resp.Error == "已取消":
-				a.errMsg = ""
-				a.statusMsg = "已取消"
-			case resp.Error != "":
-				a.errMsg = "发送失败：" + resp.Error
-				a.statusMsg = ""
-			default:
-				a.statusMsg = fmt.Sprintf("%d %s · %d ms · %s", resp.Status, resp.StatusText, resp.DurationMS, humanSize(resp.Size))
+			// Only show the response under the sample it was sent for; if the
+			// user switched while it was in flight, keep their current view and
+			// still save the result with the original sample.
+			sameSample := a.pid == pid && a.sid == sid && a.oid == oid && a.cid == cid
+			if sameSample {
+				a.hasResp = true
+				a.resp = resp
+				switch {
+				case resp.Error == "已取消":
+					a.errMsg = ""
+					a.statusMsg = "已取消"
+				case resp.Error != "":
+					a.errMsg = "发送失败：" + resp.Error
+					a.statusMsg = ""
+				default:
+					a.statusMsg = fmt.Sprintf("%d %s · %d ms · %s", resp.Status, resp.StatusText, resp.DurationMS, humanSize(resp.Size))
+				}
+				a.syncResponse()
+			} else {
+				switch {
+				case resp.Error == "已取消":
+					a.statusMsg = "后台请求已取消"
+				case resp.Error != "":
+					a.errMsg = "后台请求失败：" + resp.Error
+				default:
+					a.statusMsg = fmt.Sprintf("后台请求完成：%d %s · %d ms", resp.Status, resp.StatusText, resp.DurationMS)
+				}
 			}
-			a.syncResponse()
 			a.persistResponse(pid, sid, oid, cid, resp)
 			if a.win != nil {
 				a.win.Invalidate()
@@ -808,8 +853,12 @@ func (a *app) cancelSend() {
 // syncResponse writes the response body into the read-only editor.
 func (a *app) syncResponse() {
 	text := a.responseText()
+	file := "response.xml"
+	if a.respTab == 3 { // Headers are plain text, not XML.
+		file = "response.txt"
+	}
 	a.respEd.Buffer.Reset(text)
-	a.respEd.Buffer.SetLanguage(editor.LanguageForText("response.xml", text))
+	a.respEd.Buffer.SetLanguage(editor.LanguageForText(file, text))
 }
 
 func (a *app) responseText() string {
@@ -825,14 +874,25 @@ func (a *app) responseText() string {
 	case 2: // 请求
 		return requestPreview(a)
 	case 3: // Headers
-		var b strings.Builder
-		for k, v := range a.resp.Headers {
-			b.WriteString(k + ": " + v + "\n")
-		}
-		return b.String()
+		return headerLines(a.resp.Headers)
 	default: // 格式化
 		return prettyXML(a.resp.Body)
 	}
+}
+
+// headerLines renders headers in a stable order, as map iteration is random
+// and would shuffle the Headers tab on every sync.
+func headerLines(headers map[string]string) string {
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k + ": " + headers[k] + "\n")
+	}
+	return b.String()
 }
 
 func requestPreview(a *app) string {
@@ -849,9 +909,7 @@ func requestPreview(a *app) string {
 	hdrs["Content-Type"] = a.contentType
 	var b strings.Builder
 	b.WriteString("POST " + a.endpoint + " HTTP/1.1\n")
-	for k, v := range hdrs {
-		b.WriteString(k + ": " + v + "\n")
-	}
+	b.WriteString(headerLines(hdrs))
 	b.WriteString("\n")
 	b.WriteString(a.xmlEd.Buffer.String())
 	return b.String()
@@ -921,7 +979,7 @@ func (a *app) deleteProject() {
 			a.errMsg = "删除项目失败：" + err.Error()
 			return
 		}
-		a.clearAfterDelete()
+		a.clearSelection()
 		a.statusMsg = "已删除项目：" + p.Name
 		a.reload()
 	})
@@ -933,7 +991,12 @@ func (a *app) renameProject(name string) {
 		a.errMsg = "请先选择一个项目"
 		return
 	}
-	if err := a.st.RenameProject(p.ID, strings.TrimSpace(name)); err != nil {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		a.errMsg = "项目名称不能为空"
+		return
+	}
+	if err := a.st.RenameProject(p.ID, name); err != nil {
 		a.errMsg = "重命名失败：" + err.Error()
 		return
 	}
@@ -1129,10 +1192,7 @@ func (a *app) doSwitchWorkspace(id string) {
 		return
 	}
 	a.st, a.info = a.reg.Active()
-	a.pid, a.sid, a.oid, a.cid = "", "", "", ""
-	a.tabs = nil
-	a.active = -1
-	a.hasResp = false
+	a.clearSelection()
 	a.reload()
 	a.statusMsg = "已切换工作空间：" + info.Name
 }
@@ -1154,9 +1214,7 @@ func (a *app) doCreateWorkspace(name string) {
 		return
 	}
 	a.st, a.info = a.reg.Active()
-	a.pid, a.sid, a.oid, a.cid = "", "", "", ""
-	a.tabs = nil
-	a.active = -1
+	a.clearSelection()
 	a.reload()
 	a.statusMsg = "已新建工作空间：" + info.Name
 }
@@ -1171,16 +1229,17 @@ func (a *app) renameWorkspace(name string) {
 }
 
 func (a *app) deleteWorkspace() {
-	a.askConfirm("确定删除当前工作空间「"+a.info.Name+"」？\n工作空间文件会先备份到 trash。", func() {
+	text := "确定删除当前工作空间「" + a.info.Name + "」？\n工作空间文件会先备份到 trash。"
+	if a.isDirty() {
+		text += "\n当前请求的未保存修改也会丢失。"
+	}
+	a.askConfirm(text, func() {
 		if err := a.reg.Delete(a.info.ID); err != nil {
 			a.errMsg = "删除工作空间失败：" + err.Error()
 			return
 		}
 		a.st, a.info = a.reg.Active()
-		a.pid, a.sid, a.oid, a.cid = "", "", "", ""
-		a.tabs = nil
-		a.active = -1
-		a.hasResp = false
+		a.clearSelection()
 		a.reload()
 		a.statusMsg = "已删除工作空间"
 	})
@@ -1204,12 +1263,6 @@ func (a *app) exportWorkspace(path string) {
 		return
 	}
 	a.statusMsg = "已导出工作空间：" + filepath.Base(path)
-}
-
-// importWorkspace reads a project array and creates a workspace from it.
-func (a *app) importWorkspace(path string) {
-	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	a.importWorkspaceNamed(path, name)
 }
 
 // importWorkspaceNamed imports with an explicit workspace name.
@@ -1242,6 +1295,7 @@ func (a *app) doImportWorkspace(path, name string) {
 		return
 	}
 	a.st, a.info = a.reg.Active()
+	a.clearSelection()
 	a.reload()
 	a.statusMsg = "已导入工作空间：" + name
 }
