@@ -166,6 +166,22 @@ func TestCloseTabKeepsActiveTab(t *testing.T) {
 	}
 }
 
+// TestToolbarButtonClicks checks a compact toolbar button still runs its
+// action through the headless build of the real view.
+func TestToolbarButtonClicks(t *testing.T) {
+	a := newTestApp(t)
+	a.xmlEd.Buffer.Reset("<a>\n  <b>1</b>\n</a>")
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if err := tt.Click("压缩"); err != nil {
+		t.Fatalf("click 压缩: %v", err)
+	}
+	tt.Frame()
+	if got := a.xmlEd.Buffer.String(); got != "<a><b>1</b></a>" {
+		t.Fatalf("after 压缩 = %q", got)
+	}
+}
+
 func TestFormatXML(t *testing.T) {
 	in := `<a><b>1</b><c x="1"/></a>`
 	out, err := formatXML(in)

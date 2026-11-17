@@ -184,18 +184,6 @@ func (a *app) sidebar(c *ui.Context) {
 				a.treeRow(c, it)
 			}
 		})
-		ui.Divider(c)
-		ui.Row(c).Shrink(0).Padding(8, 10).Gap(6).Children(func() {
-			if ui.Button(c, "导入").Grow(1).Clicked() {
-				a.importOpen, a.importKind = true, 0
-			}
-			if ui.Button(c, "WSDL").Grow(1).Clicked() {
-				a.importOpen, a.importKind = true, 2
-			}
-			if ui.Button(c, "URL").Grow(1).Clicked() {
-				a.importOpen, a.importKind = true, 3
-			}
-		})
 	})
 }
 
@@ -515,17 +503,13 @@ func (a *app) requestPanel(c *ui.Context) {
 			a.settingsPanel(c)
 		default:
 			ui.Column(c).Grow(1).Padding(10, 12, 10).Gap(8).Children(func() {
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, "XML 报文").FontSize(11).TextColor(t.TextMuted).Bold()
 					ui.Spacer(c)
-					if ui.Button(c, "格式化").BorderWidth(0).Clicked() {
-						a.formatBody()
-					}
-					if ui.Button(c, "压缩").BorderWidth(0).Clicked() {
-						a.minifyBody()
-					}
-					ui.Button(c, "复制为 curl").BorderWidth(0).OnClick(a.copyCurl)
-					ui.Button(c, "保存请求").BorderWidth(0).OnClick(a.saveCall)
+					a.flatButton(c, "格式化", a.formatBody)
+					a.flatButton(c, "压缩", a.minifyBody)
+					a.flatButton(c, "复制为 curl", a.copyCurl)
+					a.flatButton(c, "保存请求", a.saveCall)
 				})
 				a.editorWithCopy(c, a.xmlEd, "请求报文已复制", func() string { return a.xmlEd.Buffer.String() })
 			})
@@ -1021,6 +1005,22 @@ func (a *app) iconBtn(c *ui.Context, icon *ui.SVG, tip string, onClick func()) {
 	btn.Children(func() {
 		ui.Icon(c, icon).FontSize(13).TextColor(t.TextMuted)
 	})
+}
+
+// flatButton is a compact, borderless text button for dense toolbars: small
+// type, tight padding and a hover face instead of a border.
+func (a *app) flatButton(c *ui.Context, label string, onClick func()) {
+	t := c.Theme()
+	btn := ui.ButtonBase(c).Padding(2, 7).Radius(6)
+	if btn.Hovered() {
+		btn = btn.Background(t.SurfaceHover)
+	}
+	btn.Children(func() {
+		ui.Text(c, label).FontSize(11).TextColor(t.Text)
+	})
+	if btn.Clicked() {
+		onClick()
+	}
 }
 
 // copyIcon is a small copy button overlaid on an editor's top-right corner,
