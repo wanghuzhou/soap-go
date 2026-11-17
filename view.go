@@ -464,6 +464,10 @@ func (a *app) tabStrip(c *ui.Context) {
 					lc = t.Text
 				}
 				ui.Text(c, a.callTitle(key)).FontSize(a.us(12)).TextColor(lc).SingleLine().MaxWidth(180)
+				if active && a.isDirty() {
+					ui.Text(c, "●").FontSize(a.us(8)).TextColor(t.Accent).Shrink(0).
+						Tooltip("有未保存的修改")
+				}
 				ui.Text(c, "×").FontSize(a.us(12)).TextColor(t.TextMuted).
 					OnClick(func() { a.closeTab(i) })
 			})

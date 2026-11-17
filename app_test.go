@@ -683,6 +683,38 @@ func TestTopBarMenus(t *testing.T) {
 	}
 }
 
+// TestTabDirtyDot checks the active tab shows a dot only while the request has
+// unsaved changes.
+func TestTabDirtyDot(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	svc, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	op, _ := a.st.AddOperation(p.ID, svc.ID, model.Operation{Name: "O"})
+	call, _ := a.st.AddCall(p.ID, svc.ID, op.ID, model.Call{Title: "c", Request: "<a/>"})
+	a.reload()
+	a.openCall(p.ID, svc.ID, op.ID, call.ID)
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if tt.HasText("●") {
+		t.Fatal("fresh tab shows a dirty dot")
+	}
+
+	a.xmlEd.Buffer.Reset("<b/>")
+	tt.Frame()
+	if !tt.HasText("●") {
+		t.Fatal("dirty tab is missing the dot")
+	}
+
+	a.saveCall()
+	tt.Frame()
+	if tt.HasText("●") {
+		t.Fatal("saved tab still shows the dot")
+	}
+}
+
 // TestSettingsSizeStepper checks the minus and plus buttons of the font-size
 // control step the value by one and stop at the bounds.
 func TestSettingsSizeStepper(t *testing.T) {
