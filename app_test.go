@@ -1477,7 +1477,7 @@ func TestFontOptionsPerPlatform(t *testing.T) {
 		t.Fatalf("first option must be the system default: ui=%q editor=%q", uiFontOptions[0], editorFontOptions[0])
 	}
 	// A family from the other platform's list is not offered here.
-	foreign := "Segoe UI"
+	foreign := "PingFang SC"
 	if runtime.GOOS == "darwin" {
 		foreign = "Microsoft YaHei UI"
 	}
