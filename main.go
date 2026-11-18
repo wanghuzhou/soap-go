@@ -42,15 +42,16 @@ func main() {
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.saveUIState() })
 	mygo.App.WhenReady(func() {
 		a.win = mygo.NewWindow(mygo.WindowOptions{
-			Title:           "soap-go",
-			Width:           1440,
-			Height:          920,
-			MinWidth:        1040,
-			MinHeight:       680,
-			BackgroundColor: "#0b0e14",
-			TitleBarStyle:   mygo.TitleBarHidden,
-			TitleBarHeight:  44,
-			Content:         ui.View(a.view),
+			Title:                "soap-go",
+			Width:                1440,
+			Height:               920,
+			MinWidth:             1040,
+			MinHeight:            680,
+			BackgroundColor:      "#0b0e14",
+			TitleBarStyle:        mygo.TitleBarHidden,
+			TitleBarHeight:       topBarHeight,
+			TrafficLightPosition: trafficLightPosition(),
+			Content:              ui.View(a.view),
 		})
 		// The executable carries no icon resource, so set the window's icon
 		// from the embedded PNG; without this the title bar and taskbar show a

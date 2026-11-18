@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"runtime"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -66,14 +68,18 @@ func (a *app) view(c *ui.Context) {
 	a.maybeSaveUIState()
 }
 
+// topBarHeight is the height of the custom title bar in DIPs. The traffic
+// lights are centered in it on macOS (see trafficLightPosition).
+const topBarHeight = 44
+
 // topBar is a slim, draggable breadcrumb bar with the workspace menu, after
 // Yaak.
 func (a *app) topBar(c *ui.Context) {
 	t := c.Theme()
 	bar := c.TitleBar()
 	h := bar.Height
-	if h < 44 {
-		h = 44
+	if h < topBarHeight {
+		h = topBarHeight
 	}
 	// Keep the content clear of the window controls: on macOS the traffic
 	// lights sit at the top-left and span bar.Left pixels, so a fixed left
@@ -162,6 +168,25 @@ func titleBarPad(bar ui.TitleBar, base float32) (top, right, bottom, left float3
 		left = bar.Left + 10
 	}
 	return 0, bar.Right + 10, 0, left
+}
+
+// macTrafficLightButton is the diameter macOS draws its window controls at; it
+// centers the lights in the custom title bar.
+const macTrafficLightButton = 14
+
+// trafficLightPosition is the position macOS should give its window controls
+// (the traffic lights) so they line up with the top bar's content: they start
+// trafficLightMargin from the left edge, the same rhythm as the content pad,
+// and sit vertically centered in the topBarHeight bar—aligned with the icons on
+// the right instead of hugging the top-left corner. It returns nil off macOS,
+// where there are no traffic lights to move.
+func trafficLightPosition() *mygo.Point {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	margin := 14
+	top := int(math.Round((topBarHeight - macTrafficLightButton) / 2))
+	return &mygo.Point{X: margin, Y: top}
 }
 
 func (a *app) sidebar(c *ui.Context) {

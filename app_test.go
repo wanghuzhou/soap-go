@@ -1456,6 +1456,31 @@ func TestTopBarClearsTrafficLightsInFrame(t *testing.T) {
 	}
 }
 
+// TestTrafficLightPositionCentered checks macOS gets a traffic-light position
+// that vertically centers the lights in the top bar (aligned with the right
+// icons) rather than hugging the top-left corner, and other platforms get none.
+func TestTrafficLightPositionCentered(t *testing.T) {
+	pos := trafficLightPosition()
+	if runtime.GOOS != "darwin" {
+		if pos != nil {
+			t.Fatalf("non-darwin got traffic light position %+v, want nil", pos)
+		}
+		return
+	}
+	if pos == nil {
+		t.Fatal("darwin got nil traffic light position")
+	}
+	// The lights' vertical center (top margin + half the button) should sit at
+	// the middle of the bar, where the right-side icons are centered.
+	center := float64(pos.Y) + float64(macTrafficLightButton)/2
+	if want := float64(topBarHeight) / 2; center != want {
+		t.Fatalf("traffic light center y = %.1f, want %.1f (centered in the %.0fpx bar)", center, want, float64(topBarHeight))
+	}
+	if pos.X <= 0 {
+		t.Fatalf("traffic light left margin = %d, want > 0", pos.X)
+	}
+}
+
 // secondChoice returns the first option after the system default, a real font
 // family this platform offers, for tests that need a non-default choice.
 func secondChoice(options []string) string {
