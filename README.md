@@ -94,7 +94,7 @@ internal/      从 soap-web 移植的业务包
 
 - 先跑 `go vet` / `go test`，通过后构建
 - Windows / Linux 用 `go build` 直接产出可执行文件与归档
-- macOS 用 `go tool mygo build` 打包成 `.app`（CI 上无签名身份，用临时签名），再以 `ditto` 压成 zip；用户首次打开若被 Gatekeeper 拦截，按包内 `MACOS-README.txt` 执行一次 `xattr -dr com.apple.quarantine`
+- macOS 用 `go tool mygo build` 打包成 `.app` 并产出 `.dmg` 磁盘映像（CI 上无签名身份，用临时签名）；用户打开 dmg 把 app 拖进「应用程序」，首次打开若被 Gatekeeper 拦截，执行一次 `xattr -dr com.apple.quarantine "/Applications/soap-go.app"`
 - 自动创建 GitHub Release，附 `SHA256SUMS.txt`
 ## 说明
 

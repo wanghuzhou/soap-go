@@ -141,11 +141,11 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # 2) macOS arm64 / amd64：在对应的原生 runner 上构建成 .app 应用包。
+  # 2) macOS arm64 / amd64：在对应的原生 runner 上构建成 .app 应用包，并打包成 .dmg。
   #    直接用 `go build` 出来的裸可执行文件在 Finder 里双击会被终端打开（多出
   #    一个命令窗口），而且没有 Info.plist / 图标 / 签名，不是正常的分发形态。
-  #    用 MyGo 自带的 `go tool mygo build` 打包成 .app（无签名身份时用临时签名），
-  #    再用 lipo 校验架构。
+  #    用 MyGo 自带的 `go tool mygo build` 打包成 .app（无签名身份时用临时签名）
+  #    并生成 .dmg，再用 lipo 校验架构。发布资产是 dmg（不再用 zip）。
   # ---------------------------------------------------------------------------
   build-macos:
     name: darwin/${{ matrix.goarch }}
@@ -167,15 +167,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build .app bundle
+      - name: Build .app and .dmg
         env:
           GOARCH: ${{ matrix.goarch }}
         run: |
           set -euo pipefail
-          # mygo build 输出 build/<os>-<arch>/soap-go.app；不签名身份时用临时签名，
-          # -skip-dmg 先跳过磁盘映像（下面按需生成）。
+          # mygo build 输出 build/<os>-<arch>/soap-go.app 与 soap-go-<version>-<arch>.dmg；
+          # 不签名身份时用临时签名。
           CGO_ENABLED=0 GOARCH="${GOARCH}" \
-            go tool mygo build -platform "darwin/${GOARCH}" -skip-dmg -skip-notarize
+            go tool mygo build -platform "darwin/${GOARCH}" -skip-notarize
 
           APP="build/darwin-${GOARCH}/soap-go.app"
           test -d "${APP}" || { echo "missing ${APP}" >&2; exit 1; }
@@ -198,31 +198,16 @@ jobs:
           set -euo pipefail
           SAFE_TAG="${TAG//\//-}"
           NAME="soap-go_${SAFE_TAG}_darwin_${GOARCH}"
-          APP="build/darwin-${GOARCH}/soap-go.app"
-          STAGE="dist/${NAME}"
-          mkdir -p "${STAGE}"
-          cp -R "${APP}" "${STAGE}/"
-          cp README.md "${STAGE}/"
-          printf '%s\n' \
-            'soap-go for macOS' \
-            '' \
-            'Drag soap-go.app to /Applications, then open it.' \
-            '' \
-            'This build is not notarized. If macOS blocks it, run once:' \
-            '' \
-            '    xattr -dr com.apple.quarantine "/Applications/soap-go.app"' \
-            '' \
-            'Data, logs and ui-state live in ~/Library/Application Support/soap-web/.' \
-            > "${STAGE}/MACOS-README.txt"
-
-          # 用 ditto 保留 .app 的资源分支与签名，再打包成 zip。
-          ( cd dist && ditto -c -k --sequesterRsrc --keepParent "${NAME}" "${NAME}.zip" )
-          rm -rf "${STAGE}"
+          # mygo build 已在 build/darwin-<arch>/ 生成 dmg，改名成统一的发行命名放进 dist。
+          SRC_DMG=$(ls build/darwin-${GOARCH}/*.dmg | head -n1)
+          test -n "${SRC_DMG}" || { echo "no dmg produced in build/darwin-${GOARCH}/" >&2; exit 1; }
+          cp "${SRC_DMG}" "dist/${NAME}.dmg"
+          ls -l "dist/${NAME}.dmg"
 
       - uses: actions/upload-artifact@v4
         with:
           name: soap-go-darwin-${{ matrix.goarch }}
-          path: dist/*.zip
+          path: dist/*.dmg
           if-no-files-found: error
           retention-days: 7
 
@@ -249,7 +234,7 @@ jobs:
       - name: Generate SHA256SUMS.txt
         run: |
           set -euo pipefail
-          ( cd dist && sha256sum *.zip *.tar.gz > SHA256SUMS.txt )
+          ( cd dist && sha256sum *.zip *.tar.gz *.dmg > SHA256SUMS.txt )
 
       - name: Check existing release
         id: check
@@ -279,7 +264,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(dist/*.zip dist/*.tar.gz dist/SHA256SUMS.txt)
+          files=(dist/*.zip dist/*.tar.gz dist/*.dmg dist/SHA256SUMS.txt)
           if [ ${#files[@]} -eq 0 ] || [ ! -f dist/SHA256SUMS.txt ]; then
             echo "no assets found" >&2
             exit 1
