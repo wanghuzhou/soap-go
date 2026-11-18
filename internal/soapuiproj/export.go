@@ -14,6 +14,11 @@ import (
 // Parse (and to be openable by SoapUI itself for the parts we model:
 // interface / operation / call / request, plus test suites).
 func Marshal(p model.Project) ([]byte, error) {
+	// A native (plain HTTP) project has no SoapUI representation: refuse it
+	// rather than emit a file that silently drops its group/call tree.
+	if !p.CanExportSoapUI() {
+		return nil, fmt.Errorf("普通 HTTP 项目不支持导出 SoapUI XML")
+	}
 	var b bytes.Buffer
 	b.WriteString(xml.Header)
 

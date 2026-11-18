@@ -11,6 +11,13 @@ import (
 
 // Project is the root container. It mirrors the structure of a SoapUI project
 // closely enough for import, while staying simple for our own needs.
+//
+// A native (plain HTTP) project keeps its own tree in Groups and Calls: Groups
+// is a flat list linked by ParentID (like a filesystem), and Calls holds every
+// request directly, with FolderID naming the group it sits in ("" = the project
+// root). A WSDL or SoapUI import keeps using Services/Operations instead. The
+// two shapes can coexist in one project: an imported SOAP service lives under
+// Services while the user's own HTTP requests live under Groups/Calls.
 type Project struct {
 	ID     string         `json:"id"` // stable identifier for CRUD
 	Name   string         `json:"name"`
@@ -18,9 +25,39 @@ type Project struct {
 	Proxy  *ProxySettings `json:"proxy,omitempty"`
 	// Headers are sent with every request of this project. A call may override
 	// an individual value; see Call.Headers.
-	Headers    []Header    `json:"headers,omitempty"`
+	Headers []Header `json:"headers,omitempty"`
+	// Groups is the flat folder tree of a native project. ParentID is "" for a
+	// group directly under the project. IDs are unique across the project.
+	Groups []Group `json:"groups,omitempty"`
+	// Calls are requests placed directly under the project or one of its
+	// Groups. Calls that belong to an imported SOAP operation live in
+	// Service.Operations[].Calls instead.
+	Calls      []Call      `json:"calls,omitempty"`
 	Services   []Service   `json:"services"`
 	TestSuites []TestSuite `json:"testSuites"`
+}
+
+// Group is a folder of the native request tree. ParentID links it to another
+// group; "" means it sits directly under the project. The flat layout (rather
+// than nested slices) keeps lookups, deletes and id assignment simple.
+type Group struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	ParentID string `json:"parentId,omitempty"`
+}
+
+// CanExportSoapUI reports whether this project may be exported as SoapUI XML.
+//
+// Only projects that came from SoapUI or a WSDL describe SoapUI's own data
+// model. A native (plain HTTP) project has no SoapUI representation, so the UI
+// hides the export action and the export entry point refuses it. Keeping the
+// decision here means the UI and the exporter cannot disagree.
+func (p Project) CanExportSoapUI() bool {
+	switch p.Source {
+	case "soapui", "wsdl", "wsdl-url":
+		return true
+	}
+	return false
 }
 
 // Header is one HTTP header on a project or a call. A slice rather than a map
@@ -177,6 +214,18 @@ type Call struct {
 	Endpoint string `json:"endpoint"`
 	Action   string `json:"action"`
 	Request  string `json:"request"` // raw XML body
+	// Kind is "soap" or "http". Empty means "infer from where the call sits":
+	// a call under a Service.Operation is SOAP, one under Project/Group is HTTP.
+	Kind string `json:"kind,omitempty"`
+	// Method is the HTTP method. Empty means POST for SOAP, and POST for an
+	// inference-less HTTP call; see EffectiveMethod.
+	Method string `json:"method,omitempty"`
+	// ContentType is the request body's media type. Empty means the kind's
+	// default (see DefaultContentType).
+	ContentType string `json:"contentType,omitempty"`
+	// FolderID names the Group this native request sits in; "" is the project
+	// root. Unused by an operation's SOAP samples.
+	FolderID string `json:"folderId,omitempty"`
 	// Headers override the project's defaults for this sample only.
 	Headers []Header `json:"headers,omitempty"`
 	// Auth is this sample's authentication; nil means none.
@@ -187,6 +236,53 @@ type Call struct {
 	// persisted with the workspace so reopening the sample shows it without
 	// sending the request again.
 	Response *SavedResponse `json:"response,omitempty"`
+}
+
+// Request kinds.
+const (
+	KindSOAP = "soap"
+	KindHTTP = "http"
+)
+
+// HTTPMethods are the methods a plain HTTP request may use, in menu order.
+var HTTPMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+
+// KindOrDefault returns the call's kind, falling back to fallback when unset.
+func (c Call) KindOrDefault(fallback string) string {
+	if c.Kind == KindSOAP || c.Kind == KindHTTP {
+		return c.Kind
+	}
+	return fallback
+}
+
+// EffectiveMethod is the method a request is actually sent with: SOAP is always
+// POST; an HTTP call uses its own method, defaulting to POST when unset.
+func EffectiveMethod(kind, method string) string {
+	if kind == KindSOAP {
+		return "POST"
+	}
+	m := strings.ToUpper(strings.TrimSpace(method))
+	if m == "" {
+		return "POST"
+	}
+	return m
+}
+
+// MethodHasBody reports whether method normally carries a request body.
+func MethodHasBody(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case "GET", "HEAD":
+		return false
+	}
+	return true
+}
+
+// DefaultContentType is the body media type for a kind when none is set.
+func DefaultContentType(kind string) string {
+	if kind == KindSOAP {
+		return "text/xml; charset=utf-8"
+	}
+	return "application/json"
 }
 
 // SavedResponse is a response kept with a request sample. It deliberately

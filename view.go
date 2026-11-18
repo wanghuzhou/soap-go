@@ -7,6 +7,8 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
+
+	"soapgo/internal/model"
 )
 
 // Icons drawn as SVG, so the chrome does not fall back to the look of a
@@ -156,8 +158,10 @@ func (a *app) sidebar(c *ui.Context) {
 				if m.Item("导入…").Chosen() {
 					a.importOpen, a.importKind = true, 0
 				}
-				if m.Item("导出 SoapUI XML…").Chosen() {
-					a.saveProjectXML()
+				if p := a.selectedProject(); p != nil && p.CanExportSoapUI() {
+					if m.Item("导出 SoapUI XML…").Chosen() {
+						a.saveProjectXML()
+					}
 				}
 			})
 		})
@@ -185,23 +189,46 @@ func (a *app) sidebar(c *ui.Context) {
 
 // treeItem is one rendered row of the project tree.
 type treeItem struct {
-	kind          string // project | service | operation | call
+	kind          string // project | group | service | operation | call
 	pid, sid, oid string
+	gid           string // group id, for kind == "group"
 	cid           string
 	label, badge  string
+	method        string
 	depth         int
 	hasChildren   bool
 	expanded      bool
 	status        int
 }
 
+// sourceLabel is the short badge shown next to a project name.
+func sourceLabel(source string) string {
+	switch source {
+	case "soapui":
+		return "SoapUI"
+	case "wsdl":
+		return "WSDL"
+	case "wsdl-url":
+		return "WSDL URL"
+	default:
+		return "HTTP"
+	}
+}
+
 func (a *app) treeItems() []treeItem {
 	var out []treeItem
 	for _, p := range a.projects {
 		pe := a.expandedAt(p.ID, true)
-		out = append(out, treeItem{kind: "project", pid: p.ID, label: p.Name, badge: p.Source, hasChildren: len(p.Services) > 0, expanded: pe})
+		hasKids := len(p.Groups) > 0 || len(p.Calls) > 0 || len(p.Services) > 0
+		out = append(out, treeItem{kind: "project", pid: p.ID, label: p.Name, badge: sourceLabel(p.Source), hasChildren: hasKids, expanded: pe})
 		if !pe {
 			continue
+		}
+		a.appendGroupRows(&out, p, "", 1)
+		for _, cl := range p.Calls {
+			if cl.FolderID == "" {
+				out = append(out, callTreeItem(p.ID, "", "", cl, 1))
+			}
 		}
 		for _, s := range p.Services {
 			se := a.expandedAt(s.ID, true)
@@ -220,14 +247,7 @@ func (a *app) treeItems() []treeItem {
 					continue
 				}
 				for _, cl := range o.Calls {
-					st := 0
-					if cl.Response != nil {
-						st = cl.Response.Status
-					}
-					out = append(out, treeItem{
-						kind: "call", pid: p.ID, sid: s.ID, oid: o.ID, cid: cl.ID,
-						label: cl.Title, depth: 3, status: st,
-					})
+					out = append(out, callTreeItem(p.ID, s.ID, o.ID, cl, 3))
 				}
 			}
 		}
@@ -235,10 +255,67 @@ func (a *app) treeItems() []treeItem {
 	return out
 }
 
+// callTreeItem builds a call row, showing its HTTP method.
+func callTreeItem(pid, sid, oid string, cl model.Call, depth int) treeItem {
+	st := 0
+	if cl.Response != nil {
+		st = cl.Response.Status
+	}
+	defKind := model.KindHTTP
+	if sid != "" {
+		defKind = model.KindSOAP
+	}
+	return treeItem{
+		kind: "call", pid: pid, sid: sid, oid: oid, cid: cl.ID,
+		label: cl.Title, method: model.EffectiveMethod(cl.KindOrDefault(defKind), cl.Method),
+		depth: depth, status: st,
+	}
+}
+
+// appendGroupRows renders the groups directly under parentID, recursing into
+// each group's subfolders and requests. A group is expanded by default.
+func (a *app) appendGroupRows(out *[]treeItem, p model.Project, parentID string, depth int) {
+	for _, g := range p.Groups {
+		if g.ParentID != parentID {
+			continue
+		}
+		ge := a.expandedAt(g.ID, true)
+		*out = append(*out, treeItem{
+			kind: "group", pid: p.ID, gid: g.ID, label: g.Name, depth: depth,
+			hasChildren: a.groupHasChildren(p, g.ID), expanded: ge,
+		})
+		if !ge {
+			continue
+		}
+		a.appendGroupRows(out, p, g.ID, depth+1)
+		for _, cl := range p.Calls {
+			if cl.FolderID == g.ID {
+				*out = append(*out, callTreeItem(p.ID, "", "", cl, depth+1))
+			}
+		}
+	}
+}
+
+// groupHasChildren reports whether a group holds any subfolder or request.
+func (a *app) groupHasChildren(p model.Project, gid string) bool {
+	for _, g := range p.Groups {
+		if g.ParentID == gid {
+			return true
+		}
+	}
+	for _, c := range p.Calls {
+		if c.FolderID == gid {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *app) treeRow(c *ui.Context, it treeItem) {
 	t := c.Theme()
 	selected := (it.kind == "call" && a.cid == it.cid && it.cid != "") ||
-		(it.kind == "project" && it.pid == a.pid && a.cid == "" && a.sid == "") ||
+		(it.kind == "project" && it.pid == a.pid && a.cid == "" && a.sid == "" && a.selGroup == "") ||
+		(it.kind == "group" && it.gid == a.selGroup && a.selGroup != "") ||
 		(it.kind == "service" && it.pid == a.pid && it.sid == a.sid && a.oid == "") ||
 		(it.kind == "operation" && it.oid == a.oid && a.cid == "")
 
@@ -270,7 +347,7 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			if !editing {
 				ct.OnClick(func() {
 					switch it.kind {
-					case "project", "service", "operation":
+					case "project", "service", "operation", "group":
 						a.toggleExpanded(nodeKey(it), true)
 					}
 				})
@@ -279,7 +356,7 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			ui.Text(c, "").Width(11)
 		}
 		if it.kind == "call" {
-			ui.Text(c, "POST").FontSize(a.us(9)).Bold().TextColor(t.Accent).Width(30)
+			ui.Text(c, it.method).FontSize(a.us(9)).Bold().TextColor(t.Accent).Width(42)
 		} else {
 			ui.Text(c, kindGlyph(it.kind)).FontSize(a.us(11)).TextColor(kindColor(t, it.kind)).Width(14)
 		}
@@ -330,15 +407,28 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 	}
 	switch it.kind {
 	case "project":
-		pick := func() { a.pid, a.sid, a.oid, a.cid = it.pid, "", "", "" }
-		if m.Item("新建服务…").Chosen() {
+		pick := func() { a.selGroup = ""; a.pid, a.sid, a.oid, a.cid = it.pid, "", "", "" }
+		proj := a.findProject(it.pid)
+		if m.Item("新建请求").Chosen() {
 			pick()
-			a.treeModalOpen, a.treeModalKind, a.nameInput = true, 1, ""
+			a.newProjectCall("")
+		}
+		if m.Item("新建目录…").Chosen() {
+			pick()
+			a.newGroupParent = ""
+			a.treeModalOpen, a.treeModalKind, a.nameInput = true, 3, ""
+		}
+		// SOAP operations only come from import; a native project hides this.
+		if proj != nil && proj.CanExportSoapUI() {
+			if m.Item("新建服务…").Chosen() {
+				pick()
+				a.treeModalOpen, a.treeModalKind, a.nameInput = true, 1, ""
+			}
 		}
 		if m.Item("重命名项目…").Chosen() {
 			name := ""
-			if p := a.findProject(it.pid); p != nil {
-				name = p.Name
+			if proj != nil {
+				name = proj.Name
 			}
 			a.startInlineRename(it.pid, name)
 		}
@@ -346,17 +436,38 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			pick()
 			a.openProxy()
 		}
-		if m.Item("导出 SoapUI XML…").Chosen() {
-			pick()
-			a.saveProjectXML()
+		if proj != nil && proj.CanExportSoapUI() {
+			if m.Item("导出 SoapUI XML…").Chosen() {
+				pick()
+				a.saveProjectXML()
+			}
 		}
 		m.Separator()
 		if m.Item("删除项目").Danger().Chosen() {
 			pick()
 			a.deleteProject()
 		}
+	case "group":
+		pick := func() { a.selGroup = it.gid; a.pid, a.sid, a.oid, a.cid = it.pid, "", "", "" }
+		if m.Item("新建请求").Chosen() {
+			pick()
+			a.newProjectCall(it.gid)
+		}
+		if m.Item("新建目录…").Chosen() {
+			pick()
+			a.newGroupParent = it.gid
+			a.treeModalOpen, a.treeModalKind, a.nameInput = true, 3, ""
+		}
+		if m.Item("重命名目录…").Chosen() {
+			a.startInlineRename(it.gid, it.label)
+		}
+		m.Separator()
+		if m.Item("删除目录").Danger().Chosen() {
+			pick()
+			a.deleteGroup(it.pid, it.gid, it.label)
+		}
 	case "service":
-		pick := func() { a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, "", "" }
+		pick := func() { a.selGroup = ""; a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, "", "" }
 		if m.Item("新建操作…").Chosen() {
 			pick()
 			a.treeModalOpen, a.treeModalKind, a.nameInput = true, 2, ""
@@ -367,7 +478,7 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			a.deleteService()
 		}
 	case "operation":
-		pick := func() { a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, "" }
+		pick := func() { a.selGroup = ""; a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, "" }
 		if m.Item("新建请求样例").Chosen() {
 			pick()
 			a.newCall()
@@ -387,12 +498,14 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 		if m.Item("重命名请求…").Chosen() {
 			a.startInlineRename(it.cid, it.label)
 		}
-		if m.Item("复制请求样例").Chosen() {
+		if m.Item("复制请求").Chosen() {
+			a.selGroup = ""
 			a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, it.cid
 			a.duplicateCall()
 		}
 		m.Separator()
-		if m.Item("删除请求样例").Danger().Chosen() {
+		if m.Item("删除请求").Danger().Chosen() {
+			a.selGroup = ""
 			a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, it.cid
 			a.deleteCall()
 		}
@@ -416,6 +529,8 @@ func nodeKey(it treeItem) string {
 	switch it.kind {
 	case "project":
 		return it.pid
+	case "group":
+		return it.gid
 	case "service":
 		return it.sid
 	default:
@@ -427,10 +542,15 @@ func (a *app) selectTree(it treeItem) {
 	if a.renamingID != "" {
 		a.cancelInlineRename()
 	}
+	a.selGroup = ""
 	switch it.kind {
 	case "project":
 		a.pid, a.sid, a.oid, a.cid = it.pid, "", "", ""
 		a.toggleExpanded(it.pid, true)
+	case "group":
+		a.pid, a.sid, a.oid, a.cid = it.pid, "", "", ""
+		a.selGroup = it.gid
+		a.toggleExpanded(it.gid, true)
 	case "service":
 		a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, "", ""
 		a.toggleExpanded(it.sid, true)
@@ -481,7 +601,7 @@ func (a *app) tabStrip(c *ui.Context) {
 				tab = tab.Background(t.SurfaceHover).Radius(6)
 			}
 			tab.Children(func() {
-				ui.Text(c, "POST").FontSize(a.us(8.5)).Bold().TextColor(t.Accent)
+				ui.Text(c, a.callMethod(key)).FontSize(a.us(8.5)).Bold().TextColor(t.Accent)
 				lc := t.TextMuted
 				if active {
 					lc = t.Text
@@ -505,9 +625,13 @@ func (a *app) tabStrip(c *ui.Context) {
 func (a *app) urlBar(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Shrink(0).Padding(10, 14).Gap(8).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "POST").FontSize(a.us(10)).Bold().TextColor(t.AccentText).
-			Padding(6, 10).Background(t.Accent).Radius(7)
-		ui.TextInput(c, &a.endpoint).Placeholder("http://host/service.asmx").Grow(1).OnSubmit(func() { a.sendRequest() })
+		if a.reqKind == model.KindSOAP {
+			ui.Text(c, "POST").FontSize(a.us(10)).Bold().TextColor(t.AccentText).
+				Padding(6, 10).Background(t.Accent).Radius(7)
+		} else {
+			ui.Select(c, &a.method, model.HTTPMethods).Width(104)
+		}
+		ui.TextInput(c, &a.endpoint).Placeholder("http://host/api/path").Grow(1).OnSubmit(func() { a.sendRequest() })
 		if a.sending {
 			if ui.PrimaryButton(c, "取消  ■").Clicked() {
 				a.cancelSend()
@@ -521,35 +645,74 @@ func (a *app) urlBar(c *ui.Context) {
 
 func (a *app) requestPanel(c *ui.Context) {
 	t := c.Theme()
+	labels, keys := a.requestSections()
+	if a.reqSection < 0 || a.reqSection >= len(labels) {
+		a.reqSection = 0
+	}
 	ui.Column(c).Fill().Background(t.Background).Children(func() {
 		ui.Row(c).Shrink(0).Padding(6, 14, 0).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Tabs(c, &a.reqSection,
-				"报文",
-				fmt.Sprintf("请求头 %d", len(a.headers)+2),
-				"认证",
-				"设置",
-			).Shrink(0)
+			ui.Tabs(c, &a.reqSection, labels...).Shrink(0)
 		})
-		switch a.reqSection {
-		case 1:
+		switch keys[a.reqSection] {
+		case "query":
+			a.queryPanel(c)
+		case "headers":
 			a.headersPanel(c)
-		case 2:
+		case "auth":
 			a.authPanel(c)
-		case 3:
+		case "settings":
 			a.settingsPanel(c)
 		default:
-			ui.Column(c).Grow(1).Padding(10, 12, 10).Gap(8).Children(func() {
-				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "XML 报文").FontSize(a.us(11)).TextColor(t.TextMuted).Bold()
-					ui.Spacer(c)
-					a.flatButton(c, "格式化", a.formatBody)
-					a.flatButton(c, "压缩", a.minifyBody)
-					a.flatButton(c, "复制为 curl", a.copyCurl)
-					a.flatButton(c, "保存请求", a.saveCall)
-				})
-				a.editorWithCopy(c, a.xmlEd, "请求报文已复制", func() string { return a.xmlEd.Buffer.String() })
-			})
+			a.bodyPanel(c)
 		}
+	})
+}
+
+// requestSections returns the request-panel tab labels and their keys. The
+// 查询 tab only applies to HTTP requests.
+func (a *app) requestSections() (labels, keys []string) {
+	labels = append(labels, "报文")
+	keys = append(keys, "body")
+	if a.reqKind != model.KindSOAP {
+		labels = append(labels, "查询")
+		keys = append(keys, "query")
+	}
+	// SOAP has SOAPAction + Content-Type always; HTTP only has Content-Type.
+	baseHeaders := 1
+	if a.reqKind == model.KindSOAP {
+		baseHeaders = 2
+	}
+	labels = append(labels, fmt.Sprintf("请求头 %d", len(a.headers)+baseHeaders))
+	keys = append(keys, "headers")
+	labels = append(labels, "认证")
+	keys = append(keys, "auth")
+	labels = append(labels, "设置")
+	keys = append(keys, "settings")
+	return
+}
+
+// bodyPanel is the 报文 editor with the format/minify/curl/save actions. The
+// format and minify buttons are shown only for JSON or XML bodies.
+func (a *app) bodyPanel(c *ui.Context) {
+	t := c.Theme()
+	title := "报文"
+	if a.isJSONRequest() {
+		title = "JSON 报文"
+	} else if a.isXMLRequest() {
+		title = "XML 报文"
+	}
+	ui.Column(c).Grow(1).Padding(10, 12, 10).Gap(8).Children(func() {
+		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, title).FontSize(a.us(11)).TextColor(t.TextMuted).Bold()
+			ui.Spacer(c)
+			if a.isJSONRequest() || a.isXMLRequest() {
+				a.flatButton(c, "格式化", a.formatBody)
+				a.flatButton(c, "压缩", a.minifyBody)
+			}
+			a.flatButton(c, "复制为 curl", a.copyCurl)
+			a.flatButton(c, "保存请求", a.saveCall)
+		})
+		a.editorWithCopy(c, a.xmlEd, "请求报文已复制", func() string { return a.xmlEd.Buffer.String() })
 	})
 }
 
@@ -564,24 +727,36 @@ func (a *app) headersPanel(c *ui.Context) {
 				a.headers = append(a.headers, headerRow{})
 			}
 		})
-		ui.Text(c, "SOAPAction 与 Content-Type 默认存在；项目默认头会叠加，样例头可覆盖同名项。").
-			FontSize(10.5).TextColor(t.TextMuted)
+		if a.reqKind == model.KindSOAP {
+			ui.Text(c, "SOAPAction 与 Content-Type 默认存在；项目默认头会叠加，样例头可覆盖同名项。").
+				FontSize(10.5).TextColor(t.TextMuted)
+		} else {
+			ui.Text(c, "Content-Type 与项目默认头会叠加，样例头可覆盖同名项。").
+				FontSize(10.5).TextColor(t.TextMuted)
+		}
 		ui.Divider(c)
 
-		// Default SOAP headers.
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "SOAPAction").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
-			ui.TextInput(c, &a.action).Placeholder("http://tempuri.org/Op").Grow(1)
-			ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
-		})
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
-			ui.Select(c, &a.contentType, []string{
-				"text/xml; charset=utf-8",
-				"application/soap+xml; charset=utf-8",
-			}).Grow(1)
-			ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
-		})
+		if a.reqKind == model.KindSOAP {
+			// Default SOAP headers.
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "SOAPAction").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
+				ui.TextInput(c, &a.action).Placeholder("http://tempuri.org/Op").Grow(1)
+				ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
+			})
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
+				ui.Select(c, &a.contentType, []string{
+					"text/xml; charset=utf-8",
+					"application/soap+xml; charset=utf-8",
+				}).Grow(1)
+				ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
+			})
+		} else {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
+				ui.TextInput(c, &a.contentType).Placeholder("application/json").Grow(1)
+			})
+		}
 
 		if len(a.projHeaders) > 0 {
 			ui.Text(c, "项目默认头").FontSize(a.us(10.5)).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
@@ -621,6 +796,50 @@ func (a *app) headersPanel(c *ui.Context) {
 
 // authPanel is the 认证 section: the auth type, an enable switch, and the
 // fields of the picked scheme, after Yaak's request auth panel.
+// queryPanel is the 查询 tab of an HTTP request. Its rows are parsed from the
+// endpoint URL and written back to it, so the URL stays the single source of
+// truth and both directions stay in sync.
+func (a *app) queryPanel(c *ui.Context) {
+	t := c.Theme()
+	if a.endpoint != a.querySrc {
+		a.queryRows = parseQueryRows(a.endpoint)
+		a.querySrc = a.endpoint
+	}
+	ui.Column(c).Grow(1).Padding(14, 14, 10).Gap(8).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "查询参数").FontSize(a.us(11.5)).Bold()
+			ui.Spacer(c)
+			if ui.Button(c, "＋ 添加参数").Clicked() {
+				a.queryRows = append(a.queryRows, queryRow{})
+			}
+		})
+		ui.Text(c, "查询参数与上方 URL 查询串双向同步。").
+			FontSize(a.us(10.5)).TextColor(t.TextMuted)
+		ui.Divider(c)
+		for i := range a.queryRows {
+			i := i
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.TextInput(c, &a.queryRows[i].Key).Placeholder("参数名").Width(200)
+				ui.TextInput(c, &a.queryRows[i].Value).Placeholder("值").Grow(1)
+				ui.Text(c, "×").FontSize(a.us(13)).TextColor(t.TextMuted).Width(18).
+					OnClick(func() {
+						if i >= 0 && i < len(a.queryRows) {
+							a.queryRows = append(a.queryRows[:i], a.queryRows[i+1:]...)
+						}
+					})
+			})
+		}
+		ui.Spacer(c)
+	})
+	// Only rewrite the URL when the rows themselves changed; an untouched URL
+	// (even one spelled with %20) must not be canonicalised on load.
+	if produced := buildQueryURL(a.endpoint, a.queryRows); produced != a.endpoint &&
+		produced != buildQueryURL(a.endpoint, parseQueryRows(a.endpoint)) {
+		a.endpoint = produced
+		a.querySrc = produced
+	}
+}
+
 func (a *app) authPanel(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).Padding(14, 14, 10).Gap(12).Children(func() {
@@ -705,7 +924,12 @@ func (a *app) settingsPanel(c *ui.Context) {
 		})
 		ui.Divider(c)
 		ui.Text(c, "请求方式").FontSize(a.us(11.5)).Bold()
-		ui.Text(c, "SOAP 请求固定为 POST。").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+		if a.reqKind == model.KindSOAP {
+			ui.Text(c, "SOAP 请求固定为 POST。").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+		} else {
+			ui.Text(c, "普通 HTTP 请求的方法在地址栏左侧选择（当前 "+a.method+"）。").
+				FontSize(a.us(10.5)).TextColor(t.TextMuted)
+		}
 		ui.Spacer(c)
 	})
 }
@@ -1012,6 +1236,8 @@ func (a *app) treeModal(c *ui.Context) {
 		switch a.treeModalKind {
 		case 2:
 			title, placeholder = "新建操作", "操作名称"
+		case 3:
+			title, placeholder = "新建目录", "目录名称"
 		}
 		ui.Column(c).Width(420).Gap(12).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -1032,6 +1258,8 @@ func (a *app) treeModal(c *ui.Context) {
 						a.addService(a.nameInput)
 					case 2:
 						a.addOperation(a.nameInput)
+					case 3:
+						a.newGroup(a.newGroupParent, a.nameInput)
 					}
 					a.treeModalOpen = false
 				}
@@ -1466,6 +1694,8 @@ func kindGlyph(kind string) string {
 	switch kind {
 	case "project":
 		return "▣"
+	case "group":
+		return "▤"
 	case "service":
 		return "◈"
 	case "operation":
@@ -1479,6 +1709,8 @@ func kindColor(t *ui.Theme, kind string) ui.Color {
 	switch kind {
 	case "project":
 		return t.Accent
+	case "group":
+		return t.TextMuted
 	case "service":
 		return t.TextMuted
 	case "operation":
