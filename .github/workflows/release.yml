@@ -141,7 +141,11 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # 2) macOS arm64 / amd64：在对应的原生 runner 上构建，并用 lipo 校验架构。
+  # 2) macOS arm64 / amd64：在对应的原生 runner 上构建成 .app 应用包。
+  #    直接用 `go build` 出来的裸可执行文件在 Finder 里双击会被终端打开（多出
+  #    一个命令窗口），而且没有 Info.plist / 图标 / 签名，不是正常的分发形态。
+  #    用 MyGo 自带的 `go tool mygo build` 打包成 .app（无签名身份时用临时签名），
+  #    再用 lipo 校验架构。
   # ---------------------------------------------------------------------------
   build-macos:
     name: darwin/${{ matrix.goarch }}
@@ -163,36 +167,55 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build
+      - name: Build .app bundle
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          # mygo build 输出 build/<os>-<arch>/soap-go.app；不签名身份时用临时签名，
+          # -skip-dmg 先跳过磁盘映像（下面按需生成）。
+          CGO_ENABLED=0 GOARCH="${GOARCH}" \
+            go tool mygo build -platform "darwin/${GOARCH}" -skip-dmg -skip-notarize
+
+          APP="build/darwin-${GOARCH}/soap-go.app"
+          test -d "${APP}" || { echo "missing ${APP}" >&2; exit 1; }
+
+          BIN="${APP}/Contents/MacOS/soap-go"
+          ACTUAL=$(lipo -archs "${BIN}")
+          echo "built architecture: ${ACTUAL}"
+          if [ "${ACTUAL}" != "${{ matrix.lipo }}" ]; then
+            echo "architecture mismatch: want ${{ matrix.lipo }}, got ${ACTUAL}" >&2
+            exit 1
+          fi
+
+          # 报告签名状态（CI 上通常是 ad-hoc 或未签名，仅记录，不失败）。
+          codesign -dv "${APP}" 2>&1 | sed -n 's/^Authority=//p' || true
+
+      - name: Package
         env:
           GOARCH: ${{ matrix.goarch }}
         run: |
           set -euo pipefail
           SAFE_TAG="${TAG//\//-}"
           NAME="soap-go_${SAFE_TAG}_darwin_${GOARCH}"
+          APP="build/darwin-${GOARCH}/soap-go.app"
           STAGE="dist/${NAME}"
           mkdir -p "${STAGE}"
-          CGO_ENABLED=0 GOOS=darwin GOARCH="${GOARCH}" go build -trimpath \
-            -tags mygo_noinspector \
-            -ldflags='-s -w -X github.com/egoist/mygo.production=1' \
-            -o "${STAGE}/soap-go" .
-          ACTUAL=$(lipo -archs "${STAGE}/soap-go")
-          echo "built architecture: ${ACTUAL}"
-          if [ "${ACTUAL}" != "${{ matrix.lipo }}" ]; then
-            echo "architecture mismatch: want ${{ matrix.lipo }}, got ${ACTUAL}" >&2
-            exit 1
-          fi
+          cp -R "${APP}" "${STAGE}/"
           cp README.md "${STAGE}/"
-          chmod 755 "${STAGE}/soap-go"
           printf '%s\n' \
             'soap-go for macOS' \
             '' \
-            'This build is unsigned. If macOS blocks it, run once:' \
+            'Drag soap-go.app to /Applications, then open it.' \
             '' \
-            '    xattr -dr com.apple.quarantine <this-folder>' \
+            'This build is not notarized. If macOS blocks it, run once:' \
             '' \
-            'Run:  ./soap-go -data ./data' \
+            '    xattr -dr com.apple.quarantine "/Applications/soap-go.app"' \
+            '' \
+            'Data, logs and ui-state live in ~/Library/Application Support/soap-web/.' \
             > "${STAGE}/MACOS-README.txt"
+
+          # 用 ditto 保留 .app 的资源分支与签名，再打包成 zip。
           ( cd dist && ditto -c -k --sequesterRsrc --keepParent "${NAME}" "${NAME}.zip" )
           rm -rf "${STAGE}"
 

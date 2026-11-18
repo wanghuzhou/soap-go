@@ -23,25 +23,31 @@ SOAP / WSDL 接口调试桌面工具，用 **Go + MyGo 原生 UI**（纯 Go 绘�
 
 把 soap-web 的 `bin/data` 下的 `settings.json` 与 `projects.json` 复制到 soap-go 的数据目录，即可看到原有项目。主题、分栏布局和字体设置保存在数据目录的 `ui-state.json`。
 
-数据目录默认为可执行文件旁 `data/`，也可用 `-data <目录>` 指定。
+数据目录默认为可执行文件旁 `data/`，也可用 `-data <目录>` 指定。macOS 上从 `.app` 启动时会改用 `~/Library/Application Support/soap-web/data/`（避免往被签名的包内写文件而破坏签名）。
 
 ## 运行
 
 ### 预编译版
 
-```powershell
-bin\soap-go.exe
-```
+- Windows：运行 `soap-go.exe`
+- macOS：把 `soap-go.app` 拖进「应用程序」后打开
 
 首次运行会自动创建数据目录与默认工作空间。
 
 ### 从源码构建
 
+各平台统一用 MyGo 自带的打包命令（`go tool mygo build`，由 `go.mod` 的 `tool` 指令固定版本），产出规范的应用包：
+
 ```powershell
-go build -trimpath -ldflags "-H windowsgui" -o bin/soap-go.exe .
+go tool mygo build                       # 构建本机平台到 build/<os>-<arch>/
+go tool mygo build -platform darwin/arm64,windows/amd64,linux/amd64
 ```
 
-`-H windowsgui` 让 Windows 不额外弹出控制台窗口；日志写入数据目录旁的 `logs/soap.log`。
+- macOS：`build/darwin-<arch>/soap-go.app`（真正带 `Info.plist`、图标与签名的应用包，双击不会额外弹出命令窗口；数据写到 `~/Library/Application Support/soap-web/`）
+- Windows：`build/windows-amd64/soap-go.exe`（已内嵌 `windowsgui`，不会额外弹出控制台窗口）
+- Linux：`build/linux-amd64/soap-go`
+
+本地调试也可以直接 `go run .`；日志写入数据目录旁的 `logs/soap.log`。
 
 需要 **Go 1.27.3+**（MyGo 的版本要求）。
 
@@ -87,7 +93,8 @@ internal/      从 soap-web 移植的业务包
 推送 `v*.*.*` 形式的 tag 会触发 `.github/workflows/release.yml`：
 
 - 先跑 `go vet` / `go test`，通过后构建
-- 产物：`windows/amd64`、`linux/amd64`、`darwin/arm64`、`darwin/amd64`
+- Windows / Linux 用 `go build` 直接产出可执行文件与归档
+- macOS 用 `go tool mygo build` 打包成 `.app`（CI 上无签名身份，用临时签名），再以 `ditto` 压成 zip；用户首次打开若被 Gatekeeper 拦截，按包内 `MACOS-README.txt` 执行一次 `xattr -dr com.apple.quarantine`
 - 自动创建 GitHub Release，附 `SHA256SUMS.txt`
 ## 说明
 

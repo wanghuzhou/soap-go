@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -639,9 +640,12 @@ func TestUIStatePersists(t *testing.T) {
 	a.sideW = 333
 	a.splitV = 55
 	a.splitH = 44
-	a.uiFontChoice = "Consolas"
+	// Use fonts this platform's dropdown actually offers, so the choices
+	// survive normalization on both macOS and Windows.
+	uiFont, editorFont := secondChoice(uiFontOptions), secondChoice(editorFontOptions)
+	a.uiFontChoice = uiFont
 	a.uiFontSize = 16
-	a.editorFontChoice = "Cascadia Code"
+	a.editorFontChoice = editorFont
 	a.editorFontSize = 18
 	a.accent = "#10b981"
 	a.saveUIState()
@@ -654,8 +658,8 @@ func TestUIStatePersists(t *testing.T) {
 	if b.dark != false || b.splitSide != 1 || b.sideW != 333 || b.splitV != 55 || b.splitH != 44 {
 		t.Fatalf("restored = %+v", b.currentUI())
 	}
-	if b.uiFontChoice != "Consolas" || b.uiFontSize != 16 ||
-		b.editorFontChoice != "Cascadia Code" || b.editorFontSize != 18 {
+	if b.uiFontChoice != uiFont || b.uiFontSize != 16 ||
+		b.editorFontChoice != editorFont || b.editorFontSize != 18 {
 		t.Fatalf("restored fonts = %q %v %q %v", b.uiFontChoice, b.uiFontSize, b.editorFontChoice, b.editorFontSize)
 	}
 	if b.accent != "#10b981" {
@@ -695,7 +699,8 @@ func TestAccentSettingApplies(t *testing.T) {
 func TestFontSettingsApply(t *testing.T) {
 	a := newTestApp(t)
 	a.uiFontSize = 18
-	a.editorFontChoice = "Consolas"
+	editorFont := secondChoice(editorFontOptions)
+	a.editorFontChoice = editorFont
 	a.editorFontSize = 20
 
 	if got := a.theme().FontSize; got != 18 {
@@ -716,10 +721,10 @@ func TestFontSettingsApply(t *testing.T) {
 
 	a.uiFontSize = 18
 	a.syncEditorFont()
-	if a.xmlEd.Font.Size != 20 || a.xmlEd.Font.Family != "Consolas" {
+	if a.xmlEd.Font.Size != 20 || a.xmlEd.Font.Family != editorFont {
 		t.Fatalf("xmlEd font = %+v", a.xmlEd.Font)
 	}
-	if a.respEd.Font.Size != 20 || a.respEd.Font.Family != "Consolas" {
+	if a.respEd.Font.Size != 20 || a.respEd.Font.Family != editorFont {
 		t.Fatalf("respEd font = %+v", a.respEd.Font)
 	}
 
@@ -1400,5 +1405,88 @@ func TestGroupTreeRenders(t *testing.T) {
 	tt.Frame()
 	if !tt.HasText("我的目录") || !tt.HasText("目录内请求") {
 		t.Fatal("group tree did not render its folder and request")
+	}
+}
+
+// TestTitleBarPadClearsTrafficLights pins the top bar's inner padding: on
+// macOS the window controls (the traffic lights) occupy bar.Left pixels from
+// the left edge and bar.Bottom down from the top, so the content must start
+// to their right or the app icon overlaps them. Platforms with no reserved
+// space on the left keep the ordinary left pad.
+func TestTitleBarPadClearsTrafficLights(t *testing.T) {
+	// macOS: traffic lights from x=0 to about x=78, bottom at y≈28.
+	mac := ui.TitleBar{Height: 28, Left: 78, Bottom: 28}
+	top, right, bottom, left := titleBarPad(mac, 14)
+	if left <= mac.Left {
+		t.Fatalf("left pad = %v, want > traffic-light span %v", left, mac.Left)
+	}
+	if top != 0 || bottom != 0 {
+		t.Fatalf("top/bottom pad = %v/%v, want 0/0", top, bottom)
+	}
+	if right <= 0 {
+		t.Fatalf("right pad = %v, want > 0", right)
+	}
+
+	// Windows / Linux: no room reserved, so the plain left pad stays.
+	win := ui.TitleBar{}
+	_, _, _, wleft := titleBarPad(win, 14)
+	if wleft != 14 {
+		t.Fatalf("left pad = %v, want 14", wleft)
+	}
+}
+
+// TestTopBarClearsTrafficLightsInFrame renders the real top bar under a
+// macOS-style title bar (traffic lights from the left edge to x≈78) and checks
+// the app icon ("S" mark) starts to their right instead of overlapping them.
+func TestTopBarClearsTrafficLightsInFrame(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, 1200, 800)
+	mac := ui.TitleBar{Height: 28, Left: 78, Bottom: 28}
+	tt.SetTitleBar(mac)
+	tt.Frame()
+
+	box, ok := tt.Find("S")
+	if !ok {
+		t.Fatal("app icon mark not found in the top bar")
+	}
+	// The traffic lights reach mac.Left from the left edge; the icon must sit
+	// past them (with the small gap titleBarPad adds), not under them.
+	if box.X < mac.Left {
+		t.Fatalf("icon x = %.1f, want >= traffic-light span %.1f (icon overlaps the traffic lights)", box.X, mac.Left)
+	}
+}
+
+// secondChoice returns the first option after the system default, a real font
+// family this platform offers, for tests that need a non-default choice.
+func secondChoice(options []string) string {
+	if len(options) < 2 {
+		return systemFontLabel
+	}
+	return options[1]
+}
+
+// TestFontOptionsPerPlatform checks the settings dialog offers a non-trivial
+// font list whose first entry is the system default, that a stored family the
+// current platform does not offer (such as one saved on another OS) falls back
+// to the system font, and that offered families survive normalization.
+func TestFontOptionsPerPlatform(t *testing.T) {
+	if len(uiFontOptions) < 3 || len(editorFontOptions) < 3 {
+		t.Fatalf("font options too short: ui=%v editor=%v", uiFontOptions, editorFontOptions)
+	}
+	if uiFontOptions[0] != systemFontLabel || editorFontOptions[0] != systemFontLabel {
+		t.Fatalf("first option must be the system default: ui=%q editor=%q", uiFontOptions[0], editorFontOptions[0])
+	}
+	// A family from the other platform's list is not offered here.
+	foreign := "Segoe UI"
+	if runtime.GOOS == "darwin" {
+		foreign = "Microsoft YaHei UI"
+	}
+	if got := normalizeFontChoice(foreign, uiFontOptions); got != systemFontLabel {
+		t.Fatalf("foreign font %q normalized to %q, want system default", foreign, got)
+	}
+	// An offered family is kept.
+	offered := secondChoice(editorFontOptions)
+	if got := normalizeFontChoice(offered, editorFontOptions); got != offered {
+		t.Fatalf("offered font %q normalized to %q, want itself", offered, got)
 	}
 }

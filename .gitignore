@@ -1,5 +1,7 @@
 # Build output
 /bin/
+/build/
+/.mygo/
 *.exe
 *.exe~
 

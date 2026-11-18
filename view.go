@@ -75,8 +75,13 @@ func (a *app) topBar(c *ui.Context) {
 	if h < 44 {
 		h = 44
 	}
+	// Keep the content clear of the window controls: on macOS the traffic
+	// lights sit at the top-left and span bar.Left pixels, so a fixed left
+	// pad would draw the icon on top of them. On Windows and Linux bar.Left
+	// is 0 and the pad below is the ordinary 14.
+	padTop, padRight, padBottom, padLeft := titleBarPad(bar, 14)
 	ui.Row(c).Shrink(0).Height(h).
-		Padding(0, bar.Right+10, 0, 14).Gap(8).AlignItems(ui.Center).
+		Padding(padTop, padRight, padBottom, padLeft).Gap(8).AlignItems(ui.Center).
 		Background(t.Surface).DragWindow().Children(func() {
 		ui.Row(c).Width(22).Height(22).Center().Justify(ui.Center).
 			Gradient(ui.Hex("#6366f1"), ui.Hex("#a855f7"), 135).Radius(6).Children(func() {
@@ -142,6 +147,21 @@ func (a *app) topBar(c *ui.Context) {
 		}
 	})
 	ui.Divider(c)
+}
+
+// titleBarPad turns the room the window controls take (ui.TitleBar) into the
+// top bar's inner padding, so its content starts to the right of the traffic
+// lights on macOS instead of under them. bar.Left is the width of the
+// controls from the left edge (about the close-to-zoom span on macOS, 0 on
+// Windows and Linux), and bar.Bottom is how far down they reach. base is the
+// ordinary left pad used when the platform reserves no space there.
+func titleBarPad(bar ui.TitleBar, base float32) (top, right, bottom, left float32) {
+	left = base
+	if bar.Left > 0 {
+		// A small gap between the last light and the app's own content.
+		left = bar.Left + 10
+	}
+	return 0, bar.Right + 10, 0, left
 }
 
 func (a *app) sidebar(c *ui.Context) {

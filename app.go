@@ -352,11 +352,11 @@ func (a *app) loadUIState() {
 			if st.SplitH > 5 && st.SplitH < 95 {
 				a.splitH = st.SplitH
 			}
-			a.uiFontChoice = normalizeFontChoice(st.UIFont)
+			a.uiFontChoice = normalizeFontChoice(st.UIFont, uiFontOptions)
 			if st.UIFontSize > 0 {
 				a.uiFontSize = st.UIFontSize
 			}
-			a.editorFontChoice = normalizeFontChoice(st.EditorFont)
+			a.editorFontChoice = normalizeFontChoice(st.EditorFont, editorFontOptions)
 			if st.EditorFontSize > 0 {
 				a.editorFontSize = st.EditorFontSize
 			}
@@ -471,13 +471,27 @@ const systemFontLabel = "系统默认"
 const appVersion = "v0.2.0"
 
 // uiFontOptions and editorFontOptions are the families the settings dialog
-// offers; the first choice is the system's own font.
-var uiFontOptions = []string{
-	systemFontLabel, "Segoe UI", "Microsoft YaHei UI", "微软雅黑", "Arial", "Tahoma", "Verdana",
-}
+// offers; the first choice is the system's own font. They differ per platform
+// because each OS ships its own common typefaces (PingFang on macOS, Segoe UI
+// on Windows), so the list only names fonts the user actually has.
+var uiFontOptions, editorFontOptions []string
 
-var editorFontOptions = []string{
-	systemFontLabel, "Cascadia Code", "Consolas", "JetBrains Mono", "Fira Code", "Courier New", "Source Code Pro",
+func init() {
+	if runtime.GOOS == "darwin" {
+		uiFontOptions = []string{
+			systemFontLabel, "PingFang SC", "Helvetica Neue", "Helvetica", "Hiragino Sans GB", "Songti SC", "Arial",
+		}
+		editorFontOptions = []string{
+			systemFontLabel, "SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Fira Code", "Courier New",
+		}
+	} else {
+		uiFontOptions = []string{
+			systemFontLabel, "Segoe UI", "Microsoft YaHei UI", "微软雅黑", "Arial", "Tahoma", "Verdana",
+		}
+		editorFontOptions = []string{
+			systemFontLabel, "Cascadia Code", "Consolas", "JetBrains Mono", "Fira Code", "Courier New", "Source Code Pro",
+		}
+	}
 }
 
 // fontFamily maps a dropdown choice to a theme font family; "" is the
@@ -489,12 +503,20 @@ func fontFamily(choice string) string {
 	return choice
 }
 
-// normalizeFontChoice maps a stored family back to a dropdown choice.
-func normalizeFontChoice(family string) string {
+// normalizeFontChoice maps a stored family back to a dropdown choice from the
+// given options. A family those options do not offer—for example one saved on
+// another OS—maps to the system font, so the dropdown never shows a blank
+// entry.
+func normalizeFontChoice(family string, options []string) string {
 	if family == "" {
 		return systemFontLabel
 	}
-	return family
+	for _, f := range options {
+		if f == family {
+			return family
+		}
+	}
+	return systemFontLabel
 }
 
 // setDark switches the theme and persists the choice; both the top bar toggle
