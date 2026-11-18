@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"soapgo/internal/model"
+	"soapgo/internal/soapuiproj"
 	"soapgo/internal/transport"
 	"soapgo/internal/workspace"
 )
@@ -171,6 +174,7 @@ func TestCloseTabKeepsActiveTab(t *testing.T) {
 // action through the headless build of the real view.
 func TestToolbarButtonClicks(t *testing.T) {
 	a := newTestApp(t)
+	a.reqKind = model.KindSOAP
 	a.xmlEd.Buffer.Reset("<a>\n  <b>1</b>\n</a>")
 	tt := ui.NewTester(a.view, 1200, 800)
 	tt.Frame()
@@ -502,6 +506,7 @@ func TestResponseTextTabs(t *testing.T) {
 	}
 	a.endpoint = "http://example.test/soap"
 	a.action = "urn:a"
+	a.reqKind = model.KindSOAP
 	a.headers = []headerRow{{Name: "X-Test", Value: "1"}}
 	a.xmlEd.Buffer.Reset("<req/>")
 
@@ -746,8 +751,28 @@ func TestTopBarMenus(t *testing.T) {
 	}
 	tt.Frame()
 	items := strings.Join(tt.Menu(), ",")
-	if !strings.Contains(items, "导入…") || !strings.Contains(items, "导出 SoapUI XML…") {
+	// A native (plain HTTP) project must not offer the SoapUI export.
+	if !strings.Contains(items, "导入…") {
 		t.Fatalf("more menu = %v", tt.Menu())
+	}
+	if strings.Contains(items, "导出 SoapUI XML…") {
+		t.Fatalf("native project must not offer SoapUI export: %v", tt.Menu())
+	}
+	tt.CloseMenu()
+	tt.Frame()
+
+	// A SoapUI-sourced project does offer the export.
+	a.createProject("S")
+	a.reload()
+	a.projects[1].Source = "soapui"
+	a.pid = a.projects[1].ID
+	tt.Frame()
+	if err := tt.Click("更多"); err != nil {
+		t.Fatalf("click 更多: %v", err)
+	}
+	tt.Frame()
+	if !strings.Contains(strings.Join(tt.Menu(), ","), "导出 SoapUI XML…") {
+		t.Fatalf("soap project more menu = %v", tt.Menu())
 	}
 	tt.CloseMenu()
 	tt.Frame()
@@ -1186,5 +1211,194 @@ func TestAuthPanelRenders(t *testing.T) {
 	tt.Frame()
 	if tt.HasText("Username") {
 		t.Fatal("no-auth page still shows credential fields")
+	}
+}
+
+// newNativeCall builds a native project with one HTTP request and opens it.
+func newNativeCall(t *testing.T) (*app, model.Call) {
+	t.Helper()
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	call, err := a.st.AddProjectCall(p.ID, "", model.Call{
+		Title: "R", Endpoint: "http://example.test/api", Method: "GET",
+	})
+	if err != nil {
+		t.Fatalf("AddProjectCall: %v", err)
+	}
+	a.reload()
+	a.openCall(p.ID, "", "", call.ID)
+	return a, call
+}
+
+// TestNativeHTTPBuild checks a native request builds with its own method, no
+// SOAPAction, no content type for a bodyless GET, and a JSON body for POST.
+func TestNativeHTTPBuild(t *testing.T) {
+	a, _ := newNativeCall(t)
+	if a.reqKind != model.KindHTTP {
+		t.Fatalf("reqKind = %q, want http", a.reqKind)
+	}
+	if a.bodyType != model.BodyNone {
+		t.Fatalf("a new GET request should default to No Body, got %q", a.bodyType)
+	}
+
+	a.method = "GET"
+	a.xmlEd.Buffer.Reset(`{"q":1}`)
+	req, _, err := a.buildSendRequest()
+	if err != nil {
+		t.Fatalf("buildSendRequest: %v", err)
+	}
+	if req.Method != "GET" || req.Body != "" {
+		t.Fatalf("GET req = %+v, want no body", req)
+	}
+	if _, ok := req.Headers["SOAPAction"]; ok {
+		t.Fatalf("HTTP request must not set SOAPAction: %v", req.Headers)
+	}
+	if _, ok := req.Headers["Content-Type"]; ok || req.ContentType != "" {
+		t.Fatalf("bodyless GET must not carry a Content-Type: %+v", req.Headers)
+	}
+
+	a.method = "POST"
+	a.setBodyType(model.BodyJSON)
+	req, _, _ = a.buildSendRequest()
+	if req.Method != "POST" || req.Body != `{"q":1}` {
+		t.Fatalf("POST req = %+v", req)
+	}
+	if req.ContentType != "application/json" {
+		t.Fatalf("POST content type = %q", req.ContentType)
+	}
+
+	a.saveCall()
+	a.reload()
+	if got := a.projects[0].Calls[0]; got.Kind != model.KindHTTP || got.Method != "POST" || got.BodyType != model.BodyJSON {
+		t.Fatalf("stored call = %+v", got)
+	}
+}
+
+// TestJSONFormat checks the JSON branch of format/minify.
+func TestJSONFormat(t *testing.T) {
+	a, _ := newNativeCall(t)
+	a.setBodyType(model.BodyJSON)
+	a.xmlEd.Buffer.Reset(`{"a":1,"b":[2,3]}`)
+
+	a.formatBody()
+	if got := a.xmlEd.Buffer.String(); !strings.Contains(got, "\n") || !strings.Contains(got, `"a": 1`) {
+		t.Fatalf("formatted json = %q", got)
+	}
+	a.minifyBody()
+	if got := a.xmlEd.Buffer.String(); got != `{"a":1,"b":[2,3]}` {
+		t.Fatalf("minified json = %q", got)
+	}
+}
+
+// TestQueryTabSync checks the 查询 rows are parsed from the URL and edits are
+// written back to it.
+func TestQueryTabSync(t *testing.T) {
+	a, _ := newNativeCall(t)
+	a.endpoint = "http://example.test/api?a=1&b=2"
+	a.querySrc = "" // force a re-parse on the next frame
+
+	a.reqSection = 1 // 报文, 查询, ...
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if len(a.queryRows) != 2 || a.queryRows[0].Key != "a" || a.queryRows[1].Value != "2" {
+		t.Fatalf("parsed rows = %+v", a.queryRows)
+	}
+
+	// Editing a row writes the URL.
+	a.queryRows[1].Value = "9"
+	tt.Frame()
+	if !strings.Contains(a.endpoint, "b=9") || !strings.Contains(a.endpoint, "a=1") {
+		t.Fatalf("endpoint = %q", a.endpoint)
+	}
+}
+
+// TestNativeExportRefused checks both the app entry point and the library
+// reject a native project.
+func TestNativeExportRefused(t *testing.T) {
+	a, _ := newNativeCall(t)
+	path := filepath.Join(t.TempDir(), "out.xml")
+	a.exportProject(path)
+	if a.errMsg == "" {
+		t.Fatal("native export should have been refused")
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("native export must not write a file")
+	}
+	if _, err := soapuiproj.Marshal(a.projects[0]); err == nil {
+		t.Fatal("soapuiproj.Marshal must refuse a native project")
+	}
+}
+
+// TestBodyTypeRequestBodies checks each plain-HTTP body shape produces the
+// right body and content type.
+func TestBodyTypeRequestBodies(t *testing.T) {
+	a, _ := newNativeCall(t)
+	a.method = "POST"
+
+	a.setBodyType(model.BodyURLEncoded)
+	a.bodyFields = []bodyField{{Name: "a", Value: "1"}, {Name: "b", Value: "x y"}}
+	req, _, err := a.buildSendRequest()
+	if err != nil {
+		t.Fatalf("urlencoded build: %v", err)
+	}
+	if req.Body != "a=1&b=x+y" || req.ContentType != "application/x-www-form-urlencoded" {
+		t.Fatalf("urlencoded = %q ct=%q", req.Body, req.ContentType)
+	}
+
+	a.saveCall()
+	a.reload()
+	if got := a.projects[0].Calls[0]; got.BodyType != model.BodyURLEncoded || len(got.BodyFields) != 2 {
+		t.Fatalf("stored body = %+v", got)
+	}
+
+	a.setBodyType(model.BodyMultipart)
+	req, _, _ = a.buildSendRequest()
+	if !strings.HasPrefix(req.ContentType, "multipart/form-data; boundary=") ||
+		!strings.Contains(req.Body, `name="a"`) {
+		t.Fatalf("multipart = ct %q body %q", req.ContentType, req.Body)
+	}
+
+	a.setBodyType(model.BodyNone)
+	req, _, _ = a.buildSendRequest()
+	if req.Body != "" || req.ContentType != "" {
+		t.Fatalf("none = body %q ct %q", req.Body, req.ContentType)
+	}
+
+	f := filepath.Join(t.TempDir(), "blob.bin")
+	if err := os.WriteFile(f, []byte{0, 1, 2, 3}, 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	a.setBodyType(model.BodyBinary)
+	a.bodyFile = f
+	req, _, err = a.buildSendRequest()
+	if err != nil {
+		t.Fatalf("binary build: %v", err)
+	}
+	if req.Body != string([]byte{0, 1, 2, 3}) || req.ContentType != "application/octet-stream" {
+		t.Fatalf("binary = %q ct %q", req.Body, req.ContentType)
+	}
+}
+
+// TestGroupTreeRenders checks a folder and a request inside it appear in the
+// tree.
+func TestGroupTreeRenders(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	g, err := a.st.AddGroup(p.ID, "我的目录", "")
+	if err != nil {
+		t.Fatalf("AddGroup: %v", err)
+	}
+	if _, err := a.st.AddProjectCall(p.ID, g.ID, model.Call{Title: "目录内请求", Method: "POST"}); err != nil {
+		t.Fatalf("AddProjectCall: %v", err)
+	}
+	a.reload()
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("我的目录") || !tt.HasText("目录内请求") {
+		t.Fatal("group tree did not render its folder and request")
 	}
 }

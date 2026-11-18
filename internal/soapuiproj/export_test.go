@@ -73,7 +73,8 @@ func TestMarshalEscapedBody(t *testing.T) {
 	// A body containing "]]>" must not break the XML; export escapes it and it
 	// must still round-trip.
 	orig := model.Project{
-		Name: "esc",
+		Name:   "esc",
+		Source: "soapui",
 		Services: []model.Service{{
 			Name: "S",
 			Operations: []model.Operation{{
@@ -92,5 +93,11 @@ func TestMarshalEscapedBody(t *testing.T) {
 	}
 	if !strings.Contains(got.Services[0].Operations[0].Calls[0].Request, "weird ]]> inner") {
 		t.Errorf("escaped body lost: %q", got.Services[0].Operations[0].Calls[0].Request)
+	}
+}
+
+func TestMarshalRefusesNative(t *testing.T) {
+	if _, err := Marshal(model.Project{Name: "n", Source: "native"}); err == nil {
+		t.Fatal("Marshal must refuse a native project")
 	}
 }

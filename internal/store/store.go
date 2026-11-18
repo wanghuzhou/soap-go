@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -146,6 +147,8 @@ func cloneProject(p model.Project) model.Project {
 		out.Proxy = &proxy
 	}
 	out.Headers = cloneHeaders(p.Headers)
+	out.Groups = cloneGroups(p.Groups)
+	out.Calls = cloneCalls(p.Calls)
 	if p.Services != nil {
 		out.Services = make([]model.Service, len(p.Services))
 		for i, svc := range p.Services {
@@ -168,6 +171,28 @@ func cloneHeaders(in []model.Header) []model.Header {
 		return nil
 	}
 	return append([]model.Header(nil), in...)
+}
+
+// cloneGroups copies the flat folder slice. Group holds only value fields, so a
+// slice copy is a full copy.
+func cloneGroups(in []model.Group) []model.Group {
+	if in == nil {
+		return nil
+	}
+	return append([]model.Group(nil), in...)
+}
+
+// cloneCalls copies a call slice deeply enough that no header, auth or response
+// is shared with the source.
+func cloneCalls(in []model.Call) []model.Call {
+	if in == nil {
+		return nil
+	}
+	out := make([]model.Call, len(in))
+	for i, c := range in {
+		out[i] = cloneCall(c)
+	}
+	return out
 }
 
 func cloneService(svc model.Service) model.Service {
@@ -195,6 +220,9 @@ func cloneOperation(op model.Operation) model.Operation {
 func cloneCall(c model.Call) model.Call {
 	out := c
 	out.Headers = cloneHeaders(c.Headers)
+	if c.BodyFields != nil {
+		out.BodyFields = append([]model.BodyField(nil), c.BodyFields...)
+	}
 	out.Response = cloneSavedResponse(c.Response)
 	return out
 }
@@ -559,6 +587,7 @@ func (s *Store) DuplicateCall(projectID, serviceID, opID, callID string) (model.
 			c.ID = NewID()
 			c.Title = copyTitle(c.Title, op.Calls)
 			c.Headers = append([]model.Header(nil), c.Headers...)
+			c.BodyFields = append([]model.BodyField(nil), c.BodyFields...)
 			c.Auth = c.Auth.Clone()
 			c.Response = cloneSavedResponse(c.Response)
 			op.Calls = append(op.Calls, c)
@@ -590,6 +619,219 @@ func copyTitle(title string, siblings []model.Call) string {
 			return candidate
 		}
 	}
+}
+
+// ---- native tree CRUD: groups and project-level requests ----
+
+// AddGroup creates a folder under the project or another group.
+func (s *Store) AddGroup(projectID, name, parentID string) (model.Group, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "新建目录"
+	}
+	g := model.Group{ID: NewID(), Name: name, ParentID: parentID}
+	err := s.commit(func(list []model.Project) ([]model.Project, error) {
+		i := indexOfProject(list, projectID)
+		if i < 0 {
+			return nil, ErrNotFound
+		}
+		if parentID != "" && !hasGroup(list[i].Groups, parentID) {
+			return nil, ErrNotFound
+		}
+		list[i].Groups = append(list[i].Groups, g)
+		return list, nil
+	})
+	return g, err
+}
+
+// RenameGroup changes a folder's name.
+func (s *Store) RenameGroup(projectID, groupID, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("目录名称不能为空")
+	}
+	return s.commit(func(list []model.Project) ([]model.Project, error) {
+		i := indexOfProject(list, projectID)
+		if i < 0 {
+			return nil, ErrNotFound
+		}
+		for gi := range list[i].Groups {
+			if list[i].Groups[gi].ID == groupID {
+				list[i].Groups[gi].Name = name
+				return list, nil
+			}
+		}
+		return nil, ErrNotFound
+	})
+}
+
+// DeleteGroup removes a folder together with every nested folder and every
+// request inside them. It returns the removed request ids so the UI can close
+// their tabs.
+func (s *Store) DeleteGroup(projectID, groupID string) (removedCallIDs []string, err error) {
+	err = s.commit(func(list []model.Project) ([]model.Project, error) {
+		i := indexOfProject(list, projectID)
+		if i < 0 {
+			return nil, ErrNotFound
+		}
+		if !hasGroup(list[i].Groups, groupID) {
+			return nil, ErrNotFound
+		}
+		doomed := descendantGroupIDs(list[i].Groups, groupID)
+		// Drop the groups.
+		kept := list[i].Groups[:0]
+		for _, g := range list[i].Groups {
+			if !doomed[g.ID] {
+				kept = append(kept, g)
+			}
+		}
+		list[i].Groups = kept
+		// Drop the calls living in those groups.
+		keptCalls := list[i].Calls[:0]
+		for _, c := range list[i].Calls {
+			if doomed[c.FolderID] {
+				removedCallIDs = append(removedCallIDs, c.ID)
+				continue
+			}
+			keptCalls = append(keptCalls, c)
+		}
+		list[i].Calls = keptCalls
+		return list, nil
+	})
+	return removedCallIDs, err
+}
+
+// hasGroup reports whether the project owns a group with this id.
+func hasGroup(groups []model.Group, id string) bool {
+	for _, g := range groups {
+		if g.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// descendantGroupIDs returns gid plus every group nested under it.
+func descendantGroupIDs(groups []model.Group, gid string) map[string]bool {
+	out := map[string]bool{gid: true}
+	for changed := true; changed; {
+		changed = false
+		for _, g := range groups {
+			if out[g.ParentID] && !out[g.ID] {
+				out[g.ID] = true
+				changed = true
+			}
+		}
+	}
+	return out
+}
+
+// AddProjectCall inserts a request under the project root (folderID "") or one
+// of its groups. Kind defaults to HTTP.
+func (s *Store) AddProjectCall(projectID, folderID string, call model.Call) (model.Call, error) {
+	if call.ID == "" {
+		call.ID = NewID()
+	}
+	if strings.TrimSpace(call.Title) == "" {
+		call.Title = "新请求 " + time.Now().Format("15:04:05")
+	}
+	call.FolderID = folderID
+	if call.Kind == "" {
+		call.Kind = model.KindHTTP
+	}
+	err := s.commit(func(list []model.Project) ([]model.Project, error) {
+		i := indexOfProject(list, projectID)
+		if i < 0 {
+			return nil, ErrNotFound
+		}
+		if folderID != "" && !hasGroup(list[i].Groups, folderID) {
+			return nil, ErrNotFound
+		}
+		list[i].Calls = append(list[i].Calls, cloneCall(call))
+		return list, nil
+	})
+	return call, err
+}
+
+// UpdateProjectCall replaces a project-level request by id.
+func (s *Store) UpdateProjectCall(projectID string, call model.Call) error {
+	return s.commit(func(list []model.Project) ([]model.Project, error) {
+		i := indexOfProject(list, projectID)
+		if i < 0 {
+			return nil, ErrNotFound
+		}
+		for ci := range list[i].Calls {
+			if list[i].Calls[ci].ID == call.ID {
+				call.Response = list[i].Calls[ci].Response
+				call.FolderID = list[i].Calls[ci].FolderID
+				list[i].Calls[ci] = cloneCall(call)
+				return list, nil
+			}
+		}
+		return nil, ErrNotFound
+	})
+}
+
+// UpdateProjectCallResponse stores (or clears) one project-level request's
+// saved response.
+func (s *Store) UpdateProjectCallResponse(projectID, callID string, resp *model.SavedResponse) error {
+	return s.commit(func(list []model.Project) ([]model.Project, error) {
+		i := indexOfProject(list, projectID)
+		if i < 0 {
+			return nil, ErrNotFound
+		}
+		for ci := range list[i].Calls {
+			if list[i].Calls[ci].ID == callID {
+				list[i].Calls[ci].Response = cloneSavedResponse(resp)
+				return list, nil
+			}
+		}
+		return nil, ErrNotFound
+	})
+}
+
+// DeleteProjectCall removes a project-level request by id.
+func (s *Store) DeleteProjectCall(projectID, callID string) error {
+	return s.commit(func(list []model.Project) ([]model.Project, error) {
+		i := indexOfProject(list, projectID)
+		if i < 0 {
+			return nil, ErrNotFound
+		}
+		for ci := range list[i].Calls {
+			if list[i].Calls[ci].ID == callID {
+				list[i].Calls = append(list[i].Calls[:ci], list[i].Calls[ci+1:]...)
+				return list, nil
+			}
+		}
+		return nil, ErrNotFound
+	})
+}
+
+// DuplicateProjectCall copies a project-level request in the same folder.
+func (s *Store) DuplicateProjectCall(projectID, callID string) (model.Call, error) {
+	var out model.Call
+	err := s.commit(func(list []model.Project) ([]model.Project, error) {
+		i := indexOfProject(list, projectID)
+		if i < 0 {
+			return nil, ErrNotFound
+		}
+		for _, c := range list[i].Calls {
+			if c.ID != callID {
+				continue
+			}
+			c.ID = NewID()
+			c.Title = copyTitle(c.Title, list[i].Calls)
+			c.Headers = append([]model.Header(nil), c.Headers...)
+			c.BodyFields = append([]model.BodyField(nil), c.BodyFields...)
+			c.Auth = c.Auth.Clone()
+			c.Response = cloneSavedResponse(c.Response)
+			list[i].Calls = append(list[i].Calls, c)
+			out = c
+			return list, nil
+		}
+		return nil, ErrNotFound
+	})
+	return out, err
 }
 
 // IDClaimer hands out ids unique within one scope. Blank or repeated ids are
@@ -640,6 +882,12 @@ func EnsureIDs(p *model.Project) {
 // later occurrences change.
 func EnsureIDsIn(p *model.Project, claim IDClaimer) {
 	p.ID = claim(p.ID)
+	for i := range p.Groups {
+		p.Groups[i].ID = claim(p.Groups[i].ID)
+	}
+	for i := range p.Calls {
+		p.Calls[i].ID = claim(p.Calls[i].ID)
+	}
 	for i := range p.Services {
 		p.Services[i].ID = claim(p.Services[i].ID)
 		for j := range p.Services[i].Operations {

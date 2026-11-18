@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -29,6 +31,19 @@ import (
 
 // headerRow is one editable request header override.
 type headerRow struct {
+	Name  string
+	Value string
+}
+
+// queryRow is one editable query-string parameter. The rows are derived from
+// and written back to the endpoint URL, so they need no separate persistence.
+type queryRow struct {
+	Key   string
+	Value string
+}
+
+// bodyField is one editable name/value pair of a urlencoded or multipart body.
+type bodyField struct {
 	Name  string
 	Value string
 }
@@ -102,14 +117,21 @@ func (a *app) setAuthType(kind string) {
 // saved with. Keeping a draft per tab means switching tabs keeps unsaved edits,
 // and the tab still knows whether it differs from what is stored.
 type callDraft struct {
-	endpoint, action, timeout   string
-	headers                     []headerRow
-	auth                        authForm
-	body                        string
-	savedSnapshot, savedAction  string
-	savedTimeout, savedEndpoint string
-	savedHeaders                []headerRow
-	savedAuth                   authForm
+	endpoint, action, timeout     string
+	method, contentType, kind     string
+	bodyType, bodyFile            string
+	query                         []queryRow
+	bodyFields                    []bodyField
+	headers                       []headerRow
+	auth                          authForm
+	body                          string
+	savedSnapshot, savedAction    string
+	savedTimeout, savedEndpoint   string
+	savedMethod, savedContentType string
+	savedBodyType, savedBodyFile  string
+	savedBodyFields               []bodyField
+	savedHeaders                  []headerRow
+	savedAuth                     authForm
 }
 
 // uiState is the part of the UI kept between runs: the theme and the split
@@ -153,14 +175,32 @@ type app struct {
 
 	// Selection.
 	pid, sid, oid, cid string
+	// selGroup is the selected folder id in the native tree ("" when the
+	// selection is a project, service, operation or call).
+	selGroup string
+	// newGroupParent is the parent a pending 新建目录 dialog will create under.
+	newGroupParent string
 
 	// Current request form.
 	endpoint    string
 	action      string
 	contentType string
 	timeout     string
-	headers     []headerRow
-	auth        authForm
+	method      string
+	// reqKind is "soap" or "http" for the form being edited; it decides which
+	// request-panel sections apply and whether the method is editable.
+	reqKind string
+	// bodyType is the plain-HTTP body shape (none/json/xml/...); SOAP ignores it.
+	bodyType   string
+	bodyFields []bodyField
+	bodyFile   string
+	// queryRows is the parsed query string of endpoint, edited in the 查询 tab.
+	// querySrc is the endpoint it was parsed from, so an edit in the URL bar is
+	// noticed and re-parsed instead of being overwritten.
+	queryRows []queryRow
+	querySrc  string
+	headers   []headerRow
+	auth      authForm
 	// showAuthSecret reveals the auth password/token for as long as the
 	// authentication page stays open.
 	showAuthSecret bool
@@ -222,13 +262,18 @@ type app struct {
 	editorFontSize   float64
 
 	// Editor preferences and dirty tracking.
-	maskSecrets   bool
-	savedSnapshot string
-	savedHeaders  []headerRow
-	savedAuth     authForm
-	savedTimeout  string
-	savedAction   string
-	savedEndpoint string
+	maskSecrets      bool
+	savedSnapshot    string
+	savedHeaders     []headerRow
+	savedAuth        authForm
+	savedTimeout     string
+	savedAction      string
+	savedEndpoint    string
+	savedMethod      string
+	savedContentType string
+	savedBodyType    string
+	savedBodyFields  []bodyField
+	savedBodyFile    string
 
 	// Proxy form.
 	proxyModeSel, proxyTypeSel, proxyHost, proxyUser, proxyPass string
@@ -256,7 +301,10 @@ func newApp(reg *workspace.Registry) *app {
 		splitH:           62,
 		splitSide:        0,
 		timeout:          "60000",
-		contentType:      "text/xml; charset=utf-8",
+		contentType:      "",
+		method:           "POST",
+		reqKind:          model.KindHTTP,
+		bodyType:         model.BodyNone,
 		xmlEd:            newXMLState("", false),
 		respEd:           newXMLState("", true),
 		expanded:         map[string]bool{},
@@ -420,7 +468,7 @@ const systemFontLabel = "系统默认"
 
 // appVersion is the release version shown in the settings dialog's About
 // section.
-const appVersion = "v0.1.0"
+const appVersion = "v0.2.0"
 
 // uiFontOptions and editorFontOptions are the families the settings dialog
 // offers; the first choice is the system's own font.
@@ -502,41 +550,90 @@ func (a *app) findProject(id string) *model.Project {
 }
 
 // locate returns pointers to the selected project, service, operation and call.
+// For a native request (one stored under Project.Calls, not under an operation)
+// s and o are nil and c is looked up among the project's own calls.
 func (a *app) locate() (p *model.Project, s *model.Service, o *model.Operation, c *model.Call) {
 	p = a.findProject(a.pid)
 	if p == nil {
 		return
 	}
-	for i := range p.Services {
-		if p.Services[i].ID == a.sid {
-			s = &p.Services[i]
-			break
+	if a.sid != "" {
+		for i := range p.Services {
+			if p.Services[i].ID == a.sid {
+				s = &p.Services[i]
+				break
+			}
 		}
-	}
-	if s == nil {
+		if s == nil {
+			return
+		}
+		for i := range s.Operations {
+			if s.Operations[i].ID == a.oid {
+				o = &s.Operations[i]
+				break
+			}
+		}
+		if o == nil {
+			return
+		}
+		for i := range o.Calls {
+			if o.Calls[i].ID == a.cid {
+				c = &o.Calls[i]
+				break
+			}
+		}
 		return
 	}
-	for i := range s.Operations {
-		if s.Operations[i].ID == a.oid {
-			o = &s.Operations[i]
-			break
-		}
-	}
-	if o == nil {
-		return
-	}
-	for i := range o.Calls {
-		if o.Calls[i].ID == a.cid {
-			c = &o.Calls[i]
+	for i := range p.Calls {
+		if p.Calls[i].ID == a.cid {
+			c = &p.Calls[i]
 			break
 		}
 	}
 	return
 }
 
+// findCallByKey resolves an open tab's call, whether it is an operation sample
+// or a native project/group request.
+func (a *app) findCallByKey(key string) *model.Call {
+	pid, sid, oid, cid := splitKey(key)
+	p := a.findProject(pid)
+	if p == nil {
+		return nil
+	}
+	if sid != "" {
+		for si := range p.Services {
+			if p.Services[si].ID != sid {
+				continue
+			}
+			for oi := range p.Services[si].Operations {
+				if p.Services[si].Operations[oi].ID != oid {
+					continue
+				}
+				for ci := range p.Services[si].Operations[oi].Calls {
+					if p.Services[si].Operations[oi].Calls[ci].ID == cid {
+						return &p.Services[si].Operations[oi].Calls[ci]
+					}
+				}
+			}
+		}
+		return nil
+	}
+	for i := range p.Calls {
+		if p.Calls[i].ID == cid {
+			return &p.Calls[i]
+		}
+	}
+	return nil
+}
+
 // openFirstCall opens the first saved call so the workbench starts populated.
 func (a *app) openFirstCall() {
 	for _, p := range a.projects {
+		if len(p.Calls) > 0 {
+			a.openCall(p.ID, "", "", p.Calls[0].ID)
+			return
+		}
 		for _, s := range p.Services {
 			for _, o := range s.Operations {
 				if len(o.Calls) > 0 {
@@ -587,27 +684,92 @@ func (a *app) activeTabKey() string {
 func (a *app) captureDraft() *callDraft {
 	return &callDraft{
 		endpoint: a.endpoint, action: a.action, timeout: a.timeout,
+		method: a.method, contentType: a.contentType, kind: a.reqKind,
+		bodyType: a.bodyType, bodyFile: a.bodyFile,
+		query:         append([]queryRow(nil), a.queryRows...),
+		bodyFields:    append([]bodyField(nil), a.bodyFields...),
 		headers:       append([]headerRow(nil), a.headers...),
 		auth:          a.auth,
 		body:          a.xmlEd.Buffer.String(),
 		savedSnapshot: a.savedSnapshot, savedAction: a.savedAction,
 		savedTimeout: a.savedTimeout, savedEndpoint: a.savedEndpoint,
-		savedHeaders: append([]headerRow(nil), a.savedHeaders...),
-		savedAuth:    a.savedAuth,
+		savedMethod: a.savedMethod, savedContentType: a.savedContentType,
+		savedBodyType: a.savedBodyType, savedBodyFile: a.savedBodyFile,
+		savedBodyFields: append([]bodyField(nil), a.savedBodyFields...),
+		savedHeaders:    append([]headerRow(nil), a.savedHeaders...),
+		savedAuth:       a.savedAuth,
 	}
 }
 
 // applyDraft puts a tab's saved form back into the editor.
 func (a *app) applyDraft(d *callDraft) {
 	a.endpoint, a.action, a.timeout = d.endpoint, d.action, d.timeout
+	a.method, a.contentType, a.reqKind = d.method, d.contentType, d.kind
+	a.bodyType, a.bodyFile = d.bodyType, d.bodyFile
+	a.queryRows = append([]queryRow(nil), d.query...)
+	a.bodyFields = append([]bodyField(nil), d.bodyFields...)
+	a.querySrc = d.endpoint
 	a.headers = append([]headerRow(nil), d.headers...)
 	a.auth = d.auth
 	a.xmlEd.Buffer.Reset(d.body)
-	a.xmlEd.Buffer.SetLanguage(editor.LanguageForText("request.xml", d.body))
+	a.xmlEd.Buffer.SetLanguage(a.editorLanguage(d.body))
 	a.savedSnapshot, a.savedAction = d.savedSnapshot, d.savedAction
 	a.savedTimeout, a.savedEndpoint = d.savedTimeout, d.savedEndpoint
+	a.savedMethod, a.savedContentType = d.savedMethod, d.savedContentType
+	a.savedBodyType, a.savedBodyFile = d.savedBodyType, d.savedBodyFile
+	a.savedBodyFields = append([]bodyField(nil), d.savedBodyFields...)
 	a.savedHeaders = append([]headerRow(nil), d.savedHeaders...)
 	a.savedAuth = d.savedAuth
+}
+
+// editorLanguage picks the code editor's syntax highlighting for a body based
+// on the request's kind and content type: JSON, XML, or plain text.
+func (a *app) editorLanguage(body string) *editor.Language {
+	if a.isJSONRequest() {
+		return editor.LanguageForText("request.json", body)
+	}
+	if a.isXMLRequest() {
+		return editor.LanguageForText("request.xml", body)
+	}
+	return editor.LanguageForText("request.txt", body)
+}
+
+// isJSONRequest reports whether the current request body is JSON, by body type
+// first, then by content type, then by how the body is written.
+func (a *app) isJSONRequest() bool {
+	if a.reqKind == model.KindSOAP {
+		return false
+	}
+	switch a.bodyType {
+	case model.BodyJSON, model.BodyGraphQL:
+		return true
+	case model.BodyXML, model.BodyText, model.BodyURLEncoded, model.BodyMultipart, model.BodyBinary, model.BodyNone:
+		return false
+	}
+	ct := strings.ToLower(a.contentType)
+	if strings.Contains(ct, "json") {
+		return true
+	}
+	if strings.TrimSpace(a.contentType) != "" {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(a.xmlEd.Buffer.String()), "{") ||
+		strings.HasPrefix(strings.TrimSpace(a.xmlEd.Buffer.String()), "[")
+}
+
+// isXMLRequest reports whether the request body is XML/SOAP.
+func (a *app) isXMLRequest() bool {
+	if a.reqKind == model.KindSOAP {
+		return true
+	}
+	switch a.bodyType {
+	case model.BodyXML:
+		return true
+	case model.BodyJSON, model.BodyGraphQL, model.BodyText, model.BodyURLEncoded, model.BodyMultipart, model.BodyBinary, model.BodyNone:
+		return false
+	}
+	ct := strings.ToLower(a.contentType)
+	return strings.Contains(ct, "xml")
 }
 
 // loadTab makes key the active tab and shows its draft, or loads it from the
@@ -626,7 +788,11 @@ func (a *app) loadTab(key string) {
 	if d, ok := a.drafts[key]; ok {
 		a.applyDraft(d)
 	} else {
-		a.loadCallIntoForm(c)
+		defKind := model.KindHTTP
+		if sid != "" {
+			defKind = model.KindSOAP
+		}
+		a.loadCallIntoForm(c, defKind)
 		a.drafts[key] = a.captureDraft()
 	}
 	a.loadResponse(c)
@@ -634,9 +800,34 @@ func (a *app) loadTab(key string) {
 }
 
 // loadCallIntoForm fills the editable request fields from a stored call.
-func (a *app) loadCallIntoForm(c *model.Call) {
+func (a *app) loadCallIntoForm(c *model.Call, defaultKind string) {
+	kind := c.KindOrDefault(defaultKind)
+	a.reqKind = kind
 	a.endpoint = c.Endpoint
 	a.action = c.Action
+	a.method = model.EffectiveMethod(kind, c.Method)
+	a.bodyFile = c.BodyFile
+	a.bodyFields = bodyFieldsOf(c.BodyFields)
+	bt := model.NormalizeBodyType(c.BodyType)
+	if bt == "" {
+		if kind == model.KindSOAP {
+			bt = model.BodyXML
+		} else {
+			bt = model.InferBodyType(c.ContentType, c.Request)
+		}
+	}
+	if kind == model.KindSOAP {
+		bt = model.BodyXML
+	}
+	a.bodyType = bt
+	a.contentType = c.ContentType
+	if kind == model.KindSOAP {
+		if strings.TrimSpace(a.contentType) == "" {
+			a.contentType = model.DefaultContentType(kind)
+		}
+	} else if bt != model.BodyNone && strings.TrimSpace(a.contentType) == "" {
+		a.contentType = model.BodyTypeContentType(bt)
+	}
 	a.timeout = strconv.Itoa(model.ClampTimeout(c.TimeoutMS))
 	if a.timeout == "0" {
 		a.timeout = strconv.Itoa(model.DefaultTimeoutMS)
@@ -647,14 +838,64 @@ func (a *app) loadCallIntoForm(c *model.Call) {
 	}
 	body := c.Request
 	a.xmlEd.Buffer.Reset(body)
-	a.xmlEd.Buffer.SetLanguage(editor.LanguageForText("request.xml", body))
+	a.xmlEd.Buffer.SetLanguage(a.editorLanguage(body))
 	a.auth = authFormOf(c.Auth)
+	a.queryRows = parseQueryRows(a.endpoint)
+	a.querySrc = a.endpoint
 	a.savedSnapshot = body
 	a.savedHeaders = append([]headerRow(nil), a.headers...)
 	a.savedTimeout = a.timeout
 	a.savedAction = a.action
 	a.savedEndpoint = a.endpoint
+	a.savedMethod = a.method
+	a.savedContentType = a.contentType
+	a.savedBodyType = a.bodyType
+	a.savedBodyFields = append([]bodyField(nil), a.bodyFields...)
+	a.savedBodyFile = a.bodyFile
 	a.savedAuth = a.auth
+}
+
+// bodyFieldsOf converts the persisted body fields into editable rows.
+func bodyFieldsOf(in []model.BodyField) []bodyField {
+	if in == nil {
+		return nil
+	}
+	out := make([]bodyField, len(in))
+	for i, f := range in {
+		out[i] = bodyField{Name: f.Name, Value: f.Value}
+	}
+	return out
+}
+
+// modelBodyFields converts editable rows back to the persisted form, dropping
+// completely empty rows.
+func modelBodyFields(rows []bodyField) []model.BodyField {
+	var out []model.BodyField
+	for _, r := range rows {
+		if strings.TrimSpace(r.Name) == "" && strings.TrimSpace(r.Value) == "" {
+			continue
+		}
+		out = append(out, model.BodyField{Name: r.Name, Value: r.Value})
+	}
+	return out
+}
+
+// setBodyType switches the plain-HTTP body shape and aligns the content type
+// with it, seeding one empty field row for the form-based types.
+func (a *app) setBodyType(bt string) {
+	bt = model.NormalizeBodyType(bt)
+	if bt == "" {
+		return
+	}
+	a.bodyType = bt
+	if bt == model.BodyNone {
+		a.contentType = ""
+	} else if ct := model.BodyTypeContentType(bt); ct != "" {
+		a.contentType = ct
+	}
+	if model.BodyTypeHasFields(bt) && len(a.bodyFields) == 0 {
+		a.bodyFields = append(a.bodyFields, bodyField{})
+	}
 }
 
 // loadResponse shows the call's last saved response, if any.
@@ -792,23 +1033,45 @@ func (a *app) callTitle(key string) string {
 	if p == nil {
 		return "请求"
 	}
-	for _, s := range p.Services {
-		if s.ID != sid {
-			continue
-		}
-		for _, o := range s.Operations {
-			if o.ID != oid {
+	if sid != "" {
+		for _, s := range p.Services {
+			if s.ID != sid {
 				continue
 			}
-			for _, c := range o.Calls {
-				if c.ID == cid {
-					return c.Title
+			for _, o := range s.Operations {
+				if o.ID != oid {
+					continue
 				}
+				for _, c := range o.Calls {
+					if c.ID == cid {
+						return c.Title
+					}
+				}
+				return o.Name
 			}
-			return o.Name
+		}
+		return "请求"
+	}
+	for _, c := range p.Calls {
+		if c.ID == cid {
+			return c.Title
 		}
 	}
 	return "请求"
+}
+
+// callMethod returns the HTTP method shown on a tab's badge.
+func (a *app) callMethod(key string) string {
+	c := a.findCallByKey(key)
+	if c == nil {
+		return "POST"
+	}
+	_, sid, _, _ := splitKey(key)
+	defKind := model.KindHTTP
+	if sid != "" {
+		defKind = model.KindSOAP
+	}
+	return model.EffectiveMethod(c.KindOrDefault(defKind), c.Method)
 }
 
 // selectedProject returns the project of the selection, if any.
@@ -850,8 +1113,11 @@ func (a *app) commitInlineRename(it treeItem) {
 	}
 	switch it.kind {
 	case "project":
+		a.selGroup = ""
 		a.pid, a.sid, a.oid, a.cid = it.pid, "", "", ""
 		a.renameProject(name)
+	case "group":
+		a.renameGroupAt(it.pid, it.gid, name)
 	case "call":
 		// Rename by id, without moving the selection: the editor may still hold
 		// another call, and leaving cid on this one would let Ctrl+S overwrite it.
@@ -865,6 +1131,8 @@ func renameTargetID(it treeItem) string {
 	switch it.kind {
 	case "project":
 		return it.pid
+	case "group":
+		return it.gid
 	case "call":
 		return it.cid
 	}
@@ -882,18 +1150,36 @@ func (a *app) saveCall() {
 			p, s, o, c = a.locate()
 		}
 	}
-	if p == nil || s == nil || o == nil || c == nil {
-		a.errMsg = "请先选择一个请求样例"
+	if p == nil || c == nil {
+		a.errMsg = "请先选择一个请求"
 		return
 	}
 	call := *c
 	call.Endpoint = strings.TrimSpace(a.endpoint)
 	call.Action = strings.TrimSpace(a.action)
+	call.Kind = a.reqKind
+	call.Method = model.EffectiveMethod(a.reqKind, a.method)
+	call.ContentType = strings.TrimSpace(a.contentType)
+	if a.reqKind == model.KindHTTP {
+		call.BodyType = a.bodyType
+		call.BodyFields = modelBodyFields(a.bodyFields)
+		call.BodyFile = a.bodyFile
+	} else {
+		call.BodyType = ""
+		call.BodyFields = nil
+		call.BodyFile = ""
+	}
 	call.Request = a.xmlEd.Buffer.String()
 	call.TimeoutMS = parseTimeout(a.timeout)
 	call.Headers = headersFromRows(a.headers)
 	call.Auth = a.auth.modelAuth()
-	if err := a.st.UpdateCall(p.ID, s.ID, o.ID, call); err != nil {
+	var err error
+	if s != nil && o != nil {
+		err = a.st.UpdateCall(p.ID, s.ID, o.ID, call)
+	} else {
+		err = a.st.UpdateProjectCall(p.ID, call)
+	}
+	if err != nil {
 		a.errMsg = "保存失败：" + err.Error()
 		return
 	}
@@ -903,6 +1189,13 @@ func (a *app) saveCall() {
 	a.savedTimeout = a.timeout
 	a.savedAction = call.Action
 	a.savedEndpoint = call.Endpoint
+	a.savedMethod = call.Method
+	a.savedContentType = call.ContentType
+	a.savedBodyType = a.bodyType
+	a.savedBodyFields = append([]bodyField(nil), a.bodyFields...)
+	a.savedBodyFile = a.bodyFile
+	// Keep the editor's kind/method in step with what was persisted.
+	a.method = call.Method
 	if key := a.activeTabKey(); key != "" {
 		a.drafts[key] = a.captureDraft()
 	}
@@ -914,18 +1207,29 @@ func (a *app) saveCall() {
 // deleteCall removes the selected sample, after confirmation.
 func (a *app) deleteCall() {
 	p, s, o, c := a.locate()
-	if p == nil || s == nil || o == nil || c == nil {
-		a.errMsg = "请先选择一个请求样例"
+	if p == nil || c == nil {
+		a.errMsg = "请先选择一个请求"
 		return
 	}
-	a.askConfirm("确定删除该请求样例？", func() {
-		if err := a.st.DeleteCall(p.ID, s.ID, o.ID, c.ID); err != nil {
+	pid, cid := p.ID, c.ID
+	sid, oid := "", ""
+	if s != nil && o != nil {
+		sid, oid = s.ID, o.ID
+	}
+	a.askConfirm("确定删除该请求？", func() {
+		var err error
+		if sid != "" {
+			err = a.st.DeleteCall(pid, sid, oid, cid)
+		} else {
+			err = a.st.DeleteProjectCall(pid, cid)
+		}
+		if err != nil {
 			a.errMsg = "删除失败：" + err.Error()
 			return
 		}
-		a.statusMsg = "已删除请求样例"
+		a.statusMsg = "已删除请求"
 		a.reload()
-		a.aFromCallRemoved(p.ID, s.ID, o.ID, c.ID)
+		a.aFromCallRemoved(pid, sid, oid, cid)
 	})
 }
 
@@ -979,21 +1283,105 @@ func (a *app) newCall() {
 	a.statusMsg = "已新建请求样例"
 }
 
+// newProjectCall adds a plain HTTP request under the selected project or one of
+// its groups (folderID "" is the project root).
+func (a *app) newProjectCall(folderID string) {
+	p := a.selectedProject()
+	if p == nil {
+		a.errMsg = "请先选择一个项目"
+		return
+	}
+	call, err := a.st.AddProjectCall(p.ID, folderID, model.Call{
+		Title:    "新请求",
+		Method:   "GET",
+		BodyType: model.BodyNone,
+	})
+	if err != nil {
+		a.errMsg = "新建请求失败：" + err.Error()
+		return
+	}
+	a.reload()
+	a.openCall(p.ID, "", "", call.ID)
+	a.statusMsg = "已新建请求"
+}
+
+// newGroup creates a folder under the selected project or group.
+func (a *app) newGroup(parentID, name string) {
+	p := a.selectedProject()
+	if p == nil {
+		a.errMsg = "请先选择一个项目"
+		return
+	}
+	if _, err := a.st.AddGroup(p.ID, name, parentID); err != nil {
+		a.errMsg = "新建目录失败：" + err.Error()
+		return
+	}
+	if parentID != "" {
+		a.expanded[parentID] = true
+	}
+	a.statusMsg = "已新建目录"
+	a.reload()
+}
+
+// renameGroupAt renames a folder by id without moving the selection.
+func (a *app) renameGroupAt(pid, gid, name string) {
+	if err := a.st.RenameGroup(pid, gid, name); err != nil {
+		a.errMsg = "重命名目录失败：" + err.Error()
+		return
+	}
+	a.statusMsg = "已重命名目录"
+	a.reload()
+}
+
+// deleteGroup removes a folder and everything inside it, after confirmation,
+// then closes the tabs of the removed requests.
+func (a *app) deleteGroup(pid, gid, name string) {
+	a.askConfirm("确定删除目录「"+name+"」及其下所有请求？", func() {
+		removed, err := a.st.DeleteGroup(pid, gid)
+		if err != nil {
+			a.errMsg = "删除目录失败：" + err.Error()
+			return
+		}
+		a.statusMsg = "已删除目录"
+		a.reload()
+		doomed := map[string]bool{}
+		for _, id := range removed {
+			doomed[id] = true
+		}
+		a.closeTabsUnder(func(k string) bool {
+			kp, _, _, kc := splitKey(k)
+			return kp == pid && doomed[kc]
+		})
+	})
+}
+
 // duplicateCall copies the selected sample.
 func (a *app) duplicateCall() {
 	p, s, o, c := a.locate()
-	if p == nil || s == nil || o == nil || c == nil {
-		a.errMsg = "请先选择一个请求样例"
+	if p == nil || c == nil {
+		a.errMsg = "请先选择一个请求"
 		return
 	}
-	copied, err := a.st.DuplicateCall(p.ID, s.ID, o.ID, c.ID)
+	var copied model.Call
+	var err error
+	if s != nil && o != nil {
+		copied, err = a.st.DuplicateCall(p.ID, s.ID, o.ID, c.ID)
+		if err == nil {
+			a.reload()
+			a.openCall(p.ID, s.ID, o.ID, copied.ID)
+		}
+	} else {
+		copied, err = a.st.DuplicateProjectCall(p.ID, c.ID)
+		if err == nil {
+			a.reload()
+			a.openCall(p.ID, "", "", copied.ID)
+		}
+	}
 	if err != nil {
 		a.errMsg = "复制失败：" + err.Error()
 		return
 	}
-	a.reload()
-	a.openCall(p.ID, s.ID, o.ID, copied.ID)
-	a.statusMsg = "已复制请求样例"
+	a.statusMsg = "已复制请求"
 }
 
 // deleteOperation removes the selected operation and everything under it.
@@ -1063,7 +1451,7 @@ func (a *app) renameCall(title string) {
 
 // renameCallAt renames one sample by id without touching the current selection,
 // so a context-menu rename cannot leave the selection on a sample whose body
-// the editor does not hold.
+// the editor does not hold. sid/oid are empty for a native project request.
 func (a *app) renameCallAt(pid, sid, oid, cid, title string) {
 	title = strings.TrimSpace(title)
 	if title == "" {
@@ -1072,42 +1460,64 @@ func (a *app) renameCallAt(pid, sid, oid, cid, title string) {
 	}
 	p := a.findProject(pid)
 	if p == nil {
-		a.errMsg = "请先选择一个请求样例"
+		a.errMsg = "请先选择一个请求"
 		return
 	}
-	for si := range p.Services {
-		if p.Services[si].ID != sid {
-			continue
-		}
-		for oi := range p.Services[si].Operations {
-			if p.Services[si].Operations[oi].ID != oid {
+	if sid != "" {
+		for si := range p.Services {
+			if p.Services[si].ID != sid {
 				continue
 			}
-			op := &p.Services[si].Operations[oi]
-			for ci := range op.Calls {
-				if op.Calls[ci].ID != cid {
+			for oi := range p.Services[si].Operations {
+				if p.Services[si].Operations[oi].ID != oid {
 					continue
 				}
-				call := op.Calls[ci]
-				call.Title = title
-				if err := a.st.UpdateCall(pid, sid, oid, call); err != nil {
-					a.errMsg = "重命名失败：" + err.Error()
+				op := &p.Services[si].Operations[oi]
+				for ci := range op.Calls {
+					if op.Calls[ci].ID != cid {
+						continue
+					}
+					call := op.Calls[ci]
+					call.Title = title
+					if err := a.st.UpdateCall(pid, sid, oid, call); err != nil {
+						a.errMsg = "重命名失败：" + err.Error()
+						return
+					}
+					a.statusMsg = "已重命名请求"
+					a.reload()
 					return
 				}
-				a.statusMsg = "已重命名请求"
-				a.reload()
-				return
 			}
 		}
+	} else {
+		for ci := range p.Calls {
+			if p.Calls[ci].ID != cid {
+				continue
+			}
+			call := p.Calls[ci]
+			call.Title = title
+			if err := a.st.UpdateProjectCall(pid, call); err != nil {
+				a.errMsg = "重命名失败：" + err.Error()
+				return
+			}
+			a.statusMsg = "已重命名请求"
+			a.reload()
+			return
+		}
 	}
-	a.errMsg = "找不到要重命名的请求样例"
+	a.errMsg = "找不到要重命名的请求"
 }
 
-// exportProject writes the selected project as SoapUI-compatible XML.
+// exportProject writes the selected project as SoapUI-compatible XML. Native
+// (plain HTTP) projects have no SoapUI representation and are refused.
 func (a *app) exportProject(path string) {
 	p := a.selectedProject()
 	if p == nil {
 		a.errMsg = "请先选择一个项目"
+		return
+	}
+	if !p.CanExportSoapUI() {
+		a.errMsg = "普通 HTTP 项目不支持导出 SoapUI XML"
 		return
 	}
 	data, err := soapuiproj.Marshal(*p)
@@ -1142,6 +1552,18 @@ func (a *app) currentDirty() bool {
 	if a.endpoint != a.savedEndpoint {
 		return true
 	}
+	if a.method != a.savedMethod {
+		return true
+	}
+	if a.contentType != a.savedContentType {
+		return true
+	}
+	if a.bodyType != a.savedBodyType || a.bodyFile != a.savedBodyFile {
+		return true
+	}
+	if bodyFieldsDirty(a.bodyFields, a.savedBodyFields) {
+		return true
+	}
 	if a.auth != a.savedAuth {
 		return true
 	}
@@ -1154,13 +1576,31 @@ func draftDirty(d *callDraft) bool {
 		return false
 	}
 	if d.body != d.savedSnapshot || d.timeout != d.savedTimeout ||
-		d.action != d.savedAction || d.endpoint != d.savedEndpoint {
+		d.action != d.savedAction || d.endpoint != d.savedEndpoint ||
+		d.method != d.savedMethod || d.contentType != d.savedContentType ||
+		d.bodyType != d.savedBodyType || d.bodyFile != d.savedBodyFile {
+		return true
+	}
+	if bodyFieldsDirty(d.bodyFields, d.savedBodyFields) {
 		return true
 	}
 	if d.auth != d.savedAuth {
 		return true
 	}
 	return headersDirty(d.headers, d.savedHeaders)
+}
+
+// bodyFieldsDirty compares two editable body-field lists.
+func bodyFieldsDirty(live, saved []bodyField) bool {
+	if len(live) != len(saved) {
+		return true
+	}
+	for i := range live {
+		if live[i] != saved[i] {
+			return true
+		}
+	}
+	return false
 }
 
 func headersDirty(live, saved []headerRow) bool {
@@ -1216,7 +1656,16 @@ func (a *app) deleteService() {
 // open tabs or their drafts.
 func (a *app) clearEditor() {
 	a.pid, a.sid, a.oid, a.cid = "", "", "", ""
+	a.selGroup = ""
 	a.endpoint, a.action = "", ""
+	a.method = "POST"
+	a.reqKind = model.KindHTTP
+	a.bodyType = model.BodyNone
+	a.bodyFields = nil
+	a.bodyFile = ""
+	a.contentType = ""
+	a.queryRows = nil
+	a.querySrc = ""
 	a.headers = nil
 	a.auth = authForm{Type: "none", Enabled: true}
 	a.showAuthSecret = false
@@ -1227,6 +1676,9 @@ func (a *app) clearEditor() {
 	a.resp = model.SendResponse{}
 	a.savedSnapshot, a.savedTimeout, a.savedAction = "", "", ""
 	a.savedEndpoint = ""
+	a.savedMethod, a.savedContentType = "", ""
+	a.savedBodyType, a.savedBodyFile = "", ""
+	a.savedBodyFields = nil
 	a.savedHeaders = nil
 	a.savedAuth = authForm{Type: "none", Enabled: true}
 }
@@ -1256,30 +1708,45 @@ func (a *app) persistResponse(pid, sid, oid, cid string, resp model.SendResponse
 		Size:       resp.Size,
 		Truncated:  resp.Truncated,
 	}
-	if err := a.st.UpdateCallResponse(pid, sid, oid, cid, saved); err != nil {
+	if err := a.storeSaveResponse(pid, sid, oid, cid, saved); err != nil {
 		a.errMsg = "保存响应失败：" + err.Error()
 		return
 	}
 	a.reload()
 }
 
+// storeSaveResponse routes a saved response to the right store method: an
+// operation sample (sid set) or a native project request (sid empty).
+func (a *app) storeSaveResponse(pid, sid, oid, cid string, saved *model.SavedResponse) error {
+	if sid != "" {
+		return a.st.UpdateCallResponse(pid, sid, oid, cid, saved)
+	}
+	return a.st.UpdateProjectCallResponse(pid, cid, saved)
+}
+
 // buildSendRequest assembles the payload the transport sends: project headers,
-// sample headers, the default SOAPAction and Content-Type, and the editor body.
+// sample headers, the method, content type, auth header and the editor body.
 func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error) {
-	p, s, o, c := a.locate()
+	p, _, _, c := a.locate()
 	if c == nil {
 		if key := a.activeTabKey(); key != "" {
 			a.pid, a.sid, a.oid, a.cid = splitKey(key)
-			p, s, o, c = a.locate()
+			p, _, _, c = a.locate()
 		}
 	}
-	if p == nil || s == nil || o == nil || c == nil {
-		return model.SendRequest{}, nil, fmt.Errorf("请先选择一个请求样例")
+	if p == nil || c == nil {
+		return model.SendRequest{}, nil, fmt.Errorf("请先选择一个请求")
 	}
 	url := strings.TrimSpace(a.endpoint)
 	if err := model.ValidateEndpoint(url); err != nil {
 		return model.SendRequest{}, nil, err
 	}
+	kind := a.reqKind
+	if kind != model.KindSOAP && kind != model.KindHTTP {
+		kind = c.KindOrDefault(model.KindHTTP)
+	}
+	method := model.EffectiveMethod(kind, a.method)
+
 	hdrs := map[string]string{}
 	for _, h := range p.Headers {
 		if h.Name != "" {
@@ -1291,10 +1758,20 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 			hdrs[h.Name] = h.Value
 		}
 	}
-	if a.action != "" {
-		hdrs["SOAPAction"] = a.action
+	if kind == model.KindSOAP {
+		if a.action != "" {
+			hdrs["SOAPAction"] = a.action
+		}
 	}
-	hdrs["Content-Type"] = a.contentType
+	body, contentType, err := a.requestBody(kind, method)
+	if err != nil {
+		return model.SendRequest{}, nil, err
+	}
+	// Only send a Content-Type when the request actually has a body (or is
+	// SOAP); a bodyless GET must not carry the default JSON type.
+	if contentType != "" {
+		hdrs["Content-Type"] = contentType
+	}
 	// The authentication page wins over a hand-written Authorization header,
 	// which the panel's hint tells the user.
 	if h := a.auth.modelAuth().Authorization(); h != "" {
@@ -1304,10 +1781,10 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 	req := model.SendRequest{
 		ProjectID:   p.ID,
 		URL:         url,
-		Method:      "POST",
+		Method:      method,
 		Headers:     hdrs,
-		Body:        a.xmlEd.Buffer.String(),
-		ContentType: a.contentType,
+		Body:        body,
+		ContentType: contentType,
 		TimeoutMS:   parseTimeout(a.timeout),
 	}
 	var proxy *model.ProxySettings
@@ -1318,6 +1795,86 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 }
 
 // sendRequest runs the SOAP call off the UI thread.
+// requestBody resolves the request body and its content type from the form's
+// body type and method.
+func (a *app) requestBody(kind, method string) (body, contentType string, err error) {
+	if kind == model.KindSOAP {
+		ct := strings.TrimSpace(a.contentType)
+		if ct == "" {
+			ct = model.DefaultContentType(kind)
+		}
+		return a.xmlEd.Buffer.String(), ct, nil
+	}
+	bt := a.bodyType
+	if bt == "" {
+		bt = model.InferBodyType(a.contentType, a.xmlEd.Buffer.String())
+	}
+	// A method without a body (GET/HEAD) or an explicit "No Body" sends nothing
+	// and carries no content type.
+	if bt == model.BodyNone || !model.MethodHasBody(method) {
+		return "", "", nil
+	}
+	switch bt {
+	case model.BodyURLEncoded:
+		return encodeForm(a.bodyFields), "application/x-www-form-urlencoded", nil
+	case model.BodyMultipart:
+		b, ct := buildMultipart(a.bodyFields)
+		return b, ct, nil
+	case model.BodyBinary:
+		if strings.TrimSpace(a.bodyFile) == "" {
+			return "", "", fmt.Errorf("请选择要上传的文件")
+		}
+		data, rerr := os.ReadFile(a.bodyFile)
+		if rerr != nil {
+			return "", "", fmt.Errorf("读取文件失败：%w", rerr)
+		}
+		ct := strings.TrimSpace(a.contentType)
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		return string(data), ct, nil
+	default: // text-edited bodies: json / xml / graphql / text
+		ct := strings.TrimSpace(a.contentType)
+		if ct == "" {
+			ct = model.BodyTypeContentType(bt)
+		}
+		return a.xmlEd.Buffer.String(), ct, nil
+	}
+}
+
+// encodeForm renders name/value pairs as an application/x-www-form-urlencoded
+// body.
+func encodeForm(fields []bodyField) string {
+	var parts []string
+	for _, f := range fields {
+		if f.Name == "" && f.Value == "" {
+			continue
+		}
+		parts = append(parts, url.QueryEscape(f.Name)+"="+url.QueryEscape(f.Value))
+	}
+	return strings.Join(parts, "&")
+}
+
+// multipartBoundary is fixed per request; a single request is assembled at a
+// time, so a constant cannot collide with an in-flight one.
+const multipartBoundary = "----soapgoFormBoundary7MA4YWxkTrZu0gW"
+
+// buildMultipart renders name/value pairs as a multipart/form-data body and the
+// matching Content-Type (including the boundary).
+func buildMultipart(fields []bodyField) (body, contentType string) {
+	var b strings.Builder
+	for _, f := range fields {
+		if f.Name == "" {
+			continue
+		}
+		b.WriteString("--" + multipartBoundary + "\r\n")
+		b.WriteString(`Content-Disposition: form-data; name="` + strings.ReplaceAll(f.Name, `"`, `\"`) + `"` + "\r\n\r\n")
+		b.WriteString(f.Value + "\r\n")
+	}
+	b.WriteString("--" + multipartBoundary + "--\r\n")
+	return b.String(), "multipart/form-data; boundary=" + multipartBoundary
+}
+
 func (a *app) sendRequest() {
 	if a.sending {
 		return
@@ -1444,6 +2001,13 @@ func headerLines(headers map[string]string) string {
 }
 
 func requestPreview(a *app) string {
+	kind := a.reqKind
+	method := model.EffectiveMethod(kind, a.method)
+	body, contentType, err := a.requestBody(kind, method)
+	if err != nil {
+		body = a.xmlEd.Buffer.String()
+		contentType = strings.TrimSpace(a.contentType)
+	}
 	hdrs := map[string]string{}
 	for _, h := range a.projHeaders {
 		hdrs[h.Name] = h.Value
@@ -1451,23 +2015,35 @@ func requestPreview(a *app) string {
 	for _, h := range a.headers {
 		hdrs[h.Name] = h.Value
 	}
-	if a.action != "" {
+	if kind == model.KindSOAP && a.action != "" {
 		hdrs["SOAPAction"] = a.action
 	}
-	hdrs["Content-Type"] = a.contentType
+	if contentType != "" {
+		hdrs["Content-Type"] = contentType
+	}
 	if h := a.auth.modelAuth().Authorization(); h != "" {
 		hdrs["Authorization"] = h
 	}
 	var b strings.Builder
-	b.WriteString("POST " + a.endpoint + " HTTP/1.1\n")
+	b.WriteString(method + " " + a.endpoint + " HTTP/1.1\n")
 	b.WriteString(headerLines(hdrs))
 	b.WriteString("\n")
-	b.WriteString(a.xmlEd.Buffer.String())
+	b.WriteString(body)
 	return b.String()
 }
 
-// formatBody pretty-prints the request XML.
+// formatBody pretty-prints the request body: JSON when the request is JSON,
+// otherwise XML.
 func (a *app) formatBody() {
+	if a.isJSONRequest() {
+		out, err := formatJSON(a.xmlEd.Buffer.String())
+		if err != nil {
+			a.errMsg = "格式化失败：" + err.Error()
+			return
+		}
+		a.xmlEd.Buffer.Reset(out)
+		return
+	}
 	out, err := formatXML(a.xmlEd.Buffer.String())
 	if err != nil {
 		a.errMsg = "格式化失败：" + err.Error()
@@ -1476,9 +2052,18 @@ func (a *app) formatBody() {
 	a.xmlEd.Buffer.Reset(out)
 }
 
-// minifyBody removes structural whitespace between tags, keeping text and
-// CDATA content exactly as written.
+// minifyBody removes structural whitespace: JSON when the request is JSON,
+// otherwise XML.
 func (a *app) minifyBody() {
+	if a.isJSONRequest() {
+		out, err := minifyJSON(a.xmlEd.Buffer.String())
+		if err != nil {
+			a.errMsg = "压缩失败：" + err.Error()
+			return
+		}
+		a.xmlEd.Buffer.Reset(out)
+		return
+	}
 	toks, err := xmlTokenize(strings.TrimSpace(a.xmlEd.Buffer.String()))
 	if err != nil {
 		a.errMsg = "压缩失败：" + err.Error()
@@ -1500,9 +2085,16 @@ func (a *app) minifyBody() {
 
 // copyCurl puts an equivalent curl command on the clipboard.
 func (a *app) copyCurl() {
+	kind := a.reqKind
+	method := model.EffectiveMethod(kind, a.method)
+	body, contentType, err := a.requestBody(kind, method)
+	if err != nil {
+		body = a.xmlEd.Buffer.String()
+		contentType = strings.TrimSpace(a.contentType)
+	}
 	authHeader := a.auth.modelAuth().Authorization()
 	var b strings.Builder
-	b.WriteString("curl -X POST " + shellQuote(a.endpoint))
+	b.WriteString("curl -X " + method + " " + shellQuote(a.endpoint))
 	for _, h := range a.projHeaders {
 		if authHeader != "" && strings.EqualFold(strings.TrimSpace(h.Name), "Authorization") {
 			continue
@@ -1517,14 +2109,18 @@ func (a *app) copyCurl() {
 		}
 		b.WriteString(" \\\n  -H " + shellQuote(h.Name+": "+h.Value))
 	}
-	if a.action != "" {
+	if kind == model.KindSOAP && a.action != "" {
 		b.WriteString(" \\\n  -H " + shellQuote("SOAPAction: "+a.action))
 	}
 	if authHeader != "" {
 		b.WriteString(" \\\n  -H " + shellQuote("Authorization: "+authHeader))
 	}
-	b.WriteString(" \\\n  -H " + shellQuote("Content-Type: "+a.contentType))
-	b.WriteString(" \\\n  --data-binary " + shellQuote(a.xmlEd.Buffer.String()))
+	if contentType != "" {
+		b.WriteString(" \\\n  -H " + shellQuote("Content-Type: "+contentType))
+	}
+	if strings.TrimSpace(body) != "" {
+		b.WriteString(" \\\n  --data-binary " + shellQuote(body))
+	}
 	mygo.Clipboard.WriteText(b.String())
 	a.statusMsg = "curl 已复制"
 }
@@ -2064,4 +2660,98 @@ func prettyXML(s string) string {
 		return s
 	}
 	return out
+}
+
+// formatJSON pretty-prints a JSON body with two-space indentation.
+func formatJSON(s string) (string, error) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return s, nil
+	}
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, []byte(trimmed), "", "  "); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// minifyJSON removes insignificant whitespace from a JSON body.
+func minifyJSON(s string) (string, error) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return s, nil
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, []byte(trimmed)); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// parseQueryRows splits a URL's query string into editable rows, preserving
+// order and duplicates. The values are URL-decoded.
+func parseQueryRows(rawURL string) []queryRow {
+	_, query, _ := splitURL(rawURL)
+	if query == "" {
+		return nil
+	}
+	var rows []queryRow
+	for _, pair := range strings.Split(query, "&") {
+		if pair == "" {
+			continue
+		}
+		key, val := pair, ""
+		if i := strings.IndexByte(pair, '='); i >= 0 {
+			key, val = pair[:i], pair[i+1:]
+		}
+		k, err := url.QueryUnescape(key)
+		if err != nil {
+			k = key
+		}
+		v, err := url.QueryUnescape(val)
+		if err != nil {
+			v = val
+		}
+		rows = append(rows, queryRow{Key: k, Value: v})
+	}
+	return rows
+}
+
+// buildQueryURL rewrites rawURL's query string from rows, keeping the path and
+// the fragment untouched. Rows with an empty key and value are dropped.
+func buildQueryURL(rawURL string, rows []queryRow) string {
+	base, _, frag := splitURL(rawURL)
+	var parts []string
+	for _, r := range rows {
+		if r.Key == "" && r.Value == "" {
+			continue
+		}
+		part := url.QueryEscape(r.Key)
+		if r.Value != "" {
+			part += "=" + url.QueryEscape(r.Value)
+		}
+		parts = append(parts, part)
+	}
+	out := base
+	if len(parts) > 0 {
+		out += "?" + strings.Join(parts, "&")
+	}
+	if frag != "" {
+		out += "#" + frag
+	}
+	return out
+}
+
+// splitURL returns the URL without its query, the query, and the fragment.
+func splitURL(rawURL string) (base, query, fragment string) {
+	rest := rawURL
+	if i := strings.IndexByte(rest, '#'); i >= 0 {
+		fragment = rest[i+1:]
+		rest = rest[:i]
+	}
+	if i := strings.IndexByte(rest, '?'); i >= 0 {
+		query = rest[i+1:]
+		rest = rest[:i]
+	}
+	return rest, query, fragment
 }
