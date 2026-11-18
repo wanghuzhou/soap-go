@@ -629,7 +629,16 @@ func (a *app) urlBar(c *ui.Context) {
 			ui.Text(c, "POST").FontSize(a.us(10)).Bold().TextColor(t.AccentText).
 				Padding(6, 10).Background(t.Accent).Radius(7)
 		} else {
-			ui.Select(c, &a.method, model.HTTPMethods).Width(82)
+			// A borderless, content-sized picker instead of ui.Select: ui.Select
+			// forces a 35-unit minimum width, which left the control much wider
+			// than the method it shows.
+			ui.PopoverMenuButton(c, a.method, func(m *ui.Menu) {
+				for _, mt := range model.HTTPMethods {
+					if m.Item(mt).Radio(a.method == mt).Chosen() {
+						a.method = mt
+					}
+				}
+			}).BorderWidth(0)
 		}
 		ui.TextInput(c, &a.endpoint).Placeholder("http://host/api/path").Grow(1).OnSubmit(func() { a.sendRequest() })
 		if a.sending {
@@ -701,9 +710,9 @@ func (a *app) bodyPanel(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).Padding(10, 12, 10).Gap(8).Children(func() {
 		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			ui.PopoverMenuButton(c, "Body · "+bodyTypeLabel(a.bodyType)+"  ▾", func(m *ui.Menu) {
+			ui.PopoverMenuButton(c, bodyTypeLabel(a.bodyType), func(m *ui.Menu) {
 				a.bodyTypeMenu(m)
-			}).BorderWidth(0)
+			}).BorderWidth(0).Width(120)
 			ui.Spacer(c)
 			if a.bodyType == model.BodyJSON || a.bodyType == model.BodyGraphQL || a.bodyType == model.BodyXML {
 				a.flatButton(c, "格式化", a.formatBody)
@@ -776,7 +785,7 @@ func (a *app) formBodyPanel(c *ui.Context) {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "字段").FontSize(a.us(11.5)).Bold()
 			ui.Spacer(c)
-			if ui.Button(c, "＋ 添加字段").Clicked() {
+			if a.plainButton(c, "＋ 添加字段") {
 				a.bodyFields = append(a.bodyFields, bodyField{})
 			}
 		})
@@ -849,7 +858,7 @@ func (a *app) headersPanel(c *ui.Context) {
 			ui.Text(c, "请求头").FontSize(a.us(11.5)).Bold()
 			ui.Spacer(c)
 			ui.Checkbox(c, &a.maskSecrets, "遮蔽敏感头")
-			if ui.Button(c, "＋ 添加请求头").Clicked() {
+			if a.plainButton(c, "＋ 添加请求头") {
 				a.headers = append(a.headers, headerRow{})
 			}
 		})
@@ -950,7 +959,7 @@ func (a *app) queryPanel(c *ui.Context) {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "查询参数").FontSize(a.us(11.5)).Bold()
 			ui.Spacer(c)
-			if ui.Button(c, "＋ 添加参数").Clicked() {
+			if a.plainButton(c, "＋ 添加参数") {
 				a.queryRows = append(a.queryRows, queryRow{})
 			}
 		})
@@ -1765,6 +1774,20 @@ func (a *app) flatButton(c *ui.Context, label string, onClick func()) {
 	if btn.Clicked() {
 		onClick()
 	}
+}
+
+// plainButton is a borderless button for panel headers: normal text size with a
+// hover face and no outline. It reports whether it was clicked.
+func (a *app) plainButton(c *ui.Context, label string) bool {
+	t := c.Theme()
+	btn := ui.ButtonBase(c).Padding(4, 10).Radius(6).BorderWidth(0)
+	if btn.Hovered() {
+		btn = btn.Background(t.SurfaceHover)
+	}
+	btn.Children(func() {
+		ui.Text(c, label).FontSize(a.us(11.5)).TextColor(t.Text)
+	})
+	return btn.Clicked()
 }
 
 // copyIcon is a small copy button overlaid on an editor's top-right corner,
