@@ -220,6 +220,9 @@ func cloneOperation(op model.Operation) model.Operation {
 func cloneCall(c model.Call) model.Call {
 	out := c
 	out.Headers = cloneHeaders(c.Headers)
+	if c.BodyFields != nil {
+		out.BodyFields = append([]model.BodyField(nil), c.BodyFields...)
+	}
 	out.Response = cloneSavedResponse(c.Response)
 	return out
 }
@@ -584,6 +587,7 @@ func (s *Store) DuplicateCall(projectID, serviceID, opID, callID string) (model.
 			c.ID = NewID()
 			c.Title = copyTitle(c.Title, op.Calls)
 			c.Headers = append([]model.Header(nil), c.Headers...)
+			c.BodyFields = append([]model.BodyField(nil), c.BodyFields...)
 			c.Auth = c.Auth.Clone()
 			c.Response = cloneSavedResponse(c.Response)
 			op.Calls = append(op.Calls, c)
@@ -818,6 +822,7 @@ func (s *Store) DuplicateProjectCall(projectID, callID string) (model.Call, erro
 			c.ID = NewID()
 			c.Title = copyTitle(c.Title, list[i].Calls)
 			c.Headers = append([]model.Header(nil), c.Headers...)
+			c.BodyFields = append([]model.BodyField(nil), c.BodyFields...)
 			c.Auth = c.Auth.Clone()
 			c.Response = cloneSavedResponse(c.Response)
 			list[i].Calls = append(list[i].Calls, c)

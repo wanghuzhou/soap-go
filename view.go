@@ -629,7 +629,7 @@ func (a *app) urlBar(c *ui.Context) {
 			ui.Text(c, "POST").FontSize(a.us(10)).Bold().TextColor(t.AccentText).
 				Padding(6, 10).Background(t.Accent).Radius(7)
 		} else {
-			ui.Select(c, &a.method, model.HTTPMethods).Width(104)
+			ui.Select(c, &a.method, model.HTTPMethods).Width(82)
 		}
 		ui.TextInput(c, &a.endpoint).Placeholder("http://host/api/path").Grow(1).OnSubmit(func() { a.sendRequest() })
 		if a.sending {
@@ -691,21 +691,51 @@ func (a *app) requestSections() (labels, keys []string) {
 	return
 }
 
-// bodyPanel is the 报文 editor with the format/minify/curl/save actions. The
-// format and minify buttons are shown only for JSON or XML bodies.
+// bodyPanel is the 报文 tab: a SOAP XML editor, or for plain HTTP a body-type
+// picker plus the editor that fits the chosen shape.
 func (a *app) bodyPanel(c *ui.Context) {
-	t := c.Theme()
-	title := "报文"
-	if a.isJSONRequest() {
-		title = "JSON 报文"
-	} else if a.isXMLRequest() {
-		title = "XML 报文"
+	if a.reqKind == model.KindSOAP {
+		a.bodyEditorPanel(c, "XML 报文", true, true)
+		return
 	}
+	t := c.Theme()
+	ui.Column(c).Grow(1).Padding(10, 12, 10).Gap(8).Children(func() {
+		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+			ui.PopoverMenuButton(c, "Body · "+bodyTypeLabel(a.bodyType)+"  ▾", func(m *ui.Menu) {
+				a.bodyTypeMenu(m)
+			}).BorderWidth(0)
+			ui.Spacer(c)
+			if a.bodyType == model.BodyJSON || a.bodyType == model.BodyGraphQL || a.bodyType == model.BodyXML {
+				a.flatButton(c, "格式化", a.formatBody)
+				a.flatButton(c, "压缩", a.minifyBody)
+			}
+			a.flatButton(c, "复制为 curl", a.copyCurl)
+			a.flatButton(c, "保存请求", a.saveCall)
+		})
+		switch {
+		case a.bodyType == model.BodyNone:
+			ui.Column(c).Grow(1).Center().Justify(ui.Center).Children(func() {
+				ui.Text(c, "No Body").FontSize(a.us(12)).TextColor(t.TextMuted)
+			})
+		case a.bodyType == model.BodyBinary:
+			a.binaryBodyPanel(c)
+		case model.BodyTypeHasFields(a.bodyType):
+			a.formBodyPanel(c)
+		default:
+			a.editorWithCopy(c, a.xmlEd, "请求报文已复制", func() string { return a.xmlEd.Buffer.String() })
+		}
+	})
+}
+
+// bodyEditorPanel is a plain editor with the format/minify/curl/save actions,
+// used for SOAP and for HTTP text bodies.
+func (a *app) bodyEditorPanel(c *ui.Context, title string, canFormat, _ bool) {
+	t := c.Theme()
 	ui.Column(c).Grow(1).Padding(10, 12, 10).Gap(8).Children(func() {
 		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, title).FontSize(a.us(11)).TextColor(t.TextMuted).Bold()
 			ui.Spacer(c)
-			if a.isJSONRequest() || a.isXMLRequest() {
+			if canFormat {
 				a.flatButton(c, "格式化", a.formatBody)
 				a.flatButton(c, "压缩", a.minifyBody)
 			}
@@ -714,6 +744,102 @@ func (a *app) bodyPanel(c *ui.Context) {
 		})
 		a.editorWithCopy(c, a.xmlEd, "请求报文已复制", func() string { return a.xmlEd.Buffer.String() })
 	})
+}
+
+// binaryBodyPanel shows the chosen upload file with a picker.
+func (a *app) binaryBodyPanel(c *ui.Context) {
+	t := c.Theme()
+	ui.Column(c).Grow(1).Gap(10).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "文件").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(48)
+			path := a.bodyFile
+			if path == "" {
+				path = "（未选择文件）"
+			}
+			ui.Text(c, path).FontSize(a.us(11)).TextColor(t.TextMuted).Grow(1).SingleLine()
+			if ui.Button(c, "选择文件…").Clicked() {
+				if picked, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: a.win, Title: "选择上传文件"}); err == nil && len(picked) > 0 {
+					a.bodyFile = picked[0]
+				}
+			}
+		})
+		ui.Text(c, "发送时按二进制原样上传，Content-Type 默认 application/octet-stream。").
+			FontSize(a.us(10.5)).TextColor(t.TextMuted)
+		ui.Spacer(c)
+	})
+}
+
+// formBodyPanel edits urlencoded / multipart name-value pairs.
+func (a *app) formBodyPanel(c *ui.Context) {
+	t := c.Theme()
+	ui.Column(c).Grow(1).Gap(8).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "字段").FontSize(a.us(11.5)).Bold()
+			ui.Spacer(c)
+			if ui.Button(c, "＋ 添加字段").Clicked() {
+				a.bodyFields = append(a.bodyFields, bodyField{})
+			}
+		})
+		ui.Divider(c)
+		for i := range a.bodyFields {
+			i := i
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200)
+				ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1)
+				ui.Text(c, "×").FontSize(a.us(13)).TextColor(t.TextMuted).Width(18).
+					OnClick(func() {
+						if i >= 0 && i < len(a.bodyFields) {
+							a.bodyFields = append(a.bodyFields[:i], a.bodyFields[i+1:]...)
+						}
+					})
+			})
+		}
+		ui.Spacer(c)
+	})
+}
+
+// bodyTypeLabel is the human name of a body type.
+func bodyTypeLabel(bt string) string {
+	switch bt {
+	case model.BodyJSON:
+		return "JSON"
+	case model.BodyXML:
+		return "XML"
+	case model.BodyGraphQL:
+		return "GraphQL"
+	case model.BodyText:
+		return "Other"
+	case model.BodyURLEncoded:
+		return "Url Encoded"
+	case model.BodyMultipart:
+		return "Multi-Part"
+	case model.BodyBinary:
+		return "Binary File"
+	default:
+		return "No Body"
+	}
+}
+
+// bodyTypeMenu builds the body-type picker, grouped as in the reference UI.
+func (a *app) bodyTypeMenu(m *ui.Menu) {
+	choice := func(label, bt string) {
+		if m.Item(label).Radio(a.bodyType == bt).Chosen() {
+			a.setBodyType(bt)
+		}
+	}
+	m.Item("Form Data").Disabled(true)
+	choice("Url Encoded", model.BodyURLEncoded)
+	choice("Multi-Part", model.BodyMultipart)
+	m.Separator()
+	m.Item("Text Content").Disabled(true)
+	choice("GraphQL", model.BodyGraphQL)
+	choice("JSON", model.BodyJSON)
+	choice("XML", model.BodyXML)
+	choice("Other", model.BodyText)
+	m.Separator()
+	m.Item("Other").Disabled(true)
+	choice("Binary File", model.BodyBinary)
+	choice("No Body", model.BodyNone)
 }
 
 func (a *app) headersPanel(c *ui.Context) {
@@ -731,7 +857,7 @@ func (a *app) headersPanel(c *ui.Context) {
 			ui.Text(c, "SOAPAction 与 Content-Type 默认存在；项目默认头会叠加，样例头可覆盖同名项。").
 				FontSize(10.5).TextColor(t.TextMuted)
 		} else {
-			ui.Text(c, "Content-Type 与项目默认头会叠加，样例头可覆盖同名项。").
+			ui.Text(c, "项目默认头会叠加，样例头可覆盖同名项。").
 				FontSize(10.5).TextColor(t.TextMuted)
 		}
 		ui.Divider(c)
@@ -752,10 +878,25 @@ func (a *app) headersPanel(c *ui.Context) {
 				ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
 			})
 		} else {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
-				ui.TextInput(c, &a.contentType).Placeholder("application/json").Grow(1)
-			})
+			switch {
+			case a.bodyType == model.BodyNone:
+				ui.Text(c, "该请求不发送请求体，也不设置 Content-Type。").
+					FontSize(a.us(10.5)).TextColor(t.TextMuted)
+			case model.BodyTypeHasFields(a.bodyType):
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
+					ui.Text(c, model.BodyTypeContentType(a.bodyType)).FontSize(a.us(11)).TextColor(t.TextMuted).Grow(1)
+				})
+			default:
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
+					ph := model.BodyTypeContentType(a.bodyType)
+					if ph == "" {
+						ph = "application/json"
+					}
+					ui.TextInput(c, &a.contentType).Placeholder(ph).Grow(1)
+				})
+			}
 		}
 
 		if len(a.projHeaders) > 0 {

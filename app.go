@@ -42,6 +42,12 @@ type queryRow struct {
 	Value string
 }
 
+// bodyField is one editable name/value pair of a urlencoded or multipart body.
+type bodyField struct {
+	Name  string
+	Value string
+}
+
 // authForm is the request form's authentication: the same fields as
 // model.AuthSettings plus the "none" type the UI shows for no auth.
 type authForm struct {
@@ -111,17 +117,21 @@ func (a *app) setAuthType(kind string) {
 // saved with. Keeping a draft per tab means switching tabs keeps unsaved edits,
 // and the tab still knows whether it differs from what is stored.
 type callDraft struct {
-	endpoint, action, timeout      string
-	method, contentType, kind      string
-	query                          []queryRow
-	headers                        []headerRow
-	auth                           authForm
-	body                           string
-	savedSnapshot, savedAction     string
-	savedTimeout, savedEndpoint    string
-	savedMethod, savedContentType  string
-	savedHeaders                   []headerRow
-	savedAuth                      authForm
+	endpoint, action, timeout     string
+	method, contentType, kind     string
+	bodyType, bodyFile            string
+	query                         []queryRow
+	bodyFields                    []bodyField
+	headers                       []headerRow
+	auth                          authForm
+	body                          string
+	savedSnapshot, savedAction    string
+	savedTimeout, savedEndpoint   string
+	savedMethod, savedContentType string
+	savedBodyType, savedBodyFile  string
+	savedBodyFields               []bodyField
+	savedHeaders                  []headerRow
+	savedAuth                     authForm
 }
 
 // uiState is the part of the UI kept between runs: the theme and the split
@@ -180,13 +190,17 @@ type app struct {
 	// reqKind is "soap" or "http" for the form being edited; it decides which
 	// request-panel sections apply and whether the method is editable.
 	reqKind string
+	// bodyType is the plain-HTTP body shape (none/json/xml/...); SOAP ignores it.
+	bodyType   string
+	bodyFields []bodyField
+	bodyFile   string
 	// queryRows is the parsed query string of endpoint, edited in the 查询 tab.
 	// querySrc is the endpoint it was parsed from, so an edit in the URL bar is
 	// noticed and re-parsed instead of being overwritten.
 	queryRows []queryRow
 	querySrc  string
 	headers   []headerRow
-	auth        authForm
+	auth      authForm
 	// showAuthSecret reveals the auth password/token for as long as the
 	// authentication page stays open.
 	showAuthSecret bool
@@ -248,15 +262,18 @@ type app struct {
 	editorFontSize   float64
 
 	// Editor preferences and dirty tracking.
-	maskSecrets     bool
-	savedSnapshot   string
-	savedHeaders    []headerRow
-	savedAuth       authForm
-	savedTimeout    string
-	savedAction     string
-	savedEndpoint   string
-	savedMethod     string
+	maskSecrets      bool
+	savedSnapshot    string
+	savedHeaders     []headerRow
+	savedAuth        authForm
+	savedTimeout     string
+	savedAction      string
+	savedEndpoint    string
+	savedMethod      string
 	savedContentType string
+	savedBodyType    string
+	savedBodyFields  []bodyField
+	savedBodyFile    string
 
 	// Proxy form.
 	proxyModeSel, proxyTypeSel, proxyHost, proxyUser, proxyPass string
@@ -284,9 +301,10 @@ func newApp(reg *workspace.Registry) *app {
 		splitH:           62,
 		splitSide:        0,
 		timeout:          "60000",
-		contentType:      "text/xml; charset=utf-8",
+		contentType:      "",
 		method:           "POST",
 		reqKind:          model.KindHTTP,
+		bodyType:         model.BodyNone,
 		xmlEd:            newXMLState("", false),
 		respEd:           newXMLState("", true),
 		expanded:         map[string]bool{},
@@ -667,15 +685,19 @@ func (a *app) captureDraft() *callDraft {
 	return &callDraft{
 		endpoint: a.endpoint, action: a.action, timeout: a.timeout,
 		method: a.method, contentType: a.contentType, kind: a.reqKind,
+		bodyType: a.bodyType, bodyFile: a.bodyFile,
 		query:         append([]queryRow(nil), a.queryRows...),
+		bodyFields:    append([]bodyField(nil), a.bodyFields...),
 		headers:       append([]headerRow(nil), a.headers...),
 		auth:          a.auth,
 		body:          a.xmlEd.Buffer.String(),
 		savedSnapshot: a.savedSnapshot, savedAction: a.savedAction,
 		savedTimeout: a.savedTimeout, savedEndpoint: a.savedEndpoint,
 		savedMethod: a.savedMethod, savedContentType: a.savedContentType,
-		savedHeaders: append([]headerRow(nil), a.savedHeaders...),
-		savedAuth:    a.savedAuth,
+		savedBodyType: a.savedBodyType, savedBodyFile: a.savedBodyFile,
+		savedBodyFields: append([]bodyField(nil), a.savedBodyFields...),
+		savedHeaders:    append([]headerRow(nil), a.savedHeaders...),
+		savedAuth:       a.savedAuth,
 	}
 }
 
@@ -683,7 +705,9 @@ func (a *app) captureDraft() *callDraft {
 func (a *app) applyDraft(d *callDraft) {
 	a.endpoint, a.action, a.timeout = d.endpoint, d.action, d.timeout
 	a.method, a.contentType, a.reqKind = d.method, d.contentType, d.kind
+	a.bodyType, a.bodyFile = d.bodyType, d.bodyFile
 	a.queryRows = append([]queryRow(nil), d.query...)
+	a.bodyFields = append([]bodyField(nil), d.bodyFields...)
 	a.querySrc = d.endpoint
 	a.headers = append([]headerRow(nil), d.headers...)
 	a.auth = d.auth
@@ -692,6 +716,8 @@ func (a *app) applyDraft(d *callDraft) {
 	a.savedSnapshot, a.savedAction = d.savedSnapshot, d.savedAction
 	a.savedTimeout, a.savedEndpoint = d.savedTimeout, d.savedEndpoint
 	a.savedMethod, a.savedContentType = d.savedMethod, d.savedContentType
+	a.savedBodyType, a.savedBodyFile = d.savedBodyType, d.savedBodyFile
+	a.savedBodyFields = append([]bodyField(nil), d.savedBodyFields...)
 	a.savedHeaders = append([]headerRow(nil), d.savedHeaders...)
 	a.savedAuth = d.savedAuth
 }
@@ -708,14 +734,23 @@ func (a *app) editorLanguage(body string) *editor.Language {
 	return editor.LanguageForText("request.txt", body)
 }
 
-// isJSONRequest reports whether the current request body is JSON by content
-// type, or (failing that) by how the body is written.
+// isJSONRequest reports whether the current request body is JSON, by body type
+// first, then by content type, then by how the body is written.
 func (a *app) isJSONRequest() bool {
+	if a.reqKind == model.KindSOAP {
+		return false
+	}
+	switch a.bodyType {
+	case model.BodyJSON, model.BodyGraphQL:
+		return true
+	case model.BodyXML, model.BodyText, model.BodyURLEncoded, model.BodyMultipart, model.BodyBinary, model.BodyNone:
+		return false
+	}
 	ct := strings.ToLower(a.contentType)
 	if strings.Contains(ct, "json") {
 		return true
 	}
-	if a.contentType != "" && a.reqKind == model.KindHTTP {
+	if strings.TrimSpace(a.contentType) != "" {
 		return false
 	}
 	return strings.HasPrefix(strings.TrimSpace(a.xmlEd.Buffer.String()), "{") ||
@@ -726,6 +761,12 @@ func (a *app) isJSONRequest() bool {
 func (a *app) isXMLRequest() bool {
 	if a.reqKind == model.KindSOAP {
 		return true
+	}
+	switch a.bodyType {
+	case model.BodyXML:
+		return true
+	case model.BodyJSON, model.BodyGraphQL, model.BodyText, model.BodyURLEncoded, model.BodyMultipart, model.BodyBinary, model.BodyNone:
+		return false
 	}
 	ct := strings.ToLower(a.contentType)
 	return strings.Contains(ct, "xml")
@@ -765,9 +806,27 @@ func (a *app) loadCallIntoForm(c *model.Call, defaultKind string) {
 	a.endpoint = c.Endpoint
 	a.action = c.Action
 	a.method = model.EffectiveMethod(kind, c.Method)
+	a.bodyFile = c.BodyFile
+	a.bodyFields = bodyFieldsOf(c.BodyFields)
+	bt := model.NormalizeBodyType(c.BodyType)
+	if bt == "" {
+		if kind == model.KindSOAP {
+			bt = model.BodyXML
+		} else {
+			bt = model.InferBodyType(c.ContentType, c.Request)
+		}
+	}
+	if kind == model.KindSOAP {
+		bt = model.BodyXML
+	}
+	a.bodyType = bt
 	a.contentType = c.ContentType
-	if strings.TrimSpace(a.contentType) == "" {
-		a.contentType = model.DefaultContentType(kind)
+	if kind == model.KindSOAP {
+		if strings.TrimSpace(a.contentType) == "" {
+			a.contentType = model.DefaultContentType(kind)
+		}
+	} else if bt != model.BodyNone && strings.TrimSpace(a.contentType) == "" {
+		a.contentType = model.BodyTypeContentType(bt)
 	}
 	a.timeout = strconv.Itoa(model.ClampTimeout(c.TimeoutMS))
 	if a.timeout == "0" {
@@ -790,7 +849,53 @@ func (a *app) loadCallIntoForm(c *model.Call, defaultKind string) {
 	a.savedEndpoint = a.endpoint
 	a.savedMethod = a.method
 	a.savedContentType = a.contentType
+	a.savedBodyType = a.bodyType
+	a.savedBodyFields = append([]bodyField(nil), a.bodyFields...)
+	a.savedBodyFile = a.bodyFile
 	a.savedAuth = a.auth
+}
+
+// bodyFieldsOf converts the persisted body fields into editable rows.
+func bodyFieldsOf(in []model.BodyField) []bodyField {
+	if in == nil {
+		return nil
+	}
+	out := make([]bodyField, len(in))
+	for i, f := range in {
+		out[i] = bodyField{Name: f.Name, Value: f.Value}
+	}
+	return out
+}
+
+// modelBodyFields converts editable rows back to the persisted form, dropping
+// completely empty rows.
+func modelBodyFields(rows []bodyField) []model.BodyField {
+	var out []model.BodyField
+	for _, r := range rows {
+		if strings.TrimSpace(r.Name) == "" && strings.TrimSpace(r.Value) == "" {
+			continue
+		}
+		out = append(out, model.BodyField{Name: r.Name, Value: r.Value})
+	}
+	return out
+}
+
+// setBodyType switches the plain-HTTP body shape and aligns the content type
+// with it, seeding one empty field row for the form-based types.
+func (a *app) setBodyType(bt string) {
+	bt = model.NormalizeBodyType(bt)
+	if bt == "" {
+		return
+	}
+	a.bodyType = bt
+	if bt == model.BodyNone {
+		a.contentType = ""
+	} else if ct := model.BodyTypeContentType(bt); ct != "" {
+		a.contentType = ct
+	}
+	if model.BodyTypeHasFields(bt) && len(a.bodyFields) == 0 {
+		a.bodyFields = append(a.bodyFields, bodyField{})
+	}
 }
 
 // loadResponse shows the call's last saved response, if any.
@@ -1055,6 +1160,15 @@ func (a *app) saveCall() {
 	call.Kind = a.reqKind
 	call.Method = model.EffectiveMethod(a.reqKind, a.method)
 	call.ContentType = strings.TrimSpace(a.contentType)
+	if a.reqKind == model.KindHTTP {
+		call.BodyType = a.bodyType
+		call.BodyFields = modelBodyFields(a.bodyFields)
+		call.BodyFile = a.bodyFile
+	} else {
+		call.BodyType = ""
+		call.BodyFields = nil
+		call.BodyFile = ""
+	}
 	call.Request = a.xmlEd.Buffer.String()
 	call.TimeoutMS = parseTimeout(a.timeout)
 	call.Headers = headersFromRows(a.headers)
@@ -1077,6 +1191,9 @@ func (a *app) saveCall() {
 	a.savedEndpoint = call.Endpoint
 	a.savedMethod = call.Method
 	a.savedContentType = call.ContentType
+	a.savedBodyType = a.bodyType
+	a.savedBodyFields = append([]bodyField(nil), a.bodyFields...)
+	a.savedBodyFile = a.bodyFile
 	// Keep the editor's kind/method in step with what was persisted.
 	a.method = call.Method
 	if key := a.activeTabKey(); key != "" {
@@ -1175,9 +1292,9 @@ func (a *app) newProjectCall(folderID string) {
 		return
 	}
 	call, err := a.st.AddProjectCall(p.ID, folderID, model.Call{
-		Title:       "新请求",
-		Method:      "GET",
-		ContentType: model.DefaultContentType(model.KindHTTP),
+		Title:    "新请求",
+		Method:   "GET",
+		BodyType: model.BodyNone,
 	})
 	if err != nil {
 		a.errMsg = "新建请求失败：" + err.Error()
@@ -1441,6 +1558,12 @@ func (a *app) currentDirty() bool {
 	if a.contentType != a.savedContentType {
 		return true
 	}
+	if a.bodyType != a.savedBodyType || a.bodyFile != a.savedBodyFile {
+		return true
+	}
+	if bodyFieldsDirty(a.bodyFields, a.savedBodyFields) {
+		return true
+	}
 	if a.auth != a.savedAuth {
 		return true
 	}
@@ -1454,13 +1577,30 @@ func draftDirty(d *callDraft) bool {
 	}
 	if d.body != d.savedSnapshot || d.timeout != d.savedTimeout ||
 		d.action != d.savedAction || d.endpoint != d.savedEndpoint ||
-		d.method != d.savedMethod || d.contentType != d.savedContentType {
+		d.method != d.savedMethod || d.contentType != d.savedContentType ||
+		d.bodyType != d.savedBodyType || d.bodyFile != d.savedBodyFile {
+		return true
+	}
+	if bodyFieldsDirty(d.bodyFields, d.savedBodyFields) {
 		return true
 	}
 	if d.auth != d.savedAuth {
 		return true
 	}
 	return headersDirty(d.headers, d.savedHeaders)
+}
+
+// bodyFieldsDirty compares two editable body-field lists.
+func bodyFieldsDirty(live, saved []bodyField) bool {
+	if len(live) != len(saved) {
+		return true
+	}
+	for i := range live {
+		if live[i] != saved[i] {
+			return true
+		}
+	}
+	return false
 }
 
 func headersDirty(live, saved []headerRow) bool {
@@ -1520,6 +1660,10 @@ func (a *app) clearEditor() {
 	a.endpoint, a.action = "", ""
 	a.method = "POST"
 	a.reqKind = model.KindHTTP
+	a.bodyType = model.BodyNone
+	a.bodyFields = nil
+	a.bodyFile = ""
+	a.contentType = ""
 	a.queryRows = nil
 	a.querySrc = ""
 	a.headers = nil
@@ -1533,6 +1677,8 @@ func (a *app) clearEditor() {
 	a.savedSnapshot, a.savedTimeout, a.savedAction = "", "", ""
 	a.savedEndpoint = ""
 	a.savedMethod, a.savedContentType = "", ""
+	a.savedBodyType, a.savedBodyFile = "", ""
+	a.savedBodyFields = nil
 	a.savedHeaders = nil
 	a.savedAuth = authForm{Type: "none", Enabled: true}
 }
@@ -1612,26 +1758,26 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 			hdrs[h.Name] = h.Value
 		}
 	}
-	contentType := strings.TrimSpace(a.contentType)
-	if contentType == "" {
-		contentType = model.DefaultContentType(kind)
-	}
 	if kind == model.KindSOAP {
 		if a.action != "" {
 			hdrs["SOAPAction"] = a.action
 		}
 	}
-	hdrs["Content-Type"] = contentType
+	body, contentType, err := a.requestBody(kind, method)
+	if err != nil {
+		return model.SendRequest{}, nil, err
+	}
+	// Only send a Content-Type when the request actually has a body (or is
+	// SOAP); a bodyless GET must not carry the default JSON type.
+	if contentType != "" {
+		hdrs["Content-Type"] = contentType
+	}
 	// The authentication page wins over a hand-written Authorization header,
 	// which the panel's hint tells the user.
 	if h := a.auth.modelAuth().Authorization(); h != "" {
 		hdrs["Authorization"] = h
 	}
 
-	body := a.xmlEd.Buffer.String()
-	if !model.MethodHasBody(method) {
-		body = ""
-	}
 	req := model.SendRequest{
 		ProjectID:   p.ID,
 		URL:         url,
@@ -1649,6 +1795,86 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 }
 
 // sendRequest runs the SOAP call off the UI thread.
+// requestBody resolves the request body and its content type from the form's
+// body type and method.
+func (a *app) requestBody(kind, method string) (body, contentType string, err error) {
+	if kind == model.KindSOAP {
+		ct := strings.TrimSpace(a.contentType)
+		if ct == "" {
+			ct = model.DefaultContentType(kind)
+		}
+		return a.xmlEd.Buffer.String(), ct, nil
+	}
+	bt := a.bodyType
+	if bt == "" {
+		bt = model.InferBodyType(a.contentType, a.xmlEd.Buffer.String())
+	}
+	// A method without a body (GET/HEAD) or an explicit "No Body" sends nothing
+	// and carries no content type.
+	if bt == model.BodyNone || !model.MethodHasBody(method) {
+		return "", "", nil
+	}
+	switch bt {
+	case model.BodyURLEncoded:
+		return encodeForm(a.bodyFields), "application/x-www-form-urlencoded", nil
+	case model.BodyMultipart:
+		b, ct := buildMultipart(a.bodyFields)
+		return b, ct, nil
+	case model.BodyBinary:
+		if strings.TrimSpace(a.bodyFile) == "" {
+			return "", "", fmt.Errorf("请选择要上传的文件")
+		}
+		data, rerr := os.ReadFile(a.bodyFile)
+		if rerr != nil {
+			return "", "", fmt.Errorf("读取文件失败：%w", rerr)
+		}
+		ct := strings.TrimSpace(a.contentType)
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		return string(data), ct, nil
+	default: // text-edited bodies: json / xml / graphql / text
+		ct := strings.TrimSpace(a.contentType)
+		if ct == "" {
+			ct = model.BodyTypeContentType(bt)
+		}
+		return a.xmlEd.Buffer.String(), ct, nil
+	}
+}
+
+// encodeForm renders name/value pairs as an application/x-www-form-urlencoded
+// body.
+func encodeForm(fields []bodyField) string {
+	var parts []string
+	for _, f := range fields {
+		if f.Name == "" && f.Value == "" {
+			continue
+		}
+		parts = append(parts, url.QueryEscape(f.Name)+"="+url.QueryEscape(f.Value))
+	}
+	return strings.Join(parts, "&")
+}
+
+// multipartBoundary is fixed per request; a single request is assembled at a
+// time, so a constant cannot collide with an in-flight one.
+const multipartBoundary = "----soapgoFormBoundary7MA4YWxkTrZu0gW"
+
+// buildMultipart renders name/value pairs as a multipart/form-data body and the
+// matching Content-Type (including the boundary).
+func buildMultipart(fields []bodyField) (body, contentType string) {
+	var b strings.Builder
+	for _, f := range fields {
+		if f.Name == "" {
+			continue
+		}
+		b.WriteString("--" + multipartBoundary + "\r\n")
+		b.WriteString(`Content-Disposition: form-data; name="` + strings.ReplaceAll(f.Name, `"`, `\"`) + `"` + "\r\n\r\n")
+		b.WriteString(f.Value + "\r\n")
+	}
+	b.WriteString("--" + multipartBoundary + "--\r\n")
+	return b.String(), "multipart/form-data; boundary=" + multipartBoundary
+}
+
 func (a *app) sendRequest() {
 	if a.sending {
 		return
@@ -1777,9 +2003,10 @@ func headerLines(headers map[string]string) string {
 func requestPreview(a *app) string {
 	kind := a.reqKind
 	method := model.EffectiveMethod(kind, a.method)
-	contentType := strings.TrimSpace(a.contentType)
-	if contentType == "" {
-		contentType = model.DefaultContentType(kind)
+	body, contentType, err := a.requestBody(kind, method)
+	if err != nil {
+		body = a.xmlEd.Buffer.String()
+		contentType = strings.TrimSpace(a.contentType)
 	}
 	hdrs := map[string]string{}
 	for _, h := range a.projHeaders {
@@ -1791,7 +2018,9 @@ func requestPreview(a *app) string {
 	if kind == model.KindSOAP && a.action != "" {
 		hdrs["SOAPAction"] = a.action
 	}
-	hdrs["Content-Type"] = contentType
+	if contentType != "" {
+		hdrs["Content-Type"] = contentType
+	}
 	if h := a.auth.modelAuth().Authorization(); h != "" {
 		hdrs["Authorization"] = h
 	}
@@ -1799,9 +2028,7 @@ func requestPreview(a *app) string {
 	b.WriteString(method + " " + a.endpoint + " HTTP/1.1\n")
 	b.WriteString(headerLines(hdrs))
 	b.WriteString("\n")
-	if model.MethodHasBody(method) {
-		b.WriteString(a.xmlEd.Buffer.String())
-	}
+	b.WriteString(body)
 	return b.String()
 }
 
@@ -1860,9 +2087,10 @@ func (a *app) minifyBody() {
 func (a *app) copyCurl() {
 	kind := a.reqKind
 	method := model.EffectiveMethod(kind, a.method)
-	contentType := strings.TrimSpace(a.contentType)
-	if contentType == "" {
-		contentType = model.DefaultContentType(kind)
+	body, contentType, err := a.requestBody(kind, method)
+	if err != nil {
+		body = a.xmlEd.Buffer.String()
+		contentType = strings.TrimSpace(a.contentType)
 	}
 	authHeader := a.auth.modelAuth().Authorization()
 	var b strings.Builder
@@ -1887,9 +2115,11 @@ func (a *app) copyCurl() {
 	if authHeader != "" {
 		b.WriteString(" \\\n  -H " + shellQuote("Authorization: "+authHeader))
 	}
-	b.WriteString(" \\\n  -H " + shellQuote("Content-Type: "+contentType))
-	if model.MethodHasBody(method) {
-		b.WriteString(" \\\n  --data-binary " + shellQuote(a.xmlEd.Buffer.String()))
+	if contentType != "" {
+		b.WriteString(" \\\n  -H " + shellQuote("Content-Type: "+contentType))
+	}
+	if strings.TrimSpace(body) != "" {
+		b.WriteString(" \\\n  --data-binary " + shellQuote(body))
 	}
 	mygo.Clipboard.WriteText(b.String())
 	a.statusMsg = "curl 已复制"

@@ -223,6 +223,14 @@ type Call struct {
 	// ContentType is the request body's media type. Empty means the kind's
 	// default (see DefaultContentType).
 	ContentType string `json:"contentType,omitempty"`
+	// BodyType is the shape of a plain HTTP body: none, json, xml, graphql,
+	// text, urlencoded, multipart or binary. Empty means "infer from
+	// ContentType/Request"; see NormalizeBodyType.
+	BodyType string `json:"bodyType,omitempty"`
+	// BodyFields holds the name/value pairs of a urlencoded or multipart body.
+	BodyFields []BodyField `json:"bodyFields,omitempty"`
+	// BodyFile is the source path of a binary body.
+	BodyFile string `json:"bodyFile,omitempty"`
 	// FolderID names the Group this native request sits in; "" is the project
 	// root. Unused by an operation's SOAP samples.
 	FolderID string `json:"folderId,omitempty"`
@@ -283,6 +291,88 @@ func DefaultContentType(kind string) string {
 		return "text/xml; charset=utf-8"
 	}
 	return "application/json"
+}
+
+// BodyField is one name/value pair of a urlencoded or multipart body.
+type BodyField struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// Plain-HTTP body shapes, mirroring the body-type menu.
+const (
+	BodyNone       = "none"
+	BodyJSON       = "json"
+	BodyXML        = "xml"
+	BodyGraphQL    = "graphql"
+	BodyText       = "text"
+	BodyURLEncoded = "urlencoded"
+	BodyMultipart  = "multipart"
+	BodyBinary     = "binary"
+)
+
+// NormalizeBodyType maps an arbitrary value to a known body type, defaulting to
+// "" only when the value is unknown.
+func NormalizeBodyType(s string) string {
+	switch s {
+	case BodyNone, BodyJSON, BodyXML, BodyGraphQL, BodyText,
+		BodyURLEncoded, BodyMultipart, BodyBinary:
+		return s
+	}
+	return ""
+}
+
+// InferBodyType derives a body type for a legacy call that has none stored,
+// from its content type and body.
+func InferBodyType(contentType, body string) string {
+	ct := strings.ToLower(contentType)
+	switch {
+	case strings.Contains(ct, "json"):
+		return BodyJSON
+	case strings.Contains(ct, "xml"):
+		return BodyXML
+	case strings.Contains(ct, "x-www-form-urlencoded"):
+		return BodyURLEncoded
+	case strings.Contains(ct, "multipart/form-data"):
+		return BodyMultipart
+	case strings.TrimSpace(body) == "":
+		return BodyNone
+	default:
+		return BodyText
+	}
+}
+
+// BodyTypeContentType is the media type a text body type implies.
+func BodyTypeContentType(bt string) string {
+	switch bt {
+	case BodyJSON, BodyGraphQL:
+		return "application/json"
+	case BodyXML:
+		return "application/xml"
+	case BodyText:
+		return "text/plain"
+	case BodyURLEncoded:
+		return "application/x-www-form-urlencoded"
+	case BodyMultipart:
+		return "multipart/form-data"
+	case BodyBinary:
+		return "application/octet-stream"
+	}
+	return ""
+}
+
+// BodyTypeHasTextEditor reports whether a body type is edited as free text.
+func BodyTypeHasTextEditor(bt string) bool {
+	switch bt {
+	case BodyJSON, BodyXML, BodyGraphQL, BodyText:
+		return true
+	}
+	return false
+}
+
+// BodyTypeHasFields reports whether a body type is edited as name/value pairs.
+func BodyTypeHasFields(bt string) bool {
+	return bt == BodyURLEncoded || bt == BodyMultipart
 }
 
 // SavedResponse is a response kept with a request sample. It deliberately

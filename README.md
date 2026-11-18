@@ -7,7 +7,7 @@ SOAP / WSDL 接口调试桌面工具，用 **Go + MyGo 原生 UI**（纯 Go 绘�
 ## 功能
 
 - **项目树**：项目 → 目录/请求（普通 HTTP），以及导入的 项目 → 服务 → 操作 → 请求样例（SOAP），展开折叠、搜索过滤、显示上次响应状态码
-- **请求编辑**：普通 HTTP 请求可选方法（GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS）、URL 与「查询」页签双向同步、Content-Type 可编辑、JSON 格式化/压缩；SOAP 请求固定 POST，含 SOAPAction、Content-Type、XML 格式化；超时、请求头（项目默认 + 样例覆盖 + 敏感头遮蔽）、代码编辑器（JSON/XML 自动高亮）
+- **请求编辑**：普通 HTTP 请求可选方法（GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS）、URL 与「查询」页签双向同步；Body 类型可选 No Body / JSON / XML / GraphQL / Other / Url Encoded / Multi-Part / Binary File，按类型提供文本编辑器（JSON/XML 高亮）、表单字段或文件选择；SOAP 请求固定 POST，含 SOAPAction、Content-Type、XML 格式化；超时、请求头（项目默认 + 样例覆盖 + 敏感头遮蔽）
 - **发送请求**：真实 HTTP / SOAP 请求，支持代理（系统 / 直连 / 自定义 HTTP·SOCKS5）、超时、响应截断；GET/HEAD 不发送请求体
 - **响应查看**：格式化 / 原始 / 请求 / Headers 四个视图，状态码、耗时、大小；悬停显示复制图标，发送成功后自动保存最近响应
 - **导入**：SoapUI 项目（.xml）、WSDL 文件、WSDL URL（可选代理）；SOAP 请求只能通过这些导入产生

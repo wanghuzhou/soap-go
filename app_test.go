@@ -174,6 +174,7 @@ func TestCloseTabKeepsActiveTab(t *testing.T) {
 // action through the headless build of the real view.
 func TestToolbarButtonClicks(t *testing.T) {
 	a := newTestApp(t)
+	a.reqKind = model.KindSOAP
 	a.xmlEd.Buffer.Reset("<a>\n  <b>1</b>\n</a>")
 	tt := ui.NewTester(a.view, 1200, 800)
 	tt.Frame()
@@ -1222,7 +1223,6 @@ func newNativeCall(t *testing.T) (*app, model.Call) {
 	p := a.projects[0]
 	call, err := a.st.AddProjectCall(p.ID, "", model.Call{
 		Title: "R", Endpoint: "http://example.test/api", Method: "GET",
-		ContentType: "application/json",
 	})
 	if err != nil {
 		t.Fatalf("AddProjectCall: %v", err)
@@ -1233,11 +1233,14 @@ func newNativeCall(t *testing.T) (*app, model.Call) {
 }
 
 // TestNativeHTTPBuild checks a native request builds with its own method, no
-// SOAPAction, a default JSON content type, and no body for GET.
+// SOAPAction, no content type for a bodyless GET, and a JSON body for POST.
 func TestNativeHTTPBuild(t *testing.T) {
 	a, _ := newNativeCall(t)
 	if a.reqKind != model.KindHTTP {
 		t.Fatalf("reqKind = %q, want http", a.reqKind)
+	}
+	if a.bodyType != model.BodyNone {
+		t.Fatalf("a new GET request should default to No Body, got %q", a.bodyType)
 	}
 
 	a.method = "GET"
@@ -1252,19 +1255,23 @@ func TestNativeHTTPBuild(t *testing.T) {
 	if _, ok := req.Headers["SOAPAction"]; ok {
 		t.Fatalf("HTTP request must not set SOAPAction: %v", req.Headers)
 	}
-	if req.ContentType != "application/json" {
-		t.Fatalf("content type = %q", req.ContentType)
+	if _, ok := req.Headers["Content-Type"]; ok || req.ContentType != "" {
+		t.Fatalf("bodyless GET must not carry a Content-Type: %+v", req.Headers)
 	}
 
 	a.method = "POST"
+	a.setBodyType(model.BodyJSON)
 	req, _, _ = a.buildSendRequest()
 	if req.Method != "POST" || req.Body != `{"q":1}` {
 		t.Fatalf("POST req = %+v", req)
 	}
+	if req.ContentType != "application/json" {
+		t.Fatalf("POST content type = %q", req.ContentType)
+	}
 
 	a.saveCall()
 	a.reload()
-	if got := a.projects[0].Calls[0]; got.Kind != model.KindHTTP || got.Method != "POST" {
+	if got := a.projects[0].Calls[0]; got.Kind != model.KindHTTP || got.Method != "POST" || got.BodyType != model.BodyJSON {
 		t.Fatalf("stored call = %+v", got)
 	}
 }
@@ -1272,7 +1279,7 @@ func TestNativeHTTPBuild(t *testing.T) {
 // TestJSONFormat checks the JSON branch of format/minify.
 func TestJSONFormat(t *testing.T) {
 	a, _ := newNativeCall(t)
-	a.contentType = "application/json"
+	a.setBodyType(model.BodyJSON)
 	a.xmlEd.Buffer.Reset(`{"a":1,"b":[2,3]}`)
 
 	a.formatBody()
@@ -1324,6 +1331,56 @@ func TestNativeExportRefused(t *testing.T) {
 	}
 }
 
+// TestBodyTypeRequestBodies checks each plain-HTTP body shape produces the
+// right body and content type.
+func TestBodyTypeRequestBodies(t *testing.T) {
+	a, _ := newNativeCall(t)
+	a.method = "POST"
+
+	a.setBodyType(model.BodyURLEncoded)
+	a.bodyFields = []bodyField{{Name: "a", Value: "1"}, {Name: "b", Value: "x y"}}
+	req, _, err := a.buildSendRequest()
+	if err != nil {
+		t.Fatalf("urlencoded build: %v", err)
+	}
+	if req.Body != "a=1&b=x+y" || req.ContentType != "application/x-www-form-urlencoded" {
+		t.Fatalf("urlencoded = %q ct=%q", req.Body, req.ContentType)
+	}
+
+	a.saveCall()
+	a.reload()
+	if got := a.projects[0].Calls[0]; got.BodyType != model.BodyURLEncoded || len(got.BodyFields) != 2 {
+		t.Fatalf("stored body = %+v", got)
+	}
+
+	a.setBodyType(model.BodyMultipart)
+	req, _, _ = a.buildSendRequest()
+	if !strings.HasPrefix(req.ContentType, "multipart/form-data; boundary=") ||
+		!strings.Contains(req.Body, `name="a"`) {
+		t.Fatalf("multipart = ct %q body %q", req.ContentType, req.Body)
+	}
+
+	a.setBodyType(model.BodyNone)
+	req, _, _ = a.buildSendRequest()
+	if req.Body != "" || req.ContentType != "" {
+		t.Fatalf("none = body %q ct %q", req.Body, req.ContentType)
+	}
+
+	f := filepath.Join(t.TempDir(), "blob.bin")
+	if err := os.WriteFile(f, []byte{0, 1, 2, 3}, 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	a.setBodyType(model.BodyBinary)
+	a.bodyFile = f
+	req, _, err = a.buildSendRequest()
+	if err != nil {
+		t.Fatalf("binary build: %v", err)
+	}
+	if req.Body != string([]byte{0, 1, 2, 3}) || req.ContentType != "application/octet-stream" {
+		t.Fatalf("binary = %q ct %q", req.Body, req.ContentType)
+	}
+}
+
 // TestGroupTreeRenders checks a folder and a request inside it appear in the
 // tree.
 func TestGroupTreeRenders(t *testing.T) {
@@ -1345,4 +1402,3 @@ func TestGroupTreeRenders(t *testing.T) {
 		t.Fatal("group tree did not render its folder and request")
 	}
 }
-
