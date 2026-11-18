@@ -201,6 +201,7 @@ jobs:
           # mygo build 已在 build/darwin-<arch>/ 生成 dmg，改名成统一的发行命名放进 dist。
           SRC_DMG=$(ls build/darwin-${GOARCH}/*.dmg | head -n1)
           test -n "${SRC_DMG}" || { echo "no dmg produced in build/darwin-${GOARCH}/" >&2; exit 1; }
+          mkdir -p dist
           cp "${SRC_DMG}" "dist/${NAME}.dmg"
           ls -l "dist/${NAME}.dmg"
 
