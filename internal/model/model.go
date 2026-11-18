@@ -2,6 +2,7 @@
 package model
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
@@ -49,6 +50,54 @@ func ValidateHeaders(headers []Header) error {
 		}
 	}
 	return nil
+}
+
+// AuthSettings is one request's authentication. Type is "basic", "bearer" or
+// (the zero value) no authentication. Enabled turns the configuration off
+// without forgetting the credentials; Prefix is the Bearer scheme word and
+// defaults to "Bearer" when empty.
+type AuthSettings struct {
+	Type     string `json:"type,omitempty"`
+	Enabled  bool   `json:"enabled,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	Token    string `json:"token,omitempty"`
+	Prefix   string `json:"prefix,omitempty"`
+}
+
+// Authorization returns the Authorization header value this configuration
+// produces, or "" when it is absent, disabled or missing its credentials.
+func (a *AuthSettings) Authorization() string {
+	if a == nil || !a.Enabled {
+		return ""
+	}
+	switch a.Type {
+	case "basic":
+		if a.Username == "" && a.Password == "" {
+			return ""
+		}
+		raw := a.Username + ":" + a.Password
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
+	case "bearer":
+		if a.Token == "" {
+			return ""
+		}
+		prefix := strings.TrimSpace(a.Prefix)
+		if prefix == "" {
+			prefix = "Bearer"
+		}
+		return prefix + " " + a.Token
+	}
+	return ""
+}
+
+// Clone returns a copy that shares nothing mutable with a.
+func (a *AuthSettings) Clone() *AuthSettings {
+	if a == nil {
+		return nil
+	}
+	c := *a
+	return &c
 }
 
 // ProxySettings controls how requests of a project reach the network.
@@ -130,6 +179,8 @@ type Call struct {
 	Request  string `json:"request"` // raw XML body
 	// Headers override the project's defaults for this sample only.
 	Headers []Header `json:"headers,omitempty"`
+	// Auth is this sample's authentication; nil means none.
+	Auth *AuthSettings `json:"auth,omitempty"`
 	// TimeoutMS bounds this sample's request. 0 means "use the default".
 	TimeoutMS int `json:"timeoutMs,omitempty"`
 	// Response is the last response the user saved for this sample. It is

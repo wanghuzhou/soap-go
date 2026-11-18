@@ -559,6 +559,7 @@ func (s *Store) DuplicateCall(projectID, serviceID, opID, callID string) (model.
 			c.ID = NewID()
 			c.Title = copyTitle(c.Title, op.Calls)
 			c.Headers = append([]model.Header(nil), c.Headers...)
+			c.Auth = c.Auth.Clone()
 			c.Response = cloneSavedResponse(c.Response)
 			op.Calls = append(op.Calls, c)
 			out = c

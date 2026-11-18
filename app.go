@@ -33,16 +33,83 @@ type headerRow struct {
 	Value string
 }
 
+// authForm is the request form's authentication: the same fields as
+// model.AuthSettings plus the "none" type the UI shows for no auth.
+type authForm struct {
+	Type     string // "none", "basic" or "bearer"
+	Enabled  bool
+	Username string
+	Password string
+	Token    string
+	Prefix   string
+}
+
+// modelAuth converts the form to what the store persists; "none" is nil.
+func (f authForm) modelAuth() *model.AuthSettings {
+	if f.Type != "basic" && f.Type != "bearer" {
+		return nil
+	}
+	prefix := f.Prefix
+	if f.Type == "bearer" && strings.TrimSpace(prefix) == "" {
+		prefix = "Bearer"
+	}
+	return &model.AuthSettings{
+		Type: f.Type, Enabled: f.Enabled,
+		Username: f.Username, Password: f.Password,
+		Token: f.Token, Prefix: prefix,
+	}
+}
+
+// authFormOf loads a stored call's auth into the form, defaulting the type to
+// "none" and the Bearer prefix to "Bearer".
+func authFormOf(a *model.AuthSettings) authForm {
+	f := authForm{Type: "none", Enabled: true}
+	if a == nil {
+		return f
+	}
+	if a.Type == "basic" || a.Type == "bearer" {
+		f.Type = a.Type
+	}
+	f.Enabled = a.Enabled
+	f.Username, f.Password = a.Username, a.Password
+	f.Token, f.Prefix = a.Token, a.Prefix
+	if f.Type == "bearer" && strings.TrimSpace(f.Prefix) == "" {
+		f.Prefix = "Bearer"
+	}
+	return f
+}
+
+// setAuthType switches the authentication type. Picking Basic or Bearer turns
+// it on and defaults the Bearer scheme word; picking 无认证 carries no header.
+func (a *app) setAuthType(kind string) {
+	if kind != "basic" && kind != "bearer" {
+		kind = "none"
+	}
+	if a.auth.Type == kind {
+		return
+	}
+	a.auth.Type = kind
+	if kind != "none" {
+		a.auth.Enabled = true
+		if kind == "bearer" && strings.TrimSpace(a.auth.Prefix) == "" {
+			a.auth.Prefix = "Bearer"
+		}
+	}
+	a.showAuthSecret = false
+}
+
 // callDraft is one open tab's editable request form and the values it was last
 // saved with. Keeping a draft per tab means switching tabs keeps unsaved edits,
 // and the tab still knows whether it differs from what is stored.
 type callDraft struct {
 	endpoint, action, timeout   string
 	headers                     []headerRow
+	auth                        authForm
 	body                        string
 	savedSnapshot, savedAction  string
 	savedTimeout, savedEndpoint string
 	savedHeaders                []headerRow
+	savedAuth                   authForm
 }
 
 // uiState is the part of the UI kept between runs: the theme and the split
@@ -93,10 +160,14 @@ type app struct {
 	contentType string
 	timeout     string
 	headers     []headerRow
-	projHeaders []model.Header
-	xmlEd       *editor.State
-	respEd      *editor.State
-	reqSection  int
+	auth        authForm
+	// showAuthSecret reveals the auth password/token for as long as the
+	// authentication page stays open.
+	showAuthSecret bool
+	projHeaders    []model.Header
+	xmlEd          *editor.State
+	respEd         *editor.State
+	reqSection     int
 
 	// Response.
 	hasResp    bool
@@ -154,6 +225,7 @@ type app struct {
 	maskSecrets   bool
 	savedSnapshot string
 	savedHeaders  []headerRow
+	savedAuth     authForm
 	savedTimeout  string
 	savedAction   string
 	savedEndpoint string
@@ -193,6 +265,8 @@ func newApp(reg *workspace.Registry) *app {
 		proxyTypeSel:     "HTTP",
 		importProxySel:   "直连（默认）",
 		maskSecrets:      true,
+		auth:             authForm{Type: "none", Enabled: true},
+		savedAuth:        authForm{Type: "none", Enabled: true},
 		uiFontChoice:     systemFontLabel,
 		uiFontSize:       uiBaseFontSize(),
 		editorFontChoice: systemFontLabel,
@@ -514,10 +588,12 @@ func (a *app) captureDraft() *callDraft {
 	return &callDraft{
 		endpoint: a.endpoint, action: a.action, timeout: a.timeout,
 		headers:       append([]headerRow(nil), a.headers...),
+		auth:          a.auth,
 		body:          a.xmlEd.Buffer.String(),
 		savedSnapshot: a.savedSnapshot, savedAction: a.savedAction,
 		savedTimeout: a.savedTimeout, savedEndpoint: a.savedEndpoint,
 		savedHeaders: append([]headerRow(nil), a.savedHeaders...),
+		savedAuth:    a.savedAuth,
 	}
 }
 
@@ -525,11 +601,13 @@ func (a *app) captureDraft() *callDraft {
 func (a *app) applyDraft(d *callDraft) {
 	a.endpoint, a.action, a.timeout = d.endpoint, d.action, d.timeout
 	a.headers = append([]headerRow(nil), d.headers...)
+	a.auth = d.auth
 	a.xmlEd.Buffer.Reset(d.body)
 	a.xmlEd.Buffer.SetLanguage(editor.LanguageForText("request.xml", d.body))
 	a.savedSnapshot, a.savedAction = d.savedSnapshot, d.savedAction
 	a.savedTimeout, a.savedEndpoint = d.savedTimeout, d.savedEndpoint
 	a.savedHeaders = append([]headerRow(nil), d.savedHeaders...)
+	a.savedAuth = d.savedAuth
 }
 
 // loadTab makes key the active tab and shows its draft, or loads it from the
@@ -570,11 +648,13 @@ func (a *app) loadCallIntoForm(c *model.Call) {
 	body := c.Request
 	a.xmlEd.Buffer.Reset(body)
 	a.xmlEd.Buffer.SetLanguage(editor.LanguageForText("request.xml", body))
+	a.auth = authFormOf(c.Auth)
 	a.savedSnapshot = body
 	a.savedHeaders = append([]headerRow(nil), a.headers...)
 	a.savedTimeout = a.timeout
 	a.savedAction = a.action
 	a.savedEndpoint = a.endpoint
+	a.savedAuth = a.auth
 }
 
 // loadResponse shows the call's last saved response, if any.
@@ -812,12 +892,14 @@ func (a *app) saveCall() {
 	call.Request = a.xmlEd.Buffer.String()
 	call.TimeoutMS = parseTimeout(a.timeout)
 	call.Headers = headersFromRows(a.headers)
+	call.Auth = a.auth.modelAuth()
 	if err := a.st.UpdateCall(p.ID, s.ID, o.ID, call); err != nil {
 		a.errMsg = "保存失败：" + err.Error()
 		return
 	}
 	a.savedSnapshot = call.Request
 	a.savedHeaders = append([]headerRow(nil), a.headers...)
+	a.savedAuth = a.auth
 	a.savedTimeout = a.timeout
 	a.savedAction = call.Action
 	a.savedEndpoint = call.Endpoint
@@ -1060,6 +1142,9 @@ func (a *app) currentDirty() bool {
 	if a.endpoint != a.savedEndpoint {
 		return true
 	}
+	if a.auth != a.savedAuth {
+		return true
+	}
 	return headersDirty(a.headers, a.savedHeaders)
 }
 
@@ -1070,6 +1155,9 @@ func draftDirty(d *callDraft) bool {
 	}
 	if d.body != d.savedSnapshot || d.timeout != d.savedTimeout ||
 		d.action != d.savedAction || d.endpoint != d.savedEndpoint {
+		return true
+	}
+	if d.auth != d.savedAuth {
 		return true
 	}
 	return headersDirty(d.headers, d.savedHeaders)
@@ -1130,6 +1218,8 @@ func (a *app) clearEditor() {
 	a.pid, a.sid, a.oid, a.cid = "", "", "", ""
 	a.endpoint, a.action = "", ""
 	a.headers = nil
+	a.auth = authForm{Type: "none", Enabled: true}
+	a.showAuthSecret = false
 	a.projHeaders = nil
 	a.xmlEd.Buffer.Reset("")
 	a.respEd.Buffer.Reset("")
@@ -1138,6 +1228,7 @@ func (a *app) clearEditor() {
 	a.savedSnapshot, a.savedTimeout, a.savedAction = "", "", ""
 	a.savedEndpoint = ""
 	a.savedHeaders = nil
+	a.savedAuth = authForm{Type: "none", Enabled: true}
 }
 
 // clearSelection resets the editor and closes every tab, for actions that
@@ -1204,6 +1295,11 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 		hdrs["SOAPAction"] = a.action
 	}
 	hdrs["Content-Type"] = a.contentType
+	// The authentication page wins over a hand-written Authorization header,
+	// which the panel's hint tells the user.
+	if h := a.auth.modelAuth().Authorization(); h != "" {
+		hdrs["Authorization"] = h
+	}
 
 	req := model.SendRequest{
 		ProjectID:   p.ID,
@@ -1359,6 +1455,9 @@ func requestPreview(a *app) string {
 		hdrs["SOAPAction"] = a.action
 	}
 	hdrs["Content-Type"] = a.contentType
+	if h := a.auth.modelAuth().Authorization(); h != "" {
+		hdrs["Authorization"] = h
+	}
 	var b strings.Builder
 	b.WriteString("POST " + a.endpoint + " HTTP/1.1\n")
 	b.WriteString(headerLines(hdrs))
@@ -1401,16 +1500,28 @@ func (a *app) minifyBody() {
 
 // copyCurl puts an equivalent curl command on the clipboard.
 func (a *app) copyCurl() {
+	authHeader := a.auth.modelAuth().Authorization()
 	var b strings.Builder
 	b.WriteString("curl -X POST " + shellQuote(a.endpoint))
 	for _, h := range a.projHeaders {
+		if authHeader != "" && strings.EqualFold(strings.TrimSpace(h.Name), "Authorization") {
+			continue
+		}
 		b.WriteString(" \\\n  -H " + shellQuote(h.Name+": "+h.Value))
 	}
 	for _, h := range a.headers {
+		// The auth page's header replaces a hand-written Authorization, so do
+		// not send both.
+		if authHeader != "" && strings.EqualFold(strings.TrimSpace(h.Name), "Authorization") {
+			continue
+		}
 		b.WriteString(" \\\n  -H " + shellQuote(h.Name+": "+h.Value))
 	}
 	if a.action != "" {
 		b.WriteString(" \\\n  -H " + shellQuote("SOAPAction: "+a.action))
+	}
+	if authHeader != "" {
+		b.WriteString(" \\\n  -H " + shellQuote("Authorization: "+authHeader))
 	}
 	b.WriteString(" \\\n  -H " + shellQuote("Content-Type: "+a.contentType))
 	b.WriteString(" \\\n  --data-binary " + shellQuote(a.xmlEd.Buffer.String()))

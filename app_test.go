@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1068,5 +1069,122 @@ func TestSettingsSizeStepper(t *testing.T) {
 	tt.Frame()
 	if a.uiFontSize != start {
 		t.Fatalf("after plus = %v, want %v", a.uiFontSize, start)
+	}
+}
+
+// newCallForAuth builds one project/service/operation/call and opens the call,
+// for the authentication tests.
+func newCallForAuth(t *testing.T) (*app, model.Call) {
+	t.Helper()
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	svc, err := a.st.AddService(p.ID, model.Service{Name: "S"})
+	if err != nil {
+		t.Fatalf("AddService: %v", err)
+	}
+	op, err := a.st.AddOperation(p.ID, svc.ID, model.Operation{Name: "O", Endpoint: "http://x/Op"})
+	if err != nil {
+		t.Fatalf("AddOperation: %v", err)
+	}
+	call, err := a.st.AddCall(p.ID, svc.ID, op.ID, model.Call{Title: "C", Endpoint: "http://x/Op", Request: "<a/>"})
+	if err != nil {
+		t.Fatalf("AddCall: %v", err)
+	}
+	a.reload()
+	a.openCall(p.ID, svc.ID, op.ID, call.ID)
+	return a, call
+}
+
+// TestAuthHeaderInSendRequest checks the auth page produces the Basic/Bearer
+// header, that it wins over a hand-written Authorization, and that a disabled
+// or absent configuration leaves the manual header alone.
+func TestAuthHeaderInSendRequest(t *testing.T) {
+	a, _ := newCallForAuth(t)
+	a.headers = []headerRow{{Name: "Authorization", Value: "manual"}}
+
+	a.setAuthType("basic")
+	a.auth.Username, a.auth.Password = "u", "p"
+	req, _, err := a.buildSendRequest()
+	if err != nil {
+		t.Fatalf("buildSendRequest: %v", err)
+	}
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("u:p"))
+	if got := req.Headers["Authorization"]; got != want {
+		t.Fatalf("basic Authorization = %q, want %q", got, want)
+	}
+
+	a.setAuthType("bearer")
+	a.auth.Token = "tok"
+	req, _, err = a.buildSendRequest()
+	if err != nil {
+		t.Fatalf("buildSendRequest: %v", err)
+	}
+	if got := req.Headers["Authorization"]; got != "Bearer tok" {
+		t.Fatalf("bearer Authorization = %q, want %q", got, "Bearer tok")
+	}
+	a.auth.Prefix = "Token"
+	req, _, _ = a.buildSendRequest()
+	if got := req.Headers["Authorization"]; got != "Token tok" {
+		t.Fatalf("prefixed Authorization = %q", got)
+	}
+
+	a.auth.Enabled = false
+	req, _, _ = a.buildSendRequest()
+	if got := req.Headers["Authorization"]; got != "manual" {
+		t.Fatalf("disabled auth should leave manual header, got %q", got)
+	}
+
+	a.setAuthType("none")
+	req, _, _ = a.buildSendRequest()
+	if got := req.Headers["Authorization"]; got != "manual" {
+		t.Fatalf("no auth should leave manual header, got %q", got)
+	}
+}
+
+// TestAuthPersistsAndDirty checks the auth form saves with the sample, loads
+// back, and marks the tab dirty while it differs from the saved copy.
+func TestAuthPersistsAndDirty(t *testing.T) {
+	a, call := newCallForAuth(t)
+
+	a.auth = authForm{Type: "basic", Enabled: true, Username: "u", Password: "p"}
+	if !a.currentDirty() {
+		t.Fatal("editing auth did not mark the tab dirty")
+	}
+	a.saveCall()
+	if a.currentDirty() {
+		t.Fatal("saved tab still dirty")
+	}
+
+	a.reload()
+	c := a.projects[0].Services[0].Operations[0].Calls[0]
+	if c.ID != call.ID || c.Auth == nil || c.Auth.Type != "basic" ||
+		c.Auth.Username != "u" || c.Auth.Password != "p" || !c.Auth.Enabled {
+		t.Fatalf("stored auth = %+v", c.Auth)
+	}
+}
+
+// TestAuthPanelRenders checks the 认证 page builds in each type without
+// panicking and shows the scheme's fields.
+func TestAuthPanelRenders(t *testing.T) {
+	a, _ := newCallForAuth(t)
+	a.reqSection = 2
+	a.setAuthType("basic")
+	a.auth.Username, a.auth.Password = "u", "p"
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("Username") || !tt.HasText("Password") {
+		t.Fatal("basic auth page is missing its fields")
+	}
+	a.setAuthType("bearer")
+	tt.Frame()
+	if !tt.HasText("Token") || !tt.HasText("Prefix") {
+		t.Fatal("bearer auth page is missing its fields")
+	}
+	a.setAuthType("none")
+	tt.Frame()
+	if tt.HasText("Username") {
+		t.Fatal("no-auth page still shows credential fields")
 	}
 }

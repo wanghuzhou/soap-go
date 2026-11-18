@@ -23,6 +23,8 @@ var (
 	iconSun      = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2M12 19.4v2M2.6 12h2M19.4 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>`))
 	iconMoon     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>`))
 	iconSettings = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`))
+	iconEye      = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`))
+	iconEyeOff   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1"/><path d="M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a10.8 10.8 0 0 0 4.4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>`))
 )
 
 // ---- view ----
@@ -532,9 +534,7 @@ func (a *app) requestPanel(c *ui.Context) {
 		case 1:
 			a.headersPanel(c)
 		case 2:
-			ui.Column(c).Grow(1).Center().Justify(ui.Center).Children(func() {
-				ui.Text(c, "SOAP 使用 HTTP Basic / WS-Security，认证配置后续接入").FontSize(a.us(11)).TextColor(t.TextMuted)
-			})
+			a.authPanel(c)
 		case 3:
 			a.settingsPanel(c)
 		default:
@@ -616,6 +616,79 @@ func (a *app) headersPanel(c *ui.Context) {
 			})
 		}
 		ui.Spacer(c)
+	})
+}
+
+// authPanel is the 认证 section: the auth type, an enable switch, and the
+// fields of the picked scheme, after Yaak's request auth panel.
+func (a *app) authPanel(c *ui.Context) {
+	t := c.Theme()
+	ui.Column(c).Grow(1).Padding(14, 14, 10).Gap(12).Children(func() {
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "认证类型").FontSize(a.us(11.5)).Bold()
+			ui.Spacer(c)
+			ui.Row(c).Padding(2).Gap(2).Radius(8).Background(t.Background).Border(1, t.Border).Children(func() {
+				a.segment(c, "无认证", a.auth.Type == "none", func() { a.setAuthType("none") })
+				a.segment(c, "Basic", a.auth.Type == "basic", func() { a.setAuthType("basic") })
+				a.segment(c, "Bearer", a.auth.Type == "bearer", func() { a.setAuthType("bearer") })
+			})
+		})
+		if a.auth.Type == "none" {
+			ui.Text(c, "当前请求不添加 Authorization 头。").
+				FontSize(a.us(11)).TextColor(t.TextMuted)
+			ui.Spacer(c)
+			return
+		}
+
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "启用状态").FontSize(a.us(11)).TextColor(t.TextMuted)
+			ui.Row(c).Padding(2).Gap(2).Radius(8).Background(t.Background).Border(1, t.Border).Children(func() {
+				a.segment(c, "启用", a.auth.Enabled, func() { a.auth.Enabled = true })
+				a.segment(c, "禁用", !a.auth.Enabled, func() { a.auth.Enabled = false })
+			})
+		})
+		ui.Divider(c)
+
+		switch a.auth.Type {
+		case "basic":
+			a.authTextField(c, "Username", &a.auth.Username, "用户名")
+			a.authSecretField(c, "Password", &a.auth.Password, "密码")
+		case "bearer":
+			a.authSecretField(c, "Token", &a.auth.Token, "令牌")
+			a.authTextField(c, "Prefix", &a.auth.Prefix, "Bearer")
+		}
+		ui.Spacer(c)
+		ui.Text(c, "认证头会覆盖「请求头」里手写的 Authorization。").
+			FontSize(a.us(10.5)).TextColor(t.TextMuted)
+	})
+}
+
+// authTextField is one plain field of the auth panel.
+func (a *app) authTextField(c *ui.Context, label string, value *string, placeholder string) {
+	t := c.Theme()
+	ui.Column(c).Gap(6).Children(func() {
+		ui.Text(c, label).FontSize(a.us(11)).TextColor(t.TextMuted)
+		ui.TextInput(c, value).Placeholder(placeholder).Grow(1)
+	})
+}
+
+// authSecretField is a password or token field: hidden by default, with an eye
+// button that reveals it while the user looks, as Yaak's does.
+func (a *app) authSecretField(c *ui.Context, label string, value *string, placeholder string) {
+	t := c.Theme()
+	ui.Column(c).Gap(6).Children(func() {
+		ui.Text(c, label).FontSize(a.us(11)).TextColor(t.TextMuted)
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			in := ui.TextInput(c, value).Placeholder(placeholder).Grow(1)
+			if !a.showAuthSecret {
+				in.Password()
+			}
+			icon, tip := iconEye, "显示"
+			if a.showAuthSecret {
+				icon, tip = iconEyeOff, "隐藏"
+			}
+			a.iconBtn(c, icon, tip, func() { a.showAuthSecret = !a.showAuthSecret })
+		})
 	})
 }
 
