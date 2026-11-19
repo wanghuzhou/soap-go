@@ -500,7 +500,7 @@ const systemFontLabel = "系统默认"
 
 // appVersion is the release version shown in the settings dialog's About
 // section.
-const appVersion = "v0.2.1"
+const appVersion = "v0.3.0"
 
 // uiFontOptions and editorFontOptions are the families the settings dialog
 // offers; the first choice is the system's own font. They differ per platform
