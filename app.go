@@ -208,6 +208,10 @@ type app struct {
 	xmlEd          *editor.State
 	respEd         *editor.State
 	reqSection     int
+	// reqLangKey is the kind/body-type/content-type the request editor's
+	// syntax highlighting was last set for, so it only re-resolves when one
+	// of them changes rather than every frame.
+	reqLangKey string
 
 	// Response.
 	hasResp    bool
@@ -756,6 +760,18 @@ func (a *app) editorLanguage(body string) *editor.Language {
 	return editor.LanguageForText("request.txt", body)
 }
 
+// syncRequestLanguage re-resolves the request editor's highlighting when the
+// kind, body type or content type changed. force applies it unconditionally,
+// for callers that just changed the body type themselves.
+func (a *app) syncRequestLanguage(force bool) {
+	key := a.reqKind + "\x00" + a.bodyType + "\x00" + a.contentType
+	if !force && key == a.reqLangKey {
+		return
+	}
+	a.reqLangKey = key
+	a.xmlEd.Buffer.SetLanguage(a.editorLanguage(a.xmlEd.Buffer.String()))
+}
+
 // isJSONRequest reports whether the current request body is JSON, by body type
 // first, then by content type, then by how the body is written.
 func (a *app) isJSONRequest() bool {
@@ -918,6 +934,7 @@ func (a *app) setBodyType(bt string) {
 	if model.BodyTypeHasFields(bt) && len(a.bodyFields) == 0 {
 		a.bodyFields = append(a.bodyFields, bodyField{})
 	}
+	a.syncRequestLanguage(true)
 }
 
 // loadResponse shows the call's last saved response, if any.
@@ -1981,11 +1998,43 @@ func (a *app) cancelSend() {
 func (a *app) syncResponse() {
 	text := a.responseText()
 	file := "response.xml"
-	if a.respTab == 3 { // Headers are plain text, not XML.
+	switch a.respTab {
+	case 2, 3: // the request preview and the headers are plain text
 		file = "response.txt"
+	default:
+		if a.responseIsJSON() {
+			file = "response.json"
+		}
 	}
 	a.respEd.Buffer.Reset(text)
 	a.respEd.Buffer.SetLanguage(editor.LanguageForText(file, text))
+}
+
+// responseIsJSON reports whether the response body should be treated as JSON:
+// its Content-Type says so, or, without one, its body is written as JSON.
+func (a *app) responseIsJSON() bool {
+	if !a.hasResp || a.resp.Error != "" {
+		return false
+	}
+	ct := strings.ToLower(a.responseContentType())
+	if strings.Contains(ct, "json") {
+		return true
+	}
+	if strings.Contains(ct, "xml") {
+		return false
+	}
+	body := strings.TrimSpace(a.resp.Body)
+	return strings.HasPrefix(body, "{") || strings.HasPrefix(body, "[")
+}
+
+// responseContentType returns the response's Content-Type header, if any.
+func (a *app) responseContentType() string {
+	for k, v := range a.resp.Headers {
+		if strings.EqualFold(strings.TrimSpace(k), "Content-Type") {
+			return v
+		}
+	}
+	return ""
 }
 
 func (a *app) responseText() string {
@@ -2003,6 +2052,9 @@ func (a *app) responseText() string {
 	case 3: // Headers
 		return headerLines(a.resp.Headers)
 	default: // 格式化
+		if a.responseIsJSON() {
+			return prettyJSON(a.resp.Body)
+		}
 		return prettyXML(a.resp.Body)
 	}
 }
@@ -2678,6 +2730,16 @@ func isInlineXMLToken(tk xmlTok) bool {
 // prettyXML formats a response for display, leaving malformed bodies as-is.
 func prettyXML(s string) string {
 	out, err := formatXML(s)
+	if err != nil {
+		return s
+	}
+	return out
+}
+
+// prettyJSON pretty-prints a JSON body, leaving it unchanged when it is not
+// valid JSON.
+func prettyJSON(s string) string {
+	out, err := formatJSON(s)
 	if err != nil {
 		return s
 	}

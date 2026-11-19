@@ -323,9 +323,11 @@ func NormalizeBodyType(s string) string {
 }
 
 // InferBodyType derives a body type for a legacy call that has none stored,
-// from its content type and body.
+// from its content type and body. Without a telling content type, a body
+// written as JSON or XML is classified by its first character.
 func InferBodyType(contentType, body string) string {
 	ct := strings.ToLower(contentType)
+	trimmed := strings.TrimSpace(body)
 	switch {
 	case strings.Contains(ct, "json"):
 		return BodyJSON
@@ -335,8 +337,12 @@ func InferBodyType(contentType, body string) string {
 		return BodyURLEncoded
 	case strings.Contains(ct, "multipart/form-data"):
 		return BodyMultipart
-	case strings.TrimSpace(body) == "":
+	case trimmed == "":
 		return BodyNone
+	case strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "["):
+		return BodyJSON
+	case strings.HasPrefix(trimmed, "<"):
+		return BodyXML
 	default:
 		return BodyText
 	}

@@ -531,6 +531,56 @@ func TestResponseTextTabs(t *testing.T) {
 	}
 }
 
+// TestJSONHighlightAndResponseFormat checks that choosing the JSON body type
+// gives the request editor JSON highlighting, and that a JSON response is
+// pretty-printed on the 格式化 tab and highlighted as JSON.
+func TestJSONHighlightAndResponseFormat(t *testing.T) {
+	a := newTestApp(t)
+	a.reqKind = model.KindHTTP
+	a.bodyType = model.BodyNone
+	a.contentType = ""
+	a.setBodyType(model.BodyJSON)
+	if lang := a.xmlEd.Buffer.Language(); lang == nil || lang.Name != "JSON" {
+		t.Fatalf("request language = %v, want JSON", lang)
+	}
+
+	a.hasResp = true
+	a.resp = model.SendResponse{
+		Status: 200, StatusText: "OK",
+		Headers: map[string]string{"Content-Type": "application/json; charset=utf-8"},
+		Body:    `{"a":1,"b":[2,3]}`,
+	}
+	a.respTab = 0
+	if got := a.responseText(); !strings.Contains(got, "\n") || !strings.Contains(got, `"a": 1`) {
+		t.Fatalf("formatted JSON response = %q", got)
+	}
+	a.syncResponse()
+	if lang := a.respEd.Buffer.Language(); lang == nil || lang.Name != "JSON" {
+		t.Fatalf("response language = %v, want JSON", lang)
+	}
+	if got := a.respEd.Buffer.String(); !strings.Contains(got, "\n") {
+		t.Fatalf("synced JSON response not formatted = %q", got)
+	}
+}
+
+// TestInferBodyTypeSniffsBody checks that a legacy call with no stored body
+// type and no telling Content-Type is classified by how its body is written.
+func TestInferBodyTypeSniffsBody(t *testing.T) {
+	cases := []struct{ ct, body, want string }{
+		{"", `{"a":1}`, model.BodyJSON},
+		{"", `[1,2]`, model.BodyJSON},
+		{"", "<a/>", model.BodyXML},
+		{"", "hello", model.BodyText},
+		{"", "", model.BodyNone},
+		{"application/json", "<weird/>", model.BodyJSON},
+	}
+	for _, c := range cases {
+		if got := model.InferBodyType(c.ct, c.body); got != c.want {
+			t.Errorf("InferBodyType(%q, %q) = %q, want %q", c.ct, c.body, got, c.want)
+		}
+	}
+}
+
 // TestResponseTabClickSwitchesEditor clicks the response tabs in a headless
 // build of the real view and checks the editor follows the choice: the bug
 // was that the tab value changed but the editor was never re-synced.

@@ -748,6 +748,7 @@ func (a *app) requestSections() (labels, keys []string) {
 // bodyPanel is the 报文 tab: a SOAP XML editor, or for plain HTTP a body-type
 // picker plus the editor that fits the chosen shape.
 func (a *app) bodyPanel(c *ui.Context) {
+	a.syncRequestLanguage(false)
 	if a.reqKind == model.KindSOAP {
 		a.bodyEditorPanel(c, "XML 报文", true, true)
 		return
