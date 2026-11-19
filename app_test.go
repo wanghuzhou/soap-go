@@ -678,6 +678,28 @@ func TestSendContextCancel(t *testing.T) {
 	}
 }
 
+// TestTreeSearchEmptyState checks that filtering to nothing explains it and
+// offers a way to clear the search.
+func TestTreeSearchEmptyState(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	a.search = "不存在的接口"
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("没有匹配的接口") {
+		t.Fatal("no empty search state")
+	}
+	if err := tt.Click("清空搜索"); err != nil {
+		t.Fatalf("click 清空搜索: %v", err)
+	}
+	tt.Frame()
+	if a.search != "" {
+		t.Fatalf("search = %q, want cleared", a.search)
+	}
+}
+
 // TestFriendlySendError checks transport errors become actionable Chinese
 // messages while unknown errors pass through unchanged.
 func TestFriendlySendError(t *testing.T) {

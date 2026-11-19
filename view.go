@@ -212,8 +212,13 @@ func (a *app) sidebar(c *ui.Context) {
 				}
 			})
 		})
-		ui.Row(c).Padding(0, 12, 8, 12).Children(func() {
-			ui.TextInput(c, &a.search).Placeholder("搜索接口").Grow(1).Ref(&a.searchRef)
+		ui.Row(c).Padding(0, 12, 8, 12).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.TextInput(c, &a.search).Placeholder("搜索接口").Grow(1).Ref(&a.searchRef).
+				Label("搜索接口").
+				OnShortcut(0, ui.KeyEscape, func() { a.search = "" })
+			if a.search != "" {
+				a.closeIconButton(c, 18, "清空搜索", func() { a.search = "" })
+			}
 		})
 		ui.Scroll(c).Grow(1).Padding(4, 6, 6).Children(func() {
 			items := a.treeItems()
@@ -224,11 +229,22 @@ func (a *app) sidebar(c *ui.Context) {
 				})
 				return
 			}
+			matched := 0
 			for _, it := range items {
 				if a.search != "" && !strings.Contains(strings.ToLower(it.label), strings.ToLower(a.search)) {
 					continue
 				}
 				a.treeRow(c, it)
+				matched++
+			}
+			if matched == 0 && a.search != "" {
+				ui.Column(c).Padding(16).Gap(8).Children(func() {
+					ui.Text(c, "没有匹配的接口").FontSize(a.us(12.5)).Bold()
+					ui.Text(c, "换个关键词，或清空搜索查看全部。").FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
+					if a.plainButton(c, "清空搜索") {
+						a.search = ""
+					}
+				})
 			}
 		})
 	})
