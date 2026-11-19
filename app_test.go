@@ -678,6 +678,59 @@ func TestSendContextCancel(t *testing.T) {
 	}
 }
 
+// TestTabsPersistAcrossRestart checks the open tabs and the active one come
+// back after reopening the workspace, that a tab whose request was deleted is
+// dropped, and that closing every tab leaves the next run empty.
+func TestTabsPersistAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	reg, err := workspace.Open(dir, "")
+	if err != nil {
+		t.Fatalf("workspace.Open: %v", err)
+	}
+	a := newApp(reg)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	c1, _ := a.st.AddProjectCall(p.ID, "", model.Call{Title: "C1", BodyType: model.BodyNone})
+	c2, _ := a.st.AddProjectCall(p.ID, "", model.Call{Title: "C2", BodyType: model.BodyNone})
+	a.reload()
+	a.openCall(p.ID, "", "", c1.ID)
+	a.openCall(p.ID, "", "", c2.ID) // C2 is now the active tab.
+	a.saveUIState()
+
+	reg2, _ := workspace.Open(dir, "")
+	b := newApp(reg2)
+	if len(b.tabs) != 2 || b.active != 1 {
+		t.Fatalf("restored tabs=%d active=%d, want 2 and 1", len(b.tabs), b.active)
+	}
+	if b.cid != c2.ID {
+		t.Fatalf("restored active call = %q, want %q", b.cid, c2.ID)
+	}
+
+	// Deleting a request drops its tab on the next start even though the saved
+	// state still names it, then clamps the active index.
+	if err := b.st.DeleteProjectCall(p.ID, c2.ID); err != nil {
+		t.Fatalf("delete C2: %v", err)
+	}
+	reg3, _ := workspace.Open(dir, "")
+	c := newApp(reg3)
+	if len(c.tabs) != 1 || c.cid != c1.ID {
+		t.Fatalf("after delete: tabs=%d cid=%q, want 1 and %q", len(c.tabs), c.cid, c1.ID)
+	}
+
+	// Closing every tab is remembered too: the next run shows an empty editor
+	// rather than reopening the first request.
+	c.tabs = nil
+	c.active = 0
+	c.clearSelection()
+	c.saveUIState()
+	reg4, _ := workspace.Open(dir, "")
+	d := newApp(reg4)
+	if len(d.tabs) != 0 {
+		t.Fatalf("closed tabs came back: %v", d.tabs)
+	}
+}
+
 func TestUIStatePersists(t *testing.T) {
 	dir := t.TempDir()
 	reg, err := workspace.Open(dir, "")

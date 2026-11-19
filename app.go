@@ -150,6 +150,12 @@ type uiState struct {
 	EditorFontSize float64 `json:"editorFontSize,omitempty"`
 	// Accent is the picked theme color, or "" for the theme's default.
 	Accent string `json:"accent,omitempty"`
+	// Tabs are the request tabs left open, as "pid/sid/oid/cid" keys joined by
+	// newlines, and ActiveTab the index of the one shown; TabsSaved tells an
+	// empty tab set (the user closed everything) from a state never saved.
+	Tabs      string `json:"tabs,omitempty"`
+	ActiveTab int    `json:"activeTab,omitempty"`
+	TabsSaved bool   `json:"tabsSaved,omitempty"`
 }
 
 // app is the whole application state; the view is a function of it.
@@ -224,6 +230,11 @@ type app struct {
 	tabs   []string
 	active int
 	drafts map[string]*callDraft
+	// pendingTabs is the tab state loaded from disk before the projects are
+	// read, restored once they are; pendingTabsSaved tells whether it was set.
+	pendingTabs      []string
+	pendingActive    int
+	pendingTabsSaved bool
 
 	// Tree.
 	expanded  map[string]bool
@@ -327,7 +338,9 @@ func newApp(reg *workspace.Registry) *app {
 	a.uiPath = filepath.Join(reg.DataDir(), "ui-state.json")
 	a.loadUIState()
 	a.reload()
-	a.openFirstCall()
+	if !a.restoreTabs() {
+		a.openFirstCall()
+	}
 	return a
 }
 
@@ -336,7 +349,10 @@ func (a *app) currentUI() uiState {
 		Dark: a.dark, SplitSide: a.splitSide, SideW: a.sideW, SplitV: a.splitV, SplitH: a.splitH,
 		UIFont: a.uiFontChoice, UIFontSize: a.uiFontSize,
 		EditorFont: a.editorFontChoice, EditorFontSize: a.editorFontSize,
-		Accent: a.accent,
+		Accent:    a.accent,
+		Tabs:      strings.Join(a.tabs, "\n"),
+		ActiveTab: a.active,
+		TabsSaved: true,
 	}
 }
 
@@ -365,6 +381,13 @@ func (a *app) loadUIState() {
 				a.editorFontSize = st.EditorFontSize
 			}
 			a.accent = normalizeAccent(st.Accent)
+			a.pendingTabsSaved = st.TabsSaved
+			a.pendingActive = st.ActiveTab
+			for _, k := range strings.Split(st.Tabs, "\n") {
+				if k = strings.TrimSpace(k); k != "" {
+					a.pendingTabs = append(a.pendingTabs, k)
+				}
+			}
 		}
 	}
 	a.savedUI = a.currentUI()
@@ -669,6 +692,46 @@ func (a *app) openFirstCall() {
 			}
 		}
 	}
+}
+
+// restoreTabs reopens the tabs a previous run left open, dropping keys whose
+// request no longer exists. It reports whether the saved state was applied:
+// false falls back to openFirstCall, as a first run or a workspace whose saved
+// tabs have all been deleted does.
+func (a *app) restoreTabs() bool {
+	if !a.pendingTabsSaved {
+		return false
+	}
+	if len(a.pendingTabs) == 0 {
+		// The user had closed every tab: keep the workbench empty.
+		a.savedUI = a.currentUI()
+		return true
+	}
+	seen := make(map[string]bool, len(a.pendingTabs))
+	kept := make([]string, 0, len(a.pendingTabs))
+	for _, k := range a.pendingTabs {
+		if seen[k] || a.findCallByKey(k) == nil {
+			continue
+		}
+		seen[k] = true
+		kept = append(kept, k)
+	}
+	if len(kept) == 0 {
+		return false
+	}
+	a.tabs = kept
+	a.active = a.pendingActive
+	if a.active < 0 || a.active >= len(a.tabs) {
+		a.active = 0
+	}
+	pid, sid, oid, cid := splitKey(a.tabs[a.active])
+	a.pid, a.sid, a.oid, a.cid = pid, sid, oid, cid
+	a.selGroup = ""
+	a.loadTab(a.tabs[a.active])
+	// The restored state is what disk holds, so later tab changes compare
+	// against it and get persisted.
+	a.savedUI = a.currentUI()
+	return true
 }
 
 // openCall opens a call in a tab, or switches to its tab if it is already open.
