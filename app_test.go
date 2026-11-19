@@ -678,6 +678,24 @@ func TestSendContextCancel(t *testing.T) {
 	}
 }
 
+// TestKindIconFolders checks projects and native folders draw distinct open
+// and closed folder icons, while other nodes keep their glyphs.
+func TestKindIconFolders(t *testing.T) {
+	for _, kind := range []string{"project", "group"} {
+		closed := kindIcon(kind, false)
+		open := kindIcon(kind, true)
+		if closed == nil || open == nil {
+			t.Fatalf("%s has no folder icon", kind)
+		}
+		if closed == open {
+			t.Fatalf("%s uses the same icon open and closed", kind)
+		}
+	}
+	if kindIcon("call", false) != nil || kindIcon("operation", true) != nil {
+		t.Fatal("non-folder nodes should keep their glyph")
+	}
+}
+
 // TestEmptyWorkbenchGuidance checks a fresh window explains how to start
 // instead of showing a blank form.
 func TestEmptyWorkbenchGuidance(t *testing.T) {
