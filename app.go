@@ -247,6 +247,9 @@ type app struct {
 	drafts map[string]*callDraft
 	// maxTabs is the tab-count limit set in the settings dialog.
 	maxTabs int
+	// maxTabsText is the manual input for that limit, kept as text so a
+	// half-typed value is not clamped mid-edit.
+	maxTabsText string
 	// tabScroll keeps the horizontal scroll position of the tab strip, so a
 	// wheel over the tabs moves them sideways and a new tab scrolls into view.
 	tabScroll ui.ScrollState
@@ -359,6 +362,7 @@ func newApp(reg *workspace.Registry) *app {
 		editorFontChoice: systemFontLabel,
 		editorFontSize:   13,
 		maxTabs:          defaultTabLimit,
+		maxTabsText:      strconv.Itoa(defaultTabLimit),
 	}
 	a.uiPath = filepath.Join(reg.DataDir(), "ui-state.json")
 	a.loadUIState()
@@ -410,6 +414,7 @@ func (a *app) loadUIState() {
 			if st.MaxTabs >= minTabLimit && st.MaxTabs <= maxTabLimit {
 				a.maxTabs = st.MaxTabs
 			}
+			a.maxTabsText = strconv.Itoa(a.maxTabs)
 			a.pendingTabsSaved = st.TabsSaved
 			a.pendingActive = st.ActiveTab
 			for _, k := range strings.Split(st.Tabs, "\n") {
@@ -778,6 +783,14 @@ func (a *app) tabLimit() int {
 		return a.maxTabs
 	}
 	return defaultTabLimit
+}
+
+// applyMaxTabsText applies the manually entered tab limit when it is a valid
+// number; anything else leaves the current limit in place.
+func (a *app) applyMaxTabsText() {
+	if v, err := strconv.Atoi(strings.TrimSpace(a.maxTabsText)); err == nil && v >= minTabLimit && v <= maxTabLimit {
+		a.maxTabs = v
+	}
 }
 
 // enforceTabLimit closes the earliest opened tabs with no unsaved edits until

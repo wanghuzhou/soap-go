@@ -1997,8 +1997,8 @@ func TestTabLimitPersists(t *testing.T) {
 	}
 }
 
-// TestOtherSettingsTabLimit checks the 其他 section shows the tab limit and its
-// stepper changes it.
+// TestOtherSettingsTabLimit checks the 其他 section shows the tab limit and the
+// manual input applies a valid number while ignoring an invalid one.
 func TestOtherSettingsTabLimit(t *testing.T) {
 	a := newTestApp(t)
 	a.settingsOpen = true
@@ -2008,12 +2008,15 @@ func TestOtherSettingsTabLimit(t *testing.T) {
 	if !tt.HasText("其他") || !tt.HasText("标签页数量上限") {
 		t.Fatal("其他 section lacks the tab limit row")
 	}
-	before := a.maxTabs
-	if err := tt.Click("+"); err != nil {
-		t.Fatalf("plus: %v", err)
+	a.maxTabsText = "35"
+	a.applyMaxTabsText()
+	if a.maxTabs != 35 {
+		t.Fatalf("maxTabs = %d, want 35", a.maxTabs)
 	}
-	if a.maxTabs != before+1 {
-		t.Fatalf("maxTabs = %d, want %d", a.maxTabs, before+1)
+	a.maxTabsText = "999"
+	a.applyMaxTabsText()
+	if a.maxTabs != 35 {
+		t.Fatalf("invalid input changed maxTabs to %d", a.maxTabs)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1831,7 +1832,7 @@ func (a *app) appearanceSettings(c *ui.Context) {
 		})
 		ui.Divider(c)
 		a.settingsRow(c, "界面字体", func() {
-			ui.Select(c, &a.uiFontChoice, uiFontOptions).Width(200)
+			ui.Select(c, &a.uiFontChoice, uiFontOptions).Width(200).BorderWidth(0)
 		})
 		ui.Divider(c)
 		a.settingsRow(c, "界面字号", func() {
@@ -1876,7 +1877,7 @@ func (a *app) editorSettings(c *ui.Context) {
 	t := c.Theme()
 	a.settingsCard(c, func() {
 		a.settingsRow(c, "编辑器字体", func() {
-			ui.Select(c, &a.editorFontChoice, editorFontOptions).Width(200)
+			ui.Select(c, &a.editorFontChoice, editorFontOptions).Width(200).BorderWidth(0)
 		})
 		ui.Divider(c)
 		a.settingsRow(c, "编辑器字号", func() {
@@ -1893,12 +1894,23 @@ func (a *app) otherSettings(c *ui.Context) {
 	t := c.Theme()
 	a.settingsCard(c, func() {
 		a.settingsRow(c, "标签页数量上限", func() {
-			a.intStepper(c, &a.maxTabs, minTabLimit, maxTabLimit, 1)
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				in := ui.TextInput(c, &a.maxTabsText).Width(90).Placeholder("20").
+					Label("标签页数量上限")
+				if in.Changed() {
+					a.applyMaxTabsText()
+				}
+			})
 		})
 	})
 	a.enforceTabLimit("")
-	ui.Text(c, "超过上限时，自动关闭最早打开且已保存的标签页；有未保存修改的标签页不会被关闭。").
-		FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
+	if v, err := strconv.Atoi(strings.TrimSpace(a.maxTabsText)); err != nil || v < minTabLimit || v > maxTabLimit {
+		ui.Text(c, fmt.Sprintf("请输入 %d–%d 之间的整数。", minTabLimit, maxTabLimit)).
+			FontSize(a.us(10.5)).TextColor(t.Danger)
+	} else {
+		ui.Text(c, "超过上限时，自动关闭最早打开且已保存的标签页；有未保存修改的标签页不会被关闭。").
+			FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
+	}
 }
 
 // aboutSettings is the "关于" section: the app's name, version and purpose.
@@ -1964,25 +1976,6 @@ func (a *app) sizeStepper(c *ui.Context, value *float64, lo, hi, step float64) {
 		}
 	})
 	ui.Text(c, fmt.Sprintf("%.0f", *value)).FontSize(a.us(12.5)).Width(44).TextAlign(ui.Center)
-	a.stepBtn(c, "+", *value < hi, func() {
-		if *value+step > hi {
-			*value = hi
-		} else {
-			*value += step
-		}
-	})
-}
-
-// intStepper is the same control for an integer setting such as the tab limit.
-func (a *app) intStepper(c *ui.Context, value *int, lo, hi, step int) {
-	a.stepBtn(c, "−", *value > lo, func() {
-		if *value-step < lo {
-			*value = lo
-		} else {
-			*value -= step
-		}
-	})
-	ui.Text(c, fmt.Sprintf("%d", *value)).FontSize(a.us(12.5)).Width(44).TextAlign(ui.Center)
 	a.stepBtn(c, "+", *value < hi, func() {
 		if *value+step > hi {
 			*value = hi
