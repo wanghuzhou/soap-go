@@ -1,7 +1,7 @@
 {
   "name": "soap-go",
   "identifier": "com.soapgo.app",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "copyright": "© 2026 soap-go",
   "out": "build",
   "macos": {
