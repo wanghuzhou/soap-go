@@ -1734,7 +1734,8 @@ func (a *app) settingsNav(c *ui.Context) {
 			{0, "外观", iconSliders},
 			{1, "编辑器", iconCode},
 			{2, "快捷键", iconKeyboard},
-			{3, "关于", iconInfo},
+			{3, "其他", iconMore},
+			{4, "关于", iconInfo},
 		}
 		q := strings.ToLower(strings.TrimSpace(a.settingsQuery))
 		for _, it := range items {
@@ -1775,6 +1776,8 @@ func (a *app) settingsContent(c *ui.Context) {
 		case 2:
 			title = "快捷键"
 		case 3:
+			title = "其他"
+		case 4:
 			title = "关于"
 		}
 		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
@@ -1789,6 +1792,8 @@ func (a *app) settingsContent(c *ui.Context) {
 		case 2:
 			a.shortcutsSettings(c)
 		case 3:
+			a.otherSettings(c)
+		case 4:
 			a.aboutSettings(c)
 		default:
 			a.appearanceSettings(c)
@@ -1882,6 +1887,20 @@ func (a *app) editorSettings(c *ui.Context) {
 		FontSize(a.us(10.5)).TextColor(t.TextMuted)
 }
 
+// otherSettings is the "其他" section: settings that do not fit another group
+// yet. Future options can move into their own sections as they grow.
+func (a *app) otherSettings(c *ui.Context) {
+	t := c.Theme()
+	a.settingsCard(c, func() {
+		a.settingsRow(c, "标签页数量上限", func() {
+			a.intStepper(c, &a.maxTabs, minTabLimit, maxTabLimit, 1)
+		})
+	})
+	a.enforceTabLimit("")
+	ui.Text(c, "超过上限时，自动关闭最早打开且已保存的标签页；有未保存修改的标签页不会被关闭。").
+		FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
+}
+
 // aboutSettings is the "关于" section: the app's name, version and purpose.
 func (a *app) aboutSettings(c *ui.Context) {
 	t := c.Theme()
@@ -1945,6 +1964,25 @@ func (a *app) sizeStepper(c *ui.Context, value *float64, lo, hi, step float64) {
 		}
 	})
 	ui.Text(c, fmt.Sprintf("%.0f", *value)).FontSize(a.us(12.5)).Width(44).TextAlign(ui.Center)
+	a.stepBtn(c, "+", *value < hi, func() {
+		if *value+step > hi {
+			*value = hi
+		} else {
+			*value += step
+		}
+	})
+}
+
+// intStepper is the same control for an integer setting such as the tab limit.
+func (a *app) intStepper(c *ui.Context, value *int, lo, hi, step int) {
+	a.stepBtn(c, "−", *value > lo, func() {
+		if *value-step < lo {
+			*value = lo
+		} else {
+			*value -= step
+		}
+	})
+	ui.Text(c, fmt.Sprintf("%d", *value)).FontSize(a.us(12.5)).Width(44).TextAlign(ui.Center)
 	a.stepBtn(c, "+", *value < hi, func() {
 		if *value+step > hi {
 			*value = hi

@@ -157,7 +157,18 @@ type uiState struct {
 	Tabs      string `json:"tabs,omitempty"`
 	ActiveTab int    `json:"activeTab,omitempty"`
 	TabsSaved bool   `json:"tabsSaved,omitempty"`
+	// MaxTabs is the tab-count limit; 0 in a file written before the setting
+	// existed means the default applies.
+	MaxTabs int `json:"maxTabs,omitempty"`
 }
+
+// The tab-count limit: opening a tab past it closes the earliest opened one
+// that has no unsaved edits.
+const (
+	defaultTabLimit = 20
+	minTabLimit     = 5
+	maxTabLimit     = 100
+)
 
 // app is the whole application state; the view is a function of it.
 type app struct {
@@ -231,9 +242,11 @@ type app struct {
 	sendCancel context.CancelFunc
 
 	// Tabs of open calls, keyed "pid/sid/oid/cid", and their unsaved drafts.
-	tabs   []string
+		tabs   []string
 	active int
 	drafts map[string]*callDraft
+	// maxTabs is the tab-count limit set in the settings dialog.
+	maxTabs int
 	// tabScroll keeps the horizontal scroll position of the tab strip, so a
 	// wheel over the tabs moves them sideways and a new tab scrolls into view.
 	tabScroll ui.ScrollState
@@ -345,6 +358,7 @@ func newApp(reg *workspace.Registry) *app {
 		uiFontSize:       uiBaseFontSize(),
 		editorFontChoice: systemFontLabel,
 		editorFontSize:   13,
+		maxTabs:          defaultTabLimit,
 	}
 	a.uiPath = filepath.Join(reg.DataDir(), "ui-state.json")
 	a.loadUIState()
@@ -364,6 +378,7 @@ func (a *app) currentUI() uiState {
 		Tabs:      strings.Join(a.tabs, "\n"),
 		ActiveTab: a.active,
 		TabsSaved: true,
+		MaxTabs:   a.maxTabs,
 	}
 }
 
@@ -392,6 +407,9 @@ func (a *app) loadUIState() {
 				a.editorFontSize = st.EditorFontSize
 			}
 			a.accent = normalizeAccent(st.Accent)
+			if st.MaxTabs >= minTabLimit && st.MaxTabs <= maxTabLimit {
+				a.maxTabs = st.MaxTabs
+			}
 			a.pendingTabsSaved = st.TabsSaved
 			a.pendingActive = st.ActiveTab
 			for _, k := range strings.Split(st.Tabs, "\n") {
@@ -730,6 +748,14 @@ func (a *app) restoreTabs() bool {
 	if len(kept) == 0 {
 		return false
 	}
+	// A state saved before the limit was lowered (or written by an older
+	// version) may hold more tabs than allowed: drop the oldest, which are the
+	// first in open order.
+	if limit := a.tabLimit(); len(kept) > limit {
+		drop := len(kept) - limit
+		kept = kept[drop:]
+		a.pendingActive -= drop
+	}
 	a.tabs = kept
 	a.active = a.pendingActive
 	if a.active < 0 || a.active >= len(a.tabs) {
@@ -743,6 +769,36 @@ func (a *app) restoreTabs() bool {
 	// against it and get persisted.
 	a.savedUI = a.currentUI()
 	return true
+}
+
+// tabLimit returns the configured tab-count limit, falling back to the default
+// when the stored value is unset or out of range.
+func (a *app) tabLimit() int {
+	if a.maxTabs >= minTabLimit && a.maxTabs <= maxTabLimit {
+		return a.maxTabs
+	}
+	return defaultTabLimit
+}
+
+// enforceTabLimit closes the earliest opened tabs with no unsaved edits until
+// the strip is within its limit, never closing keep (the tab just opened). When
+// every other tab has unsaved edits the limit is exceeded rather than losing
+// changes, so the caller keeps the user's work.
+func (a *app) enforceTabLimit(keep string) {
+	for len(a.tabs) > a.tabLimit() {
+		victim := -1
+		for i, k := range a.tabs {
+			if k == keep || a.dirtyKey(k) {
+				continue
+			}
+			victim = i
+			break
+		}
+		if victim < 0 {
+			return
+		}
+		a.removeTabAt(victim)
+	}
 }
 
 // openCall opens a call in a tab, or switches to its tab if it is already open.
@@ -766,6 +822,7 @@ func (a *app) openCall(pid, sid, oid, cid string) {
 		// A new tab goes at the end; scroll there so it is visible at once
 		// instead of opening off the right edge of the strip.
 		a.tabScroll.X = 1e9
+		a.enforceTabLimit(key)
 	}
 	for i, k := range a.tabs {
 		if k == key {

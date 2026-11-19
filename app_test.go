@@ -1931,6 +1931,92 @@ func TestImportOpenAPICreatesNativeProject(t *testing.T) {
 	}
 }
 
+// TestTabLimitClosesOldestSaved checks the limit closes the earliest opened
+// saved tab and never a dirty one, and never the tab just opened.
+func TestTabLimitClosesOldestSaved(t *testing.T) {
+	a := newTestApp(t)
+	proj, err := a.st.AddProject(model.Project{Name: "Tabs", Source: "native"})
+	if err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	for i := 0; i < 8; i++ {
+		if _, err := a.st.AddProjectCall(proj.ID, "", model.Call{
+			Title: fmt.Sprintf("请求 %02d", i), Kind: model.KindHTTP,
+			Endpoint: fmt.Sprintf("http://example.test/%d", i),
+		}); err != nil {
+			t.Fatalf("AddProjectCall: %v", err)
+		}
+	}
+	a.reload()
+	a.maxTabs = 5
+	p := a.projects[0]
+	key := func(i int) string { return callKey(p.ID, "", "", p.Calls[i].ID) }
+	for i := 0; i < 5; i++ {
+		a.openCall(p.ID, "", "", p.Calls[i].ID)
+	}
+	if len(a.tabs) != 5 {
+		t.Fatalf("tabs = %d, want 5", len(a.tabs))
+	}
+	a.openCall(p.ID, "", "", p.Calls[5].ID)
+	if len(a.tabs) != 5 || a.tabs[0] != key(1) || !a.hasTabKey(key(5)) {
+		t.Fatalf("after 6th open: %v", a.tabs)
+	}
+
+	// A dirty oldest tab is skipped, so the next oldest saved one goes.
+	a.drafts[a.tabs[0]] = &callDraft{endpoint: "edited", savedEndpoint: "clean"}
+	a.openCall(p.ID, "", "", p.Calls[6].ID)
+	if len(a.tabs) != 5 || a.tabs[0] != key(1) || a.hasTabKey(key(2)) {
+		t.Fatalf("dirty skip: %v", a.tabs)
+	}
+}
+
+// TestTabLimitPersists checks the limit is stored and read back, out-of-range
+// values falling back to the default.
+func TestTabLimitPersists(t *testing.T) {
+	a := newTestApp(t)
+	if a.maxTabs != defaultTabLimit {
+		t.Fatalf("default maxTabs = %d", a.maxTabs)
+	}
+	a.maxTabs = 33
+	if st := a.currentUI(); st.MaxTabs != 33 {
+		t.Fatalf("currentUI MaxTabs = %d", st.MaxTabs)
+	}
+	if err := os.WriteFile(a.uiPath, []byte(`{"maxTabs": 42}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.loadUIState()
+	if a.maxTabs != 42 {
+		t.Fatalf("loaded maxTabs = %d", a.maxTabs)
+	}
+	if err := os.WriteFile(a.uiPath, []byte(`{"maxTabs": 999}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.loadUIState()
+	if a.maxTabs != 42 {
+		t.Fatalf("out-of-range maxTabs changed to %d", a.maxTabs)
+	}
+}
+
+// TestOtherSettingsTabLimit checks the 其他 section shows the tab limit and its
+// stepper changes it.
+func TestOtherSettingsTabLimit(t *testing.T) {
+	a := newTestApp(t)
+	a.settingsOpen = true
+	a.settingsSection = 3
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("其他") || !tt.HasText("标签页数量上限") {
+		t.Fatal("其他 section lacks the tab limit row")
+	}
+	before := a.maxTabs
+	if err := tt.Click("+"); err != nil {
+		t.Fatalf("plus: %v", err)
+	}
+	if a.maxTabs != before+1 {
+		t.Fatalf("maxTabs = %d, want %d", a.maxTabs, before+1)
+	}
+}
+
 // tabTestApp builds an app with n native requests and opens every one as a tab.
 func tabTestApp(t *testing.T, n int) (*app, []string) {
 	t.Helper()
