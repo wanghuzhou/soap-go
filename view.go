@@ -846,7 +846,6 @@ func (a *app) binaryBodyPanel(c *ui.Context) {
 
 // formBodyPanel edits urlencoded / multipart name-value pairs.
 func (a *app) formBodyPanel(c *ui.Context) {
-	t := c.Theme()
 	ui.Column(c).Grow(1).Gap(8).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "字段").FontSize(a.us(11.5)).Bold()
@@ -861,12 +860,11 @@ func (a *app) formBodyPanel(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200)
 				ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1)
-				ui.Text(c, "×").FontSize(a.us(13)).TextColor(t.TextMuted).Width(18).
-					OnClick(func() {
-						if i >= 0 && i < len(a.bodyFields) {
-							a.bodyFields = append(a.bodyFields[:i], a.bodyFields[i+1:]...)
-						}
-					})
+				a.closeIconButton(c, 18, "删除该字段", func() {
+					if i >= 0 && i < len(a.bodyFields) {
+						a.bodyFields = append(a.bodyFields[:i], a.bodyFields[i+1:]...)
+					}
+				})
 			})
 		}
 		ui.Spacer(c)
@@ -998,12 +996,11 @@ func (a *app) headersPanel(c *ui.Context) {
 				} else {
 					ui.TextInput(c, &a.headers[i].Value).Placeholder("值").Grow(1)
 				}
-				ui.Text(c, "×").FontSize(a.us(13)).TextColor(t.TextMuted).Width(18).
-					OnClick(func() {
-						if i >= 0 && i < len(a.headers) {
-							a.headers = append(a.headers[:i], a.headers[i+1:]...)
-						}
-					})
+				a.closeIconButton(c, 18, "删除该请求头", func() {
+					if i >= 0 && i < len(a.headers) {
+						a.headers = append(a.headers[:i], a.headers[i+1:]...)
+					}
+				})
 			})
 		}
 		ui.Spacer(c)
@@ -1037,12 +1034,11 @@ func (a *app) queryPanel(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.TextInput(c, &a.queryRows[i].Key).Placeholder("参数名").Width(200)
 				ui.TextInput(c, &a.queryRows[i].Value).Placeholder("值").Grow(1)
-				ui.Text(c, "×").FontSize(a.us(13)).TextColor(t.TextMuted).Width(18).
-					OnClick(func() {
-						if i >= 0 && i < len(a.queryRows) {
-							a.queryRows = append(a.queryRows[:i], a.queryRows[i+1:]...)
-						}
-					})
+				a.closeIconButton(c, 18, "删除该参数", func() {
+					if i >= 0 && i < len(a.queryRows) {
+						a.queryRows = append(a.queryRows[:i], a.queryRows[i+1:]...)
+					}
+				})
 			})
 		}
 		ui.Spacer(c)
@@ -1223,8 +1219,7 @@ func (a *app) importModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "导入").FontSize(a.us(17)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
-					OnClick(func() { a.importOpen = false })
+				a.closeIconButton(c, 22, "关闭导入", func() { a.importOpen = false })
 			})
 			ui.Text(c, "选择一种方式把接口定义带进来。").FontSize(a.us(11)).TextColor(t.TextMuted)
 
@@ -1307,8 +1302,7 @@ func (a *app) exportModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "导出工作空间").FontSize(a.us(17)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
-					OnClick(func() { a.exportOpen = false })
+				a.closeIconButton(c, 22, "关闭导出", func() { a.exportOpen = false })
 			})
 			ui.Text(c, "把当前工作空间的项目导出为 JSON，可在另一台机器或另一个实例导入。").
 				FontSize(11).TextColor(t.TextMuted).Wrap()
@@ -1338,8 +1332,7 @@ func (a *app) proxyModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "项目代理设置").FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
-					OnClick(func() { a.proxyOpen = false })
+				a.closeIconButton(c, 22, "关闭代理设置", func() { a.proxyOpen = false })
 			})
 			ui.Text(c, "代理模式").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.Select(c, &a.proxyModeSel, []string{"系统代理", "直连", "自定义代理"})
@@ -1388,8 +1381,7 @@ func (a *app) newProjectModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "项目").FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
-					OnClick(func() { a.newProjectOpen = false })
+				a.closeIconButton(c, 22, "关闭新建项目", func() { a.newProjectOpen = false })
 			})
 			ui.Text(c, "项目名称").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder("新建项目").Grow(1)
@@ -1419,8 +1411,7 @@ func (a *app) workspaceModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, title).FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
-					OnClick(func() { a.wsOpen = false })
+				a.closeIconButton(c, 22, "关闭", func() { a.wsOpen = false })
 			})
 			ui.Text(c, "名称").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder("工作空间名称").Grow(1)
@@ -1459,8 +1450,7 @@ func (a *app) treeModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, title).FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				ui.Text(c, "×").FontSize(a.us(15)).TextColor(t.TextMuted).
-					OnClick(func() { a.treeModalOpen = false })
+				a.closeIconButton(c, 22, "关闭", func() { a.treeModalOpen = false })
 			})
 			ui.Text(c, placeholder).FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder(placeholder).Grow(1)
@@ -1808,6 +1798,25 @@ func (a *app) iconBtn(c *ui.Context, icon *ui.SVG, tip string, onClick func()) {
 	}
 	btn.Children(func() {
 		ui.Icon(c, icon).FontSize(a.us(13)).TextColor(t.TextMuted)
+	})
+}
+
+// closeIconButton is a small circular × for dismissing a row or a dialog: a
+// round hit area that turns red on hover, like the tab strip's close button.
+func (a *app) closeIconButton(c *ui.Context, size float32, label string, onClick func()) {
+	t := c.Theme()
+	btn := ui.Row(c).Width(size).Height(size).Center().Justify(ui.Center).
+		Radius(size / 2).Cursor(ui.CursorPointer).Label(label).
+		Transition(ui.ElementTransition{Duration: 100 * time.Millisecond, Colors: true}).
+		OnClick(onClick)
+	hovered := btn.Hovered()
+	col := t.TextMuted
+	if hovered {
+		btn = btn.Background(t.Danger.Alpha(0.20))
+		col = t.Danger
+	}
+	btn.Children(func() {
+		ui.Icon(c, iconClose).FontSize(a.us(size * 0.5)).TextColor(col)
 	})
 }
 

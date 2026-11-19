@@ -982,6 +982,30 @@ func TestTabSwitchKeepsDraft(t *testing.T) {
 	}
 }
 
+// TestTabCloseButtonCloses checks the tab strip's close button closes that tab
+// rather than the click falling through to the tab row and opening it.
+func TestTabCloseButtonCloses(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	c1, _ := a.st.AddProjectCall(p.ID, "", model.Call{Title: "C1", BodyType: model.BodyNone})
+	c2, _ := a.st.AddProjectCall(p.ID, "", model.Call{Title: "C2", BodyType: model.BodyNone})
+	a.reload()
+	a.openCall(p.ID, "", "", c1.ID)
+	a.openCall(p.ID, "", "", c2.ID)
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if err := tt.Click("关闭标签"); err != nil {
+		t.Fatalf("click close: %v", err)
+	}
+	tt.Frame()
+	if len(a.tabs) != 1 || a.cid != c2.ID {
+		t.Fatalf("after close: tabs=%d cid=%q, want tabs=1 cid=%q", len(a.tabs), a.cid, c2.ID)
+	}
+}
+
 // TestDirtyDotOnInactiveTab checks the dot shows on a tab edited in the
 // background, not only on the active tab.
 func TestDirtyDotOnInactiveTab(t *testing.T) {
