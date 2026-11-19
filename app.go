@@ -234,6 +234,9 @@ type app struct {
 	tabs   []string
 	active int
 	drafts map[string]*callDraft
+	// tabScroll keeps the horizontal scroll position of the tab strip, so a
+	// wheel over the tabs moves them sideways and a new tab scrolls into view.
+	tabScroll ui.ScrollState
 	// pendingTabs is the tab state loaded from disk before the projects are
 	// read, restored once they are; pendingTabsSaved tells whether it was set.
 	pendingTabs      []string
@@ -760,6 +763,9 @@ func (a *app) openCall(pid, sid, oid, cid string) {
 	}
 	if !a.hasTabKey(key) {
 		a.tabs = append(a.tabs, key)
+		// A new tab goes at the end; scroll there so it is visible at once
+		// instead of opening off the right edge of the strip.
+		a.tabScroll.X = 1e9
 	}
 	for i, k := range a.tabs {
 		if k == key {
@@ -1115,6 +1121,81 @@ func (a *app) closeTabsUnder(match func(key string) bool) {
 		a.active = 0
 	}
 	a.loadTab(a.tabs[a.active])
+}
+
+// closeTabByKey closes the tab with this key, asking first when it is dirty.
+func (a *app) closeTabByKey(key string) {
+	for i, k := range a.tabs {
+		if k == key {
+			a.closeTab(i)
+			return
+		}
+	}
+}
+
+// closeTabsConfirm closes the tabs selected by match, asking once when any of
+// them holds unsaved edits so a bulk close cannot silently drop changes.
+func (a *app) closeTabsConfirm(match func(key string) bool, label string) {
+	keys := map[string]bool{}
+	dirty := 0
+	for _, k := range a.tabs {
+		if !match(k) || keys[k] {
+			continue
+		}
+		keys[k] = true
+		if a.dirtyKey(k) {
+			dirty++
+		}
+	}
+	if len(keys) == 0 {
+		return
+	}
+	closeThem := func() {
+		a.closeTabsUnder(func(k string) bool { return keys[k] })
+	}
+	if dirty > 0 {
+		a.askConfirm(fmt.Sprintf("选中的标签中有 %d 个未保存的修改，关闭会丢失。确定关闭？", dirty), label, closeThem)
+		return
+	}
+	closeThem()
+}
+
+// closeOtherTabs closes every tab except key.
+func (a *app) closeOtherTabs(key string) {
+	a.closeTabsConfirm(func(k string) bool { return k != key }, "关闭其他标签")
+}
+
+// closeTabsOnSide closes the tabs left (side < 0) or right (side > 0) of key.
+func (a *app) closeTabsOnSide(key string, side int) {
+	at := -1
+	for i, k := range a.tabs {
+		if k == key {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		return
+	}
+	if side < 0 {
+		a.closeTabsConfirm(func(k string) bool {
+			for i := 0; i < at; i++ {
+				if a.tabs[i] == k {
+					return true
+				}
+			}
+			return false
+		}, "关闭左侧标签")
+		return
+	}
+	a.closeTabsConfirm(func(k string) bool {
+		for i := at + 1; i < len(a.tabs); i++ {
+			if a.tabs[i] == k {
+				return true
+			}
+		}
+		return false
+	}, "关闭右侧标签")
 }
 
 func callKey(pid, sid, oid, cid string) string {

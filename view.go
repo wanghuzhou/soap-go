@@ -708,68 +708,95 @@ func (a *app) tabStrip(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Shrink(0).Height(36).Padding(0, 8).Gap(2).AlignItems(ui.Center).
 		Background(t.Background).Role(ui.RoleTabList).Children(func() {
-		for i, key := range a.tabs {
-			i, key := i, key
-			active := i == a.active
-			tab := ui.Row(c).Shrink(0).Height(30).Padding(0, 6, 0, 8).Gap(6).AlignItems(ui.Center).
-				Transition(ui.ElementTransition{Duration: 120 * time.Millisecond, Colors: true})
-			// The open request takes the accent color so it stands out among
-			// the tabs; the others stay quiet and only tint on hover.
-			switch {
-			case active:
-				tab = tab.Background(t.Accent.Alpha(0.20)).Radius(6)
-			case tab.Hovered():
-				tab = tab.Background(t.SurfaceHover).Radius(6)
-			}
-			tab.Children(func() {
-				title := a.callTitle(key)
-				label := title
-				if a.dirtyKey(key) {
-					label += "（未保存）"
+		// The tabs live in a fixed-width horizontal scroller, so a long strip
+		// is clipped here and can never draw over the split buttons after it.
+		ui.ScrollHorizontal(c).Grow(1).MinWidth(0).Height(36).Gap(2).
+			AlignItems(ui.Center).Scrollbars(false).TrackScroll(&a.tabScroll).
+			HandleInput(func(ev ui.InputEvent) bool {
+				// A plain mouse wheel scrolls the strip sideways; a touchpad's
+				// horizontal gesture (DX set) keeps MyGo's own handling.
+				if ev.Kind == ui.InputScroll && ev.DX == 0 && ev.DY != 0 {
+					a.tabScroll.X += ev.DY
+					return true
 				}
-				// The title is its own focusable tab, so assistive technology
-				// reads it by name; the close button stays a sibling control
-				// rather than being swallowed as content of the tab.
-				open := ui.Row(c).Height(24).Padding(0, 4).Gap(8).AlignItems(ui.Center).
-					Cursor(ui.CursorPointer).Focusable().Label(label).Tooltip(title).
-					Role(ui.RoleTab).AccessSelected(active).
-					OnClick(func() {
-						pid, sid, oid, cid := splitKey(key)
-						a.openCall(pid, sid, oid, cid)
-					})
-				open.Children(func() {
-					ui.Text(c, a.callMethod(key)).FontSize(a.us(8.5)).Bold().TextColor(t.Accent)
-					lc := t.TextMuted
-					if active {
-						lc = t.Accent
+				return false
+			}).Children(func() {
+			for i, key := range a.tabs {
+				i, key := i, key
+				active := i == a.active
+				tab := ui.Row(c).Shrink(0).Height(30).Padding(0, 6, 0, 8).Gap(6).AlignItems(ui.Center).
+					Transition(ui.ElementTransition{Duration: 120 * time.Millisecond, Colors: true})
+				// The open request takes the accent color so it stands out among
+				// the tabs; the others stay quiet and only tint on hover.
+				switch {
+				case active:
+					tab = tab.Background(t.Accent.Alpha(0.20)).Radius(6)
+				case tab.Hovered():
+					tab = tab.Background(t.SurfaceHover).Radius(6)
+				}
+				tab = tab.ContextMenu(func(m *ui.Menu) {
+					if m.Item("关闭当前标签页").Chosen() {
+						a.closeTabByKey(key)
 					}
-					txt := ui.Text(c, title).FontSize(a.us(12)).TextColor(lc).SingleLine().MaxWidth(180)
-					if active {
-						txt.Bold()
+					if m.Item("关闭其他标签页").Chosen() {
+						a.closeOtherTabs(key)
 					}
+					if m.Item("关闭左侧标签页").Chosen() {
+						a.closeTabsOnSide(key, -1)
+					}
+					if m.Item("关闭右侧标签页").Chosen() {
+						a.closeTabsOnSide(key, 1)
+					}
+				})
+				tab.Children(func() {
+					title := a.callTitle(key)
+					label := title
 					if a.dirtyKey(key) {
-						ui.Text(c, "●").FontSize(a.us(8)).TextColor(t.Accent).Shrink(0).
-							Tooltip("有未保存的修改")
+						label += "（未保存）"
 					}
+					// The title is its own focusable tab, so assistive technology
+					// reads it by name; the close button stays a sibling control
+					// rather than being swallowed as content of the tab.
+					open := ui.Row(c).Height(24).Padding(0, 4).Gap(8).AlignItems(ui.Center).
+						Cursor(ui.CursorPointer).Focusable().Label(label).Tooltip(title).
+						Role(ui.RoleTab).AccessSelected(active).
+						OnClick(func() {
+							pid, sid, oid, cid := splitKey(key)
+							a.openCall(pid, sid, oid, cid)
+						})
+					open.Children(func() {
+						ui.Text(c, a.callMethod(key)).FontSize(a.us(8.5)).Bold().TextColor(t.Accent)
+						lc := t.TextMuted
+						if active {
+							lc = t.Accent
+						}
+						txt := ui.Text(c, title).FontSize(a.us(12)).TextColor(lc).SingleLine().MaxWidth(180)
+						if active {
+							txt.Bold()
+						}
+						if a.dirtyKey(key) {
+							ui.Text(c, "●").FontSize(a.us(8)).TextColor(t.Accent).Shrink(0).
+								Tooltip("有未保存的修改")
+						}
+					})
+					closeBox := ui.Row(c).Width(24).Height(24).Center().Justify(ui.Center).Radius(12).
+						Cursor(ui.CursorPointer).Label("关闭标签").Focusable().
+						Transition(ui.ElementTransition{Duration: 100 * time.Millisecond, Colors: true})
+					closeHovered := closeBox.Hovered()
+					closeCol := t.TextMuted
+					if closeHovered {
+						closeBox = closeBox.Background(t.Danger.Alpha(0.20))
+						closeCol = t.Danger
+					}
+					closeBox.OnClick(func() { a.closeTab(i) }).Children(func() {
+						ui.Icon(c, iconClose).FontSize(a.us(10.5)).TextColor(closeCol)
+					})
 				})
-				closeBox := ui.Row(c).Width(24).Height(24).Center().Justify(ui.Center).Radius(12).
-					Cursor(ui.CursorPointer).Label("关闭标签").Focusable().
-					Transition(ui.ElementTransition{Duration: 100 * time.Millisecond, Colors: true})
-				closeHovered := closeBox.Hovered()
-				closeCol := t.TextMuted
-				if closeHovered {
-					closeBox = closeBox.Background(t.Danger.Alpha(0.20))
-					closeCol = t.Danger
-				}
-				closeBox.OnClick(func() { a.closeTab(i) }).Children(func() {
-					ui.Icon(c, iconClose).FontSize(a.us(10.5)).TextColor(closeCol)
-				})
-			})
-		}
-		if len(a.tabs) == 0 {
-			ui.Text(c, "没有打开的请求").FontSize(a.us(11.5)).TextColor(t.TextMuted).Padding(0, 4)
-		}
-		ui.Spacer(c)
+			}
+			if len(a.tabs) == 0 {
+				ui.Text(c, "没有打开的请求").FontSize(a.us(11.5)).TextColor(t.TextMuted).Padding(0, 4)
+			}
+		})
 		a.splitSwitch(c)
 		ui.Text(c, "").Width(4)
 	})

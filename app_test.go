@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1927,6 +1928,110 @@ func TestImportOpenAPICreatesNativeProject(t *testing.T) {
 	}
 	if a.endpoint != "/user?q=z" {
 		t.Fatalf("endpoint = %q", a.endpoint)
+	}
+}
+
+// tabTestApp builds an app with n native requests and opens every one as a tab.
+func tabTestApp(t *testing.T, n int) (*app, []string) {
+	t.Helper()
+	a := newTestApp(t)
+	proj, err := a.st.AddProject(model.Project{Name: "Tabs", Source: "native"})
+	if err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	for i := 0; i < n; i++ {
+		_, err := a.st.AddProjectCall(proj.ID, "", model.Call{
+			Title: fmt.Sprintf("请求 %02d", i), Kind: model.KindHTTP,
+			Endpoint: fmt.Sprintf("http://example.test/%d", i),
+		})
+		if err != nil {
+			t.Fatalf("AddProjectCall: %v", err)
+		}
+	}
+	a.reload()
+	p := a.projects[0]
+	keys := make([]string, 0, n)
+	for _, c := range p.Calls {
+		a.openCall(p.ID, "", "", c.ID)
+		keys = append(keys, callKey(p.ID, "", "", c.ID))
+	}
+	return a, keys
+}
+
+// TestTabStripKeepsSplitSwitch checks a full strip stays inside its own scroller
+// so the split buttons remain reachable, and that a wheel over the tabs scrolls
+// them sideways.
+func TestTabStripKeepsSplitSwitch(t *testing.T) {
+	a, _ := tabTestApp(t, 15)
+	tt := ui.NewTester(a.view, 900, 700)
+	tt.Frame()
+
+	if err := tt.Click("左右分屏"); err != nil {
+		t.Fatalf("split button unreachable with many tabs: %v", err)
+	}
+	if a.splitSide != 1 {
+		t.Fatalf("splitSide = %d, want 1", a.splitSide)
+	}
+
+	a.tabScroll.X = 0
+	tt.Frame()
+	before := a.tabScroll.X
+	tt.Move(400, 60)
+	tt.Wheel(400, 60, 0, 120)
+	tt.Frame()
+	if a.tabScroll.X <= before {
+		t.Fatalf("wheel did not scroll tabs sideways: %v -> %v", before, a.tabScroll.X)
+	}
+}
+
+// TestTabContextMenu checks a right click on a tab offers the close items and
+// that choosing one closes the other tabs.
+func TestTabContextMenu(t *testing.T) {
+	a, keys := tabTestApp(t, 5)
+	tt := ui.NewTester(a.view, 900, 700)
+	tt.Frame()
+	tt.RightClickAt(300, 62)
+	items := tt.Menu()
+	want := []string{"关闭当前标签页", "关闭其他标签页", "关闭左侧标签页", "关闭右侧标签页"}
+	for _, w := range want {
+		found := false
+		for _, it := range items {
+			if it == w {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("context menu %v lacks %q", items, w)
+		}
+	}
+	if err := tt.ChooseMenuItem("关闭其他标签页"); err != nil {
+		t.Fatalf("choose: %v", err)
+	}
+	tt.Frame()
+	if len(a.tabs) != 1 || a.tabs[0] != keys[0] {
+		t.Fatalf("after close others: %v", a.tabs)
+	}
+}
+
+// TestCloseTabsBulk checks the close-other/left/right operations keep the right
+// tabs and move the selection to a survivor.
+func TestCloseTabsBulk(t *testing.T) {
+	a, keys := tabTestApp(t, 5)
+	a.closeOtherTabs(keys[2])
+	if len(a.tabs) != 1 || a.tabs[0] != keys[2] {
+		t.Fatalf("closeOtherTabs left %v", a.tabs)
+	}
+
+	a2, keys2 := tabTestApp(t, 5)
+	a2.closeTabsOnSide(keys2[2], -1)
+	if len(a2.tabs) != 3 || a2.tabs[0] != keys2[2] || a2.tabs[2] != keys2[4] {
+		t.Fatalf("close left of 2 left %v", a2.tabs)
+	}
+
+	a3, keys3 := tabTestApp(t, 5)
+	a3.closeTabsOnSide(keys3[2], 1)
+	if len(a3.tabs) != 3 || a3.tabs[0] != keys3[0] || a3.tabs[2] != keys3[2] {
+		t.Fatalf("close right of 2 left %v", a3.tabs)
 	}
 }
 
