@@ -5,6 +5,7 @@ import (
 	"math"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -24,6 +25,7 @@ var (
 	iconSplitH   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M12 4.5v15"/></svg>`))
 	iconPlus     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`))
 	iconCopy     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>`))
+	iconClose    = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`))
 	iconSun      = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2M12 19.4v2M2.6 12h2M19.4 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>`))
 	iconMoon     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>`))
 	iconSettings = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`))
@@ -636,28 +638,46 @@ func (a *app) tabStrip(c *ui.Context) {
 			i, key := i, key
 			active := i == a.active
 			tab := ui.Row(c).Shrink(0).Height(30).Padding(0, 10).Gap(8).AlignItems(ui.Center).
+				Cursor(ui.CursorPointer).
+				Transition(ui.ElementTransition{Duration: 120 * time.Millisecond, Colors: true}).
 				OnClick(func() {
 					pid, sid, oid, cid := splitKey(key)
 					a.openCall(pid, sid, oid, cid)
 				})
-			if active {
-				tab = tab.Background(t.Surface).Radius(6)
-			} else if tab.Hovered() {
+			// The open request takes the accent color so it stands out among
+			// the tabs; the others stay quiet and only tint on hover.
+			switch {
+			case active:
+				tab = tab.Background(t.Accent.Alpha(0.20)).Radius(6)
+			case tab.Hovered():
 				tab = tab.Background(t.SurfaceHover).Radius(6)
 			}
 			tab.Children(func() {
 				ui.Text(c, a.callMethod(key)).FontSize(a.us(8.5)).Bold().TextColor(t.Accent)
 				lc := t.TextMuted
 				if active {
-					lc = t.Text
+					lc = t.Accent
 				}
-				ui.Text(c, a.callTitle(key)).FontSize(a.us(12)).TextColor(lc).SingleLine().MaxWidth(180)
+				title := ui.Text(c, a.callTitle(key)).FontSize(a.us(12)).TextColor(lc).SingleLine().MaxWidth(180)
+				if active {
+					title.Bold()
+				}
 				if a.dirtyKey(key) {
 					ui.Text(c, "●").FontSize(a.us(8)).TextColor(t.Accent).Shrink(0).
 						Tooltip("有未保存的修改")
 				}
-				ui.Text(c, "×").FontSize(a.us(12)).TextColor(t.TextMuted).
-					OnClick(func() { a.closeTab(i) })
+				closeBox := ui.Row(c).Width(20).Height(20).Center().Justify(ui.Center).Radius(10).
+					Cursor(ui.CursorPointer).Label("关闭标签").
+					Transition(ui.ElementTransition{Duration: 100 * time.Millisecond, Colors: true})
+				closeHovered := closeBox.Hovered()
+				closeCol := t.TextMuted
+				if closeHovered {
+					closeBox = closeBox.Background(t.Danger.Alpha(0.20))
+					closeCol = t.Danger
+				}
+				closeBox.OnClick(func() { a.closeTab(i) }).Children(func() {
+					ui.Icon(c, iconClose).FontSize(a.us(10.5)).TextColor(closeCol)
+				})
 			})
 		}
 		ui.Spacer(c)
