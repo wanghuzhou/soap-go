@@ -678,6 +678,75 @@ func TestSendContextCancel(t *testing.T) {
 	}
 }
 
+// TestDragCallToFolder drives the real view: pressing a request row, dragging
+// it over a folder and releasing moves the request into that folder.
+func TestDragCallToFolder(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	ga, _ := a.st.AddGroup(p.ID, "A", "")
+	gb, _ := a.st.AddGroup(p.ID, "B", "")
+	call, _ := a.st.AddProjectCall(p.ID, ga.ID, model.Call{Title: "R", Method: "GET", BodyType: model.BodyNone})
+	a.reload()
+	a.expanded[p.ID] = true
+	a.expanded[ga.ID] = true
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	src, ok := tt.Find("R")
+	if !ok {
+		t.Fatal("request row not found")
+	}
+	dst, ok := tt.Find("B")
+	if !ok {
+		t.Fatal("target folder not found")
+	}
+	sx, sy := src.X+src.W/2, src.Y+src.H/2
+	dx, dy := dst.X+dst.W/2, dst.Y+dst.H/2
+	tt.Press(sx, sy)
+	for i := 1; i <= 6; i++ {
+		f := float32(i) / 6
+		tt.Move(sx+(dx-sx)*f, sy+(dy-sy)*f)
+		tt.Frame()
+	}
+	tt.Release(dx, dy)
+	tt.Frame()
+
+	got, _ := a.st.Get(p.ID)
+	if got.Calls[0].ID != call.ID || got.Calls[0].FolderID != gb.ID {
+		t.Fatalf("after drag FolderID = %q, want %q", got.Calls[0].FolderID, gb.ID)
+	}
+}
+
+// TestMoveProjectCall checks a request can be moved between folders and back
+// to the project root through the app method the drag uses.
+func TestMoveProjectCall(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	ga, _ := a.st.AddGroup(p.ID, "A", "")
+	gb, _ := a.st.AddGroup(p.ID, "B", "")
+	call, _ := a.st.AddProjectCall(p.ID, ga.ID, model.Call{Title: "R", Method: "GET", BodyType: model.BodyNone})
+	a.reload()
+
+	a.moveProjectCall(p.ID, call.ID, gb.ID)
+	got, _ := a.st.Get(p.ID)
+	if got.Calls[0].FolderID != gb.ID {
+		t.Fatalf("after move FolderID = %q, want %q", got.Calls[0].FolderID, gb.ID)
+	}
+	a.moveProjectCall(p.ID, call.ID, "")
+	got, _ = a.st.Get(p.ID)
+	if got.Calls[0].FolderID != "" {
+		t.Fatalf("after move to root FolderID = %q", got.Calls[0].FolderID)
+	}
+	a.moveProjectCall(p.ID, call.ID, "missing")
+	if a.errMsg == "" {
+		t.Fatal("moving into a missing folder should report an error")
+	}
+}
+
 // TestKindIconFolders checks projects and native folders draw distinct open
 // and closed folder icons, while other nodes keep their glyphs.
 func TestKindIconFolders(t *testing.T) {

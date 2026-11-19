@@ -273,6 +273,12 @@ type treeItem struct {
 	status        int
 }
 
+// callDrag is the value a request row carries while dragged onto a folder or a
+// project row, to move it there.
+type callDrag struct {
+	projectID, callID string
+}
+
 // sourceLabel is the short badge shown next to a project name.
 func sourceLabel(source string) string {
 	switch source {
@@ -405,7 +411,7 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 	case !editing && row.Hovered():
 		row = row.Background(t.SurfaceHover).Radius(6)
 	}
-	row.Children(func() {
+	row = row.Children(func() {
 		if selected {
 			ui.Column(c).Width(2).Height(15).Background(t.Accent).Radius(1)
 		} else {
@@ -472,6 +478,21 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			ui.Text(c, it.badge).FontSize(a.us(9.5)).TextColor(t.TextMuted).Shrink(0)
 		}
 	})
+	// A native request row drags to a folder or to its project (the root);
+	// both take it, and the folder under the pointer lights up.
+	if it.kind == "call" && it.cid != "" && it.sid == "" {
+		row = row.Drag(callDrag{projectID: it.pid, callID: it.cid}).
+			Tooltip("拖动可移动到其他目录")
+	}
+	if it.kind == "project" || it.kind == "group" {
+		folderID := it.gid // "" on a project row means the project root
+		if v, over := ui.DragOver[callDrag](row); over && v.projectID == it.pid {
+			row = row.Background(t.Accent.Alpha(0.22)).Radius(6)
+		}
+		if v, ok := ui.Drop[callDrag](row); ok && v.projectID == it.pid {
+			a.moveProjectCall(v.projectID, v.callID, folderID)
+		}
+	}
 }
 
 // treeContextMenu is the right-click menu of a tree row: the create/rename/

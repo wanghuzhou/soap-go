@@ -1412,6 +1412,20 @@ func (a *app) newProjectCall(folderID string) {
 	a.statusMsg = "已新建请求"
 }
 
+// moveProjectCall moves a native request into folderID ("" for the project
+// root) when it is dragged onto a folder or the project row.
+func (a *app) moveProjectCall(pid, cid, folderID string) {
+	if err := a.st.MoveProjectCall(pid, cid, folderID); err != nil {
+		a.errMsg = "无法移动请求：" + err.Error()
+		return
+	}
+	if folderID != "" {
+		a.expanded[folderID] = true
+	}
+	a.statusMsg = "已移动请求"
+	a.reload()
+}
+
 // newGroup creates a folder under the selected project or group.
 func (a *app) newGroup(parentID, name string) {
 	p := a.selectedProject()
