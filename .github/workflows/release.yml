@@ -31,10 +31,10 @@ jobs:
     name: Vet and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -58,11 +58,11 @@ jobs:
           - { goos: windows, goarch: amd64, ext: '.exe', pack: zip }
           - { goos: linux,   goarch: amd64, ext: '',     pack: tar.gz }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -131,7 +131,7 @@ jobs:
           esac
           rm -rf "${STAGE}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: soap-go-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -158,11 +158,11 @@ jobs:
           - { runner: macos-15-intel, goarch: amd64, lipo: x86_64 }
           - { runner: macos-15,       goarch: arm64, lipo: arm64 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -205,7 +205,7 @@ jobs:
           cp "${SRC_DMG}" "dist/${NAME}.dmg"
           ls -l "dist/${NAME}.dmg"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: soap-go-darwin-${{ matrix.goarch }}
           path: dist/*.dmg
@@ -222,11 +222,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: soap-go-*
           path: dist
@@ -251,7 +251,7 @@ jobs:
 
       - name: Create release
         if: steps.check.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
