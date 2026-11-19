@@ -263,6 +263,7 @@ type app struct {
 	treeModalKind  int // 1 add service, 2 add operation
 	confirmOpen    bool
 	confirmText    string
+	confirmLabel   string
 	confirmAction  func()
 	wsOpen         bool
 	wsKind         int // 0 create, 1 rename, 2 import
@@ -1029,7 +1030,7 @@ func (a *app) closeTab(i int) {
 	}
 	key := a.tabs[i]
 	if a.dirtyKey(key) {
-		a.askConfirm("该请求有未保存的修改，关闭标签会丢失。确定关闭？", func() {
+		a.askConfirm("该请求有未保存的修改，关闭标签会丢失。确定关闭？", "关闭标签", func() {
 			for j, k := range a.tabs {
 				if k == key {
 					a.removeTabAt(j)
@@ -1321,7 +1322,7 @@ func (a *app) deleteCall() {
 	if s != nil && o != nil {
 		sid, oid = s.ID, o.ID
 	}
-	a.askConfirm("确定删除该请求？", func() {
+	a.askConfirm("确定删除该请求？", "删除", func() {
 		var err error
 		if sid != "" {
 			err = a.st.DeleteCall(pid, sid, oid, cid)
@@ -1441,7 +1442,7 @@ func (a *app) renameGroupAt(pid, gid, name string) {
 // deleteGroup removes a folder and everything inside it, after confirmation,
 // then closes the tabs of the removed requests.
 func (a *app) deleteGroup(pid, gid, name string) {
-	a.askConfirm("确定删除目录「"+name+"」及其下所有请求？", func() {
+	a.askConfirm("确定删除目录「"+name+"」及其下所有请求？", "删除", func() {
 		removed, err := a.st.DeleteGroup(pid, gid)
 		if err != nil {
 			a.errMsg = "无法删除目录：" + err.Error()
@@ -1497,7 +1498,7 @@ func (a *app) deleteOperation() {
 		return
 	}
 	pid, sid, oid := p.ID, s.ID, o.ID
-	a.askConfirm("确定删除该操作及其下所有请求？", func() {
+	a.askConfirm("确定删除该操作及其下所有请求？", "删除", func() {
 		if err := a.st.DeleteOperation(pid, sid, oid); err != nil {
 			a.errMsg = "无法删除操作：" + err.Error()
 			return
@@ -1728,9 +1729,11 @@ func (a *app) dirtyKey(key string) bool {
 	return draftDirty(a.drafts[key])
 }
 
-// askConfirm opens the confirmation dialog and runs fn if the user agrees.
-func (a *app) askConfirm(text string, fn func()) {
+// askConfirm opens the confirmation dialog, whose commit button says label,
+// and runs fn if the user agrees.
+func (a *app) askConfirm(text, label string, fn func()) {
 	a.confirmText = text
+	a.confirmLabel = label
 	a.confirmAction = fn
 	a.confirmOpen = true
 }
@@ -1747,7 +1750,7 @@ func (a *app) hasUnsavedTabs() bool {
 
 // askQuit confirms quitting when a tab holds unsaved edits; agreeing quits.
 func (a *app) askQuit() {
-	a.askConfirm("有未保存的请求修改，退出后会丢失。确定退出？", func() {
+	a.askConfirm("有未保存的请求修改，退出后会丢失。确定退出？", "退出", func() {
 		a.quitting = true
 		mygo.App.Quit()
 	})
@@ -1761,7 +1764,7 @@ func (a *app) deleteService() {
 		return
 	}
 	pid, sid := p.ID, s.ID
-	a.askConfirm("确定删除该服务及其下所有操作？", func() {
+	a.askConfirm("确定删除该服务及其下所有操作？", "删除", func() {
 		if err := a.st.DeleteService(pid, sid); err != nil {
 			a.errMsg = "无法删除服务：" + err.Error()
 			return
@@ -2330,7 +2333,7 @@ func (a *app) deleteProject() {
 		return
 	}
 	pid, name := p.ID, p.Name
-	a.askConfirm("确定删除整个项目「"+name+"」？", func() {
+	a.askConfirm("确定删除整个项目「"+name+"」？", "删除", func() {
 		if err := a.st.DeleteProject(pid); err != nil {
 			a.errMsg = "无法删除项目：" + err.Error()
 			return
@@ -2536,7 +2539,7 @@ func (a *app) openProxy() {
 
 func (a *app) switchWorkspace(id string) {
 	if a.isDirty() {
-		a.askConfirm("当前请求有未保存的修改，切换工作空间会丢失这些修改。确定继续？", func() {
+		a.askConfirm("当前请求有未保存的修改，切换工作空间会丢失这些修改。确定继续？", "切换", func() {
 			a.doSwitchWorkspace(id)
 		})
 		return
@@ -2558,7 +2561,7 @@ func (a *app) doSwitchWorkspace(id string) {
 
 func (a *app) createWorkspace(name string) {
 	if a.isDirty() {
-		a.askConfirm("当前请求有未保存的修改，新建工作空间会切换并丢失这些修改。确定继续？", func() {
+		a.askConfirm("当前请求有未保存的修改，新建工作空间会切换并丢失这些修改。确定继续？", "继续", func() {
 			a.doCreateWorkspace(name)
 		})
 		return
@@ -2592,7 +2595,7 @@ func (a *app) deleteWorkspace() {
 	if a.isDirty() {
 		text += "\n当前请求的未保存修改也会丢失。"
 	}
-	a.askConfirm(text, func() {
+	a.askConfirm(text, "删除", func() {
 		if err := a.reg.Delete(a.info.ID); err != nil {
 			a.errMsg = "无法删除工作空间：" + err.Error()
 			return
@@ -2627,7 +2630,7 @@ func (a *app) exportWorkspace(path string) {
 // importWorkspaceNamed imports with an explicit workspace name.
 func (a *app) importWorkspaceNamed(path, name string) {
 	if a.isDirty() {
-		a.askConfirm("当前请求有未保存的修改，导入工作空间会切换并丢失这些修改。确定继续？", func() {
+		a.askConfirm("当前请求有未保存的修改，导入工作空间会切换并丢失这些修改。确定继续？", "导入", func() {
 			a.doImportWorkspace(path, name)
 		})
 		return

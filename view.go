@@ -1455,7 +1455,7 @@ func (a *app) newProjectModal(c *ui.Context) {
 				if ui.Button(c, "取消").Clicked() {
 					a.newProjectOpen = false
 				}
-				if ui.PrimaryButton(c, "确定").Clicked() {
+				if ui.PrimaryButton(c, "创建").Clicked() {
 					a.createProject(a.nameInput)
 					a.newProjectOpen = false
 				}
@@ -1481,11 +1481,17 @@ func (a *app) workspaceModal(c *ui.Context) {
 			})
 			ui.Text(c, "名称").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder("工作空间名称").Grow(1)
+			commit := "创建"
+			if a.wsKind == 1 {
+				commit = "重命名"
+			} else if a.wsKind == 2 {
+				commit = "导入"
+			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
 					a.wsOpen = false
 				}
-				if ui.PrimaryButton(c, "确定").Clicked() {
+				if ui.PrimaryButton(c, commit).Clicked() {
 					switch a.wsKind {
 					case 1:
 						a.renameWorkspace(a.nameInput)
@@ -1524,7 +1530,7 @@ func (a *app) treeModal(c *ui.Context) {
 				if ui.Button(c, "取消").Clicked() {
 					a.treeModalOpen = false
 				}
-				if ui.PrimaryButton(c, "确定").Clicked() {
+				if ui.PrimaryButton(c, "创建").Clicked() {
 					switch a.treeModalKind {
 					case 1:
 						a.addService(a.nameInput)
@@ -1547,12 +1553,16 @@ func (a *app) confirmModal(c *ui.Context) {
 		ui.Column(c).Width(440).Gap(14).Children(func() {
 			ui.Text(c, "请确认").FontSize(a.us(16)).Bold()
 			ui.Text(c, a.confirmText).FontSize(a.us(11.5)).TextColor(t.TextMuted).Wrap()
+			label := a.confirmLabel
+			if label == "" {
+				label = "确定"
+			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
 					a.confirmOpen = false
 					a.confirmAction = nil
 				}
-				if ui.PrimaryButton(c, "确定").Clicked() {
+				if ui.PrimaryButton(c, label).Clicked() {
 					a.confirmOpen = false
 					fn := a.confirmAction
 					a.confirmAction = nil
