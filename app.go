@@ -1739,6 +1739,13 @@ func (a *app) askConfirm(text, label string, fn func()) {
 	a.confirmOpen = true
 }
 
+// emptyWorkbench reports whether nothing is open to edit: no tab, no selection,
+// no response and no body, as a fresh start or after closing every tab.
+func (a *app) emptyWorkbench() bool {
+	return len(a.tabs) == 0 && a.pid == "" && a.cid == "" && a.selGroup == "" &&
+		!a.hasResp && !a.sending && strings.TrimSpace(a.xmlEd.Buffer.String()) == ""
+}
+
 // hasUnsavedTabs reports whether any open tab holds unsaved changes.
 func (a *app) hasUnsavedTabs() bool {
 	for _, key := range a.tabs {

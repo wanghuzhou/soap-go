@@ -678,6 +678,24 @@ func TestSendContextCancel(t *testing.T) {
 	}
 }
 
+// TestEmptyWorkbenchGuidance checks a fresh window explains how to start
+// instead of showing a blank form.
+func TestEmptyWorkbenchGuidance(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("开始使用 soap-go") {
+		t.Fatal("no empty workbench guidance")
+	}
+	if err := tt.Click("新建项目"); err != nil {
+		t.Fatalf("click 新建项目: %v", err)
+	}
+	tt.Frame()
+	if !a.newProjectOpen {
+		t.Fatal("新建项目 button did not open the dialog")
+	}
+}
+
 // TestHelpModalShowsShortcuts checks the help dialog lists the shortcuts.
 func TestHelpModalShowsShortcuts(t *testing.T) {
 	a := newTestApp(t)

@@ -639,6 +639,10 @@ func (a *app) main(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).FillHeight().Background(t.Background).Children(func() {
 		a.tabStrip(c)
+		if a.emptyWorkbench() {
+			a.emptyWorkbenchPanel(c)
+			return
+		}
 		a.urlBar(c)
 		a.errorBanner(c)
 		if a.splitSide == 1 {
@@ -727,6 +731,25 @@ func (a *app) tabStrip(c *ui.Context) {
 		ui.Text(c, "").Width(4)
 	})
 	ui.Divider(c)
+}
+
+// emptyWorkbenchPanel guides a user with nothing open to their next step.
+func (a *app) emptyWorkbenchPanel(c *ui.Context) {
+	t := c.Theme()
+	ui.Column(c).Grow(1).Center().Justify(ui.Center).Gap(10).Children(func() {
+		ui.Text(c, "开始使用 soap-go").FontSize(a.us(16)).Bold().TextColor(t.Text)
+		ui.Text(c, "新建项目，或导入 SoapUI / WSDL 定义；" +
+			"打开请求后，这里会显示请求与响应。").
+			FontSize(a.us(11.5)).TextColor(t.TextMuted).Wrap()
+		ui.Row(c).Gap(8).Children(func() {
+			if ui.PrimaryButton(c, "新建项目").Clicked() {
+				a.newProjectOpen, a.nameInput = true, ""
+			}
+			if ui.Button(c, "导入…").Clicked() {
+				a.importOpen, a.importKind = true, 0
+			}
+		})
+	})
 }
 
 func (a *app) urlBar(c *ui.Context) {
