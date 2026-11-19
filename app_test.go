@@ -678,6 +678,23 @@ func TestSendContextCancel(t *testing.T) {
 	}
 }
 
+// TestHasUnsavedTabs checks the quit guard sees edits and forgets them once
+// saved.
+func TestHasUnsavedTabs(t *testing.T) {
+	a, _ := newNativeCall(t)
+	if a.hasUnsavedTabs() {
+		t.Fatal("a freshly opened request is dirty")
+	}
+	a.xmlEd.Buffer.Reset(`{"a":1}`)
+	if !a.hasUnsavedTabs() {
+		t.Fatal("edited request not seen as dirty")
+	}
+	a.saveCall()
+	if a.hasUnsavedTabs() {
+		t.Fatal("saved request still seen as dirty")
+	}
+}
+
 // TestKeyboardAccessibleWidgets checks the custom clickable rows are in the
 // accessibility tree as focusable controls with names, so keyboard and screen
 // reader users can reach the tabs, tree rows and close button.

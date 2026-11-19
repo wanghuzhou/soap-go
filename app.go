@@ -235,6 +235,9 @@ type app struct {
 	pendingTabs      []string
 	pendingActive    int
 	pendingTabsSaved bool
+	// quitting is set once the user confirmed quitting with unsaved edits, so
+	// the quit and window-close guards let the next attempt through.
+	quitting bool
 
 	// Tree.
 	expanded  map[string]bool
@@ -1730,6 +1733,24 @@ func (a *app) askConfirm(text string, fn func()) {
 	a.confirmText = text
 	a.confirmAction = fn
 	a.confirmOpen = true
+}
+
+// hasUnsavedTabs reports whether any open tab holds unsaved changes.
+func (a *app) hasUnsavedTabs() bool {
+	for _, key := range a.tabs {
+		if a.dirtyKey(key) {
+			return true
+		}
+	}
+	return false
+}
+
+// askQuit confirms quitting when a tab holds unsaved edits; agreeing quits.
+func (a *app) askQuit() {
+	a.askConfirm("有未保存的请求修改，退出后会丢失。确定退出？", func() {
+		a.quitting = true
+		mygo.App.Quit()
+	})
 }
 
 // deleteService removes the selected service.
