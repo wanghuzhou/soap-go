@@ -926,6 +926,10 @@ func (a *app) formBodyPanel(c *ui.Context) {
 			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
 			ui.Text(c, "").Width(24)
 		})
+		if a.bodyType == model.BodyMultipart {
+			ui.Text(c, "多部分表单目前只支持文本字段；上传文件请改用“二进制文件”类型。").
+				FontSize(a.us(10)).TextColor(t.TextMuted).Wrap()
+		}
 		for i := range a.bodyFields {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
