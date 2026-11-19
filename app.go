@@ -269,6 +269,7 @@ type app struct {
 	wsKind         int // 0 create, 1 rename, 2 import
 	wsImportPath   string
 	nameInput      string
+	helpOpen       bool
 
 	// Settings dialog: the section shown, the search filter, and the font
 	// preferences (a choice is "系统默认" or a family name).

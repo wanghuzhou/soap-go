@@ -66,6 +66,7 @@ func (a *app) view(c *ui.Context) {
 		a.treeModal(c)
 		a.confirmModal(c)
 		a.settingsModal(c)
+		a.helpModal(c)
 	})
 	a.maybeSaveUIState()
 }
@@ -209,6 +210,10 @@ func (a *app) sidebar(c *ui.Context) {
 					if m.Item("导出 SoapUI XML…").Chosen() {
 						a.saveProjectXML()
 					}
+				}
+				m.Separator()
+				if m.Item("快捷键…").Chosen() {
+					a.helpOpen = true
 				}
 			})
 		})
@@ -1576,6 +1581,42 @@ func (a *app) confirmModal(c *ui.Context) {
 }
 
 // ---- chrome ----
+
+// shortcutHelp lists the window-wide keyboard shortcuts for the help dialog.
+var shortcutHelp = []struct{ keys, desc string }{
+	{"Ctrl/Cmd + Enter", "发送当前请求"},
+	{"Ctrl/Cmd + S", "保存当前请求"},
+	{"Ctrl/Cmd + Shift + F", "格式化请求报文"},
+	{"Ctrl/Cmd + K", "聚焦左侧搜索框"},
+	{"Esc", "关闭弹窗或清空搜索"},
+	{"Tab / Shift+Tab", "在可聚焦控件间移动"},
+	{"Enter / Space", "激活当前聚焦的按钮"},
+}
+
+// helpModal lists the keyboard shortcuts, opened from the 更多 menu.
+func (a *app) helpModal(c *ui.Context) {
+	t := c.Theme()
+	ui.Modal(c, &a.helpOpen, func() {
+		ui.Column(c).Width(520).Gap(12).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "快捷键").FontSize(a.us(17)).Bold()
+				ui.Spacer(c)
+				a.closeIconButton(c, 24, "关闭快捷键", func() { a.helpOpen = false })
+			})
+			ui.Text(c, "以下快捷键在本窗口内生效。").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+			ui.Divider(c)
+			for _, s := range shortcutHelp {
+				s := s
+				ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, s.keys).FontSize(a.us(11.5)).Bold().TextColor(t.Accent).Width(170)
+					ui.Text(c, s.desc).FontSize(a.us(11.5)).TextColor(t.Text)
+				})
+			}
+			ui.Divider(c)
+			ui.Text(c, "soap-go "+appVersion).FontSize(a.us(10.5)).TextColor(t.TextMuted)
+		})
+	})
+}
 
 // settingsModal is a two-pane settings window: a navigation list on the left
 // and the chosen section's rows on the right, after a reference the user

@@ -678,6 +678,17 @@ func TestSendContextCancel(t *testing.T) {
 	}
 }
 
+// TestHelpModalShowsShortcuts checks the help dialog lists the shortcuts.
+func TestHelpModalShowsShortcuts(t *testing.T) {
+	a := newTestApp(t)
+	a.helpOpen = true
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("快捷键") || !tt.HasText("Ctrl/Cmd + Enter") {
+		t.Fatal("help dialog does not list shortcuts")
+	}
+}
+
 // TestConfirmUsesSpecificLabel checks the confirmation button says what it
 // does instead of a generic 确定.
 func TestConfirmUsesSpecificLabel(t *testing.T) {
