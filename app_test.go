@@ -678,6 +678,33 @@ func TestSendContextCancel(t *testing.T) {
 	}
 }
 
+// TestNameValueInputsAccessible checks the name/value rows carry accessible
+// names instead of relying on disappearing placeholders alone.
+func TestNameValueInputsAccessible(t *testing.T) {
+	a, _ := newNativeCall(t)
+	a.reqKind = model.KindHTTP
+	a.headers = []headerRow{{}}
+	a.reqSection = 2
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if _, ok := tt.Access("请求头名称"); !ok {
+		t.Fatal("header name input has no accessible name")
+	}
+	if _, ok := tt.Access("请求头值"); !ok {
+		t.Fatal("header value input has no accessible name")
+	}
+
+	a.queryRows = []queryRow{{}}
+	a.reqSection = 1
+	tt.Frame()
+	if _, ok := tt.Access("参数名"); !ok {
+		t.Fatal("query key input has no accessible name")
+	}
+	if _, ok := tt.Access("参数值"); !ok {
+		t.Fatal("query value input has no accessible name")
+	}
+}
+
 // TestTreeSearchEmptyState checks that filtering to nothing explains it and
 // offers a way to clear the search.
 func TestTreeSearchEmptyState(t *testing.T) {

@@ -742,7 +742,7 @@ func (a *app) urlBar(c *ui.Context) {
 				}
 			}).BorderWidth(0)
 		}
-		ui.TextInput(c, &a.endpoint).Placeholder("http://host/api/path").Grow(1).OnSubmit(func() { a.sendRequest() })
+		ui.TextInput(c, &a.endpoint).Placeholder("http://host/api/path").Grow(1).Label("请求地址").OnSubmit(func() { a.sendRequest() })
 		if a.sending {
 			if ui.PrimaryButton(c, "取消  ■").Clicked() {
 				a.cancelSend()
@@ -883,6 +883,7 @@ func (a *app) binaryBodyPanel(c *ui.Context) {
 
 // formBodyPanel edits urlencoded / multipart name-value pairs.
 func (a *app) formBodyPanel(c *ui.Context) {
+	t := c.Theme()
 	ui.Column(c).Grow(1).Gap(8).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "字段").FontSize(a.us(11.5)).Bold()
@@ -892,11 +893,16 @@ func (a *app) formBodyPanel(c *ui.Context) {
 			}
 		})
 		ui.Divider(c)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "字段名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
+			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
+			ui.Text(c, "").Width(20)
+		})
 		for i := range a.bodyFields {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200)
-				ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1)
+				ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200).Label("字段名")
+				ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1).Label("字段值")
 				a.closeIconButton(c, 20, "删除该字段", func() {
 					if i >= 0 && i < len(a.bodyFields) {
 						a.bodyFields = append(a.bodyFields[:i], a.bodyFields[i+1:]...)
@@ -1004,7 +1010,7 @@ func (a *app) headersPanel(c *ui.Context) {
 					if ph == "" {
 						ph = "application/json"
 					}
-					ui.TextInput(c, &a.contentType).Placeholder(ph).Grow(1)
+					ui.TextInput(c, &a.contentType).Placeholder(ph).Grow(1).Label("Content-Type")
 				})
 			}
 		}
@@ -1024,14 +1030,19 @@ func (a *app) headersPanel(c *ui.Context) {
 		}
 
 		ui.Text(c, "样例头").FontSize(a.us(10.5)).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "名称").FontSize(a.us(10)).TextColor(t.TextMuted).Width(190)
+			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
+			ui.Text(c, "").Width(20)
+		})
 		for i := range a.headers {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.TextInput(c, &a.headers[i].Name).Placeholder("Header-Name").Width(190)
+				ui.TextInput(c, &a.headers[i].Name).Placeholder("Header-Name").Width(190).Label("请求头名称")
 				if a.maskSecrets && isSensitiveName(a.headers[i].Name) {
 					ui.Text(c, "••••••（已遮蔽）").FontSize(a.us(11)).TextColor(t.TextMuted).Grow(1)
 				} else {
-					ui.TextInput(c, &a.headers[i].Value).Placeholder("值").Grow(1)
+					ui.TextInput(c, &a.headers[i].Value).Placeholder("值").Grow(1).Label("请求头值")
 				}
 				a.closeIconButton(c, 20, "删除该请求头", func() {
 					if i >= 0 && i < len(a.headers) {
@@ -1066,11 +1077,16 @@ func (a *app) queryPanel(c *ui.Context) {
 		ui.Text(c, "查询参数与上方 URL 查询串双向同步。").
 			FontSize(a.us(10.5)).TextColor(t.TextMuted)
 		ui.Divider(c)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "参数名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
+			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
+			ui.Text(c, "").Width(20)
+		})
 		for i := range a.queryRows {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.TextInput(c, &a.queryRows[i].Key).Placeholder("参数名").Width(200)
-				ui.TextInput(c, &a.queryRows[i].Value).Placeholder("值").Grow(1)
+				ui.TextInput(c, &a.queryRows[i].Key).Placeholder("参数名").Width(200).Label("参数名")
+				ui.TextInput(c, &a.queryRows[i].Value).Placeholder("值").Grow(1).Label("参数值")
 				a.closeIconButton(c, 20, "删除该参数", func() {
 					if i >= 0 && i < len(a.queryRows) {
 						a.queryRows = append(a.queryRows[:i], a.queryRows[i+1:]...)
