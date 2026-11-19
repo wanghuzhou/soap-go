@@ -678,6 +678,23 @@ func TestSendContextCancel(t *testing.T) {
 	}
 }
 
+// TestFriendlySendError checks transport errors become actionable Chinese
+// messages while unknown errors pass through unchanged.
+func TestFriendlySendError(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"dial tcp: lookup api.test: no such host", "无法解析服务器地址"},
+		{"dial tcp 127.0.0.1:80: connect: connection refused", "服务器拒绝连接"},
+		{"context deadline exceeded (Client.Timeout exceeded)", "请求超时"},
+		{"x509: certificate signed by unknown authority", "TLS 证书校验失败"},
+		{"some odd failure", "some odd failure"},
+	}
+	for _, c := range cases {
+		if got := friendlySendError(c.in); !strings.Contains(got, c.want) {
+			t.Errorf("friendlySendError(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // TestHasUnsavedTabs checks the quit guard sees edits and forgets them once
 // saved.
 func TestHasUnsavedTabs(t *testing.T) {

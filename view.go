@@ -619,6 +619,7 @@ func (a *app) main(c *ui.Context) {
 	ui.Column(c).Grow(1).FillHeight().Background(t.Background).Children(func() {
 		a.tabStrip(c)
 		a.urlBar(c)
+		a.errorBanner(c)
 		if a.splitSide == 1 {
 			ui.SplitPercent(c, &a.splitH, func() {
 				a.requestPanel(c)
@@ -1173,7 +1174,7 @@ func (a *app) responsePanel(c *ui.Context) {
 		ui.Divider(c)
 		ui.Row(c).Shrink(0).Padding(6, 14).Gap(12).AlignItems(ui.Center).Children(func() {
 			if a.hasResp && a.resp.Error != "" {
-				ui.Text(c, "发送失败："+a.resp.Error).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
+				ui.Text(c, "无法发送请求："+a.resp.Error).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
 			} else if a.hasResp && a.resp.Error == "" {
 				col := t.Success
 				if a.resp.Status >= 400 {
@@ -1211,6 +1212,21 @@ func (a *app) responsePanel(c *ui.Context) {
 	})
 }
 
+// errorBanner shows the latest error where the work happens, above the
+// request and response, instead of only in the status bar.
+func (a *app) errorBanner(c *ui.Context) {
+	if a.errMsg == "" {
+		return
+	}
+	t := c.Theme()
+	ui.Row(c).Shrink(0).Padding(6, 12).Gap(8).AlignItems(ui.Center).
+		Background(t.Danger.Alpha(0.12)).Children(func() {
+			ui.Text(c, "⚠").FontSize(a.us(11)).TextColor(t.Danger).Shrink(0)
+			ui.Text(c, a.errMsg).FontSize(a.us(11)).TextColor(t.Danger).Grow(1).Wrap()
+			a.closeIconButton(c, 18, "关闭错误提示", func() { a.errMsg = "" })
+		})
+}
+
 func (a *app) statusBar(c *ui.Context) {
 	t := c.Theme()
 	ui.Divider(c)
@@ -1221,9 +1237,7 @@ func (a *app) statusBar(c *ui.Context) {
 		ui.Text(c, "·").FontSize(a.us(10.5)).TextColor(t.Border)
 		ui.Text(c, "UTF-8").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 		ui.Spacer(c)
-		if a.errMsg != "" {
-			ui.Text(c, a.errMsg).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
-		} else if a.statusMsg != "" {
+		if a.statusMsg != "" {
 			ui.Text(c, a.statusMsg).FontSize(a.us(10.5)).TextColor(t.Success).SingleLine()
 		}
 		ui.Text(c, fmt.Sprintf("%d 个项目", len(a.projects))).FontSize(a.us(10.5)).TextColor(t.TextMuted)
