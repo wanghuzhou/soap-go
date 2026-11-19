@@ -390,17 +390,21 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			if it.expanded {
 				caret = "▾"
 			}
-			ct := ui.Text(c, caret).FontSize(a.us(9.5)).TextColor(t.TextMuted).Width(11)
+			box := ui.Row(c).Width(16).Height(16).Center().Justify(ui.Center).Radius(4).
+				Tooltip("展开/收起")
 			if !editing {
-				ct.OnClick(func() {
+				box = box.Cursor(ui.CursorPointer).OnClick(func() {
 					switch it.kind {
 					case "project", "service", "operation", "group":
 						a.toggleExpanded(nodeKey(it), true)
 					}
 				})
 			}
+			box.Children(func() {
+				ui.Text(c, caret).FontSize(a.us(9.5)).TextColor(t.TextMuted)
+			})
 		} else {
-			ui.Text(c, "").Width(11)
+			ui.Text(c, "").Width(16)
 		}
 		if it.kind == "call" {
 			ui.Text(c, it.method).FontSize(a.us(9)).Bold().TextColor(t.Accent).Width(42)
