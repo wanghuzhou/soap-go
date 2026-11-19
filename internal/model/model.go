@@ -46,6 +46,13 @@ type Group struct {
 	ParentID string `json:"parentId,omitempty"`
 }
 
+// CanExportOpenAPI reports whether this project may be exported as an OpenAPI
+// 3.x description. Only a native (plain HTTP) project maps onto OpenAPI; SOAP
+// services imported from SoapUI or a WSDL have no matching shape.
+func (p Project) CanExportOpenAPI() bool {
+	return p.Source == "native"
+}
+
 // CanExportSoapUI reports whether this project may be exported as SoapUI XML.
 //
 // Only projects that came from SoapUI or a WSDL describe SoapUI's own data
@@ -234,6 +241,9 @@ type Call struct {
 	// FolderID names the Group this native request sits in; "" is the project
 	// root. Unused by an operation's SOAP samples.
 	FolderID string `json:"folderId,omitempty"`
+	// Description is free-form notes about the request, such as the operation
+	// description carried over from an OpenAPI import.
+	Description string `json:"description,omitempty"`
 	// Headers override the project's defaults for this sample only.
 	Headers []Header `json:"headers,omitempty"`
 	// Auth is this sample's authentication; nil means none.

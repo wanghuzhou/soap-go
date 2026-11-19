@@ -1881,3 +1881,52 @@ func TestFontOptionsPerPlatform(t *testing.T) {
 		t.Fatalf("offered font %q normalized to %q, want itself", offered, got)
 	}
 }
+
+// TestImportOpenAPICreatesNativeProject checks an OpenAPI import lands as a
+// native project with its operations as requests, and that opening one shows
+// the operation description in the 设置 tab.
+func TestImportOpenAPICreatesNativeProject(t *testing.T) {
+	a := newTestApp(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.openapi.json")
+	doc := `{
+	  "openapi": "3.0.1",
+	  "info": {"title": "OpenAPI 演示", "version": "1.0.0"},
+	  "paths": {
+	    "/user": {
+	      "get": {
+	        "summary": "用户列表",
+	        "description": "查询用户列表。",
+	        "tags": ["User"],
+	        "parameters": [{"name": "q", "in": "query", "example": "z", "schema": {"type": "string"}}],
+	        "responses": {"200": {"description": "ok"}}
+	      }
+	    }
+	  }
+	}`
+	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	a.importOpenAPI(path)
+	if a.errMsg != "" {
+		t.Fatalf("import error: %s", a.errMsg)
+	}
+	if len(a.projects) != 1 {
+		t.Fatalf("projects = %d", len(a.projects))
+	}
+	p := a.projects[0]
+	if p.Source != "native" || p.Name != "OpenAPI 演示" {
+		t.Fatalf("project = %q/%q", p.Name, p.Source)
+	}
+	if len(p.Calls) != 1 || len(p.Groups) != 1 {
+		t.Fatalf("calls=%d groups=%d", len(p.Calls), len(p.Groups))
+	}
+	a.openCall(p.ID, "", "", p.Calls[0].ID)
+	if a.reqDescription != "查询用户列表。" {
+		t.Fatalf("reqDescription = %q", a.reqDescription)
+	}
+	if a.endpoint != "/user?q=z" {
+		t.Fatalf("endpoint = %q", a.endpoint)
+	}
+}
+

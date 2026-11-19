@@ -21,6 +21,7 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 
 	"soapgo/internal/model"
+	"soapgo/internal/openapi"
 	"soapgo/internal/soapuiproj"
 	"soapgo/internal/store"
 	"soapgo/internal/transport"
@@ -196,6 +197,9 @@ type app struct {
 	// reqKind is "soap" or "http" for the form being edited; it decides which
 	// request-panel sections apply and whether the method is editable.
 	reqKind string
+	// reqDescription is the selected request's notes (carried over from an
+	// OpenAPI import), shown read-only in the 设置 tab.
+	reqDescription string
 	// bodyType is the plain-HTTP body shape (none/json/xml/...); SOAP ignores it.
 	bodyType   string
 	bodyFields []bodyField
@@ -887,6 +891,7 @@ func (a *app) loadTab(key string) {
 	if c == nil {
 		return
 	}
+	a.reqDescription = c.Description
 	if p := a.findProject(pid); p != nil {
 		a.projHeaders = append([]model.Header(nil), p.Headers...)
 	}
@@ -908,6 +913,7 @@ func (a *app) loadTab(key string) {
 func (a *app) loadCallIntoForm(c *model.Call, defaultKind string) {
 	kind := c.KindOrDefault(defaultKind)
 	a.reqKind = kind
+	a.reqDescription = c.Description
 	a.endpoint = c.Endpoint
 	a.action = c.Action
 	a.method = model.EffectiveMethod(kind, c.Method)
@@ -1807,6 +1813,7 @@ func (a *app) clearEditor() {
 	a.endpoint, a.action = "", ""
 	a.method = "POST"
 	a.reqKind = model.KindHTTP
+	a.reqDescription = ""
 	a.bodyType = model.BodyNone
 	a.bodyFields = nil
 	a.bodyFile = ""
@@ -2408,6 +2415,69 @@ func (a *app) importSoapUI(path string) {
 	}
 	a.reload()
 	a.statusMsg = "已导入 SoapUI 项目：" + project.Name
+}
+
+// importOpenAPI parses an OpenAPI 3.x document (JSON or YAML) and adds it as a
+// native project: one folder per tag, one request per operation.
+func (a *app) importOpenAPI(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		a.errMsg = "无法读取文件：" + err.Error()
+		return
+	}
+	project, err := openapi.Parse(data, path)
+	if err != nil {
+		a.errMsg = "无法解析 OpenAPI：" + err.Error()
+		return
+	}
+	saved, err := a.st.AddProject(*project)
+	if err != nil {
+		a.errMsg = "无法保存项目：" + err.Error()
+		return
+	}
+	a.reload()
+	a.statusMsg = fmt.Sprintf("已导入 OpenAPI：%s（%d 个接口）", saved.Name, len(saved.Calls))
+}
+
+// exportOpenAPI writes the selected native project as an OpenAPI 3.x document
+// in the requested format ("json" or "yaml").
+func (a *app) exportOpenAPI(format string) {
+	p := a.selectedProject()
+	if p == nil {
+		a.errMsg = "请先选择一个项目"
+		return
+	}
+	if !p.CanExportOpenAPI() {
+		a.errMsg = "只有普通 HTTP 项目可以导出 OpenAPI"
+		return
+	}
+	doc, err := openapi.Build(*p)
+	if err != nil {
+		a.errMsg = "无法生成 OpenAPI：" + err.Error()
+		return
+	}
+	data, err := openapi.Marshal(doc, format)
+	if err != nil {
+		a.errMsg = "无法生成 OpenAPI：" + err.Error()
+		return
+	}
+	ext := "yaml"
+	if strings.EqualFold(format, "json") {
+		ext = "json"
+	}
+	path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+		Parent: a.win, Title: "导出 OpenAPI",
+		DefaultPath: p.Name + ".openapi." + ext,
+		Filters:     []mygo.FileFilter{{Name: "OpenAPI " + strings.ToUpper(ext), Extensions: []string{ext}}},
+	})
+	if err != nil || path == "" {
+		return
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		a.errMsg = "无法写入文件：" + err.Error()
+		return
+	}
+	a.statusMsg = "已导出 OpenAPI：" + filepath.Base(path)
 }
 
 // importWSDLFile parses a WSDL file and adds a project.

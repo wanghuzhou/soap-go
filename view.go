@@ -210,9 +210,19 @@ func (a *app) sidebar(c *ui.Context) {
 				if m.Item("导入…").Chosen() {
 					a.importOpen, a.importKind = true, 0
 				}
-				if p := a.selectedProject(); p != nil && p.CanExportSoapUI() {
-					if m.Item("导出 SoapUI XML…").Chosen() {
-						a.saveProjectXML()
+				if p := a.selectedProject(); p != nil {
+					if p.CanExportSoapUI() {
+						if m.Item("导出 SoapUI XML…").Chosen() {
+							a.saveProjectXML()
+						}
+					}
+					if p.CanExportOpenAPI() {
+						if m.Item("导出 OpenAPI (JSON)…").Chosen() {
+							a.exportOpenAPI("json")
+						}
+						if m.Item("导出 OpenAPI (YAML)…").Chosen() {
+							a.exportOpenAPI("yaml")
+						}
 					}
 				}
 			})
@@ -536,6 +546,16 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			if m.Item("导出 SoapUI XML…").Chosen() {
 				pick()
 				a.saveProjectXML()
+			}
+		}
+		if proj != nil && proj.CanExportOpenAPI() {
+			if m.Item("导出 OpenAPI (JSON)…").Chosen() {
+				pick()
+				a.exportOpenAPI("json")
+			}
+			if m.Item("导出 OpenAPI (YAML)…").Chosen() {
+				pick()
+				a.exportOpenAPI("yaml")
 			}
 		}
 		m.Separator()
@@ -1235,6 +1255,11 @@ func (a *app) settingsPanel(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).Padding(14, 14, 10).Gap(14).Children(func() {
 		ui.Text(c, "请求设置").FontSize(a.us(11.5)).Bold()
+		if strings.TrimSpace(a.reqDescription) != "" {
+			ui.Text(c, "说明").FontSize(a.us(11)).TextColor(t.TextMuted).Width(72)
+			ui.Text(c, strings.TrimSpace(a.reqDescription)).FontSize(a.us(11)).TextColor(t.Text).Wrap()
+			ui.Divider(c)
+		}
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "超时").FontSize(a.us(11)).TextColor(t.TextMuted).Width(72)
 			ui.TextInput(c, &a.timeout).Placeholder("60000").Width(110)
@@ -1371,6 +1396,16 @@ func (a *app) importModal(c *ui.Context) {
 							Filters: []mygo.FileFilter{{Name: "SoapUI 项目", Extensions: []string{"xml"}}},
 						}); err == nil && len(path) > 0 {
 							a.importSoapUI(path[0])
+							a.importOpen = false
+						}
+					})
+				a.importOption(c, "{}", "导入 OpenAPI",
+					"从 OpenAPI 3.x 的 .json / .yaml 生成请求，按 tag 分目录。", func() {
+						if path, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+							Parent: a.win, Title: "选择 OpenAPI 文件",
+							Filters: []mygo.FileFilter{{Name: "OpenAPI", Extensions: []string{"json", "yaml", "yml"}}},
+						}); err == nil && len(path) > 0 {
+							a.importOpenAPI(path[0])
 							a.importOpen = false
 						}
 					})
