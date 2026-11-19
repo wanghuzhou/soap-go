@@ -41,7 +41,18 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test ./...
+        run: |
+          set -o pipefail
+          go test -v ./... 2>&1 | tee "$RUNNER_TEMP/test.log"
+      # Surface the failing test lines as annotations, because the raw job log
+      # needs an authenticated request to download.
+      - name: Show test failures
+        if: failure()
+        run: |
+          [ -f "$RUNNER_TEMP/test.log" ] || exit 0
+          grep -E '^(--- FAIL|FAIL|\s+\S+_test\.go:)' "$RUNNER_TEMP/test.log" | tail -n 40 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
 
   # ---------------------------------------------------------------------------
   # 1) Windows / Linux amd64：纯 Go、无 cgo，可在 ubuntu 上交叉编译。
