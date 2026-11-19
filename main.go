@@ -55,6 +55,7 @@ func main() {
 	mygo.App.WhenReady(func() {
 		a.win = mygo.NewWindow(mygo.WindowOptions{
 			Title:                "soap-go",
+			StateKey:             "main",
 			Width:                1440,
 			Height:               920,
 			MinWidth:             1040,
