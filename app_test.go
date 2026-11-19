@@ -612,8 +612,8 @@ func TestResponseTabClickSwitchesEditor(t *testing.T) {
 		t.Fatalf("raw editor = %q", got)
 	}
 
-	if err := tt.Click("Headers"); err != nil {
-		t.Fatalf("click Headers: %v", err)
+	if err := tt.Click("响应头"); err != nil {
+		t.Fatalf("click 响应头: %v", err)
 	}
 	tt.Frame()
 	if a.respTab != 3 {
@@ -675,6 +675,31 @@ func TestSendContextCancel(t *testing.T) {
 	}
 	if d := time.Since(start); d > 1500*time.Millisecond {
 		t.Fatalf("cancel took %v", d)
+	}
+}
+
+// TestKeyboardAccessibleWidgets checks the custom clickable rows are in the
+// accessibility tree as focusable controls with names, so keyboard and screen
+// reader users can reach the tabs, tree rows and close button.
+func TestKeyboardAccessibleWidgets(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	c1, _ := a.st.AddProjectCall(p.ID, "", model.Call{Title: "请求一", BodyType: model.BodyNone})
+	a.reload()
+	a.openCall(p.ID, "", "", c1.ID)
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if info, ok := tt.AccessByRole(ui.RoleTab, "请求一"); !ok || !info.Focusable || !info.Selected {
+		t.Fatalf("tab a11y = %+v ok=%v, want focusable selected tab named 请求一", info, ok)
+	}
+	if info, ok := tt.Access("请求一"); !ok || !info.Focusable {
+		t.Fatalf("tree row a11y = %+v ok=%v, want focusable", info, ok)
+	}
+	if info, ok := tt.Access("关闭标签"); !ok || !info.Focusable {
+		t.Fatalf("close button a11y = %+v ok=%v, want focusable", info, ok)
 	}
 }
 

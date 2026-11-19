@@ -371,7 +371,8 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 		Padding(4, 6, 4, float32(4+it.depth*14))
 	if !editing {
 		row = row.OnClick(func() { a.selectTree(it) }).
-			ContextMenu(func(m *ui.Menu) { a.treeContextMenu(m, it) })
+			ContextMenu(func(m *ui.Menu) { a.treeContextMenu(m, it) }).
+			Focusable().Label(it.label).AccessSelected(selected)
 	}
 	switch {
 	case selected:
@@ -390,7 +391,7 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			if it.expanded {
 				caret = "▾"
 			}
-			box := ui.Row(c).Width(16).Height(16).Center().Justify(ui.Center).Radius(4).
+			box := ui.Row(c).Width(18).Height(18).Center().Justify(ui.Center).Radius(4).
 				Tooltip("展开/收起")
 			if !editing {
 				box = box.Cursor(ui.CursorPointer).OnClick(func() {
@@ -404,7 +405,7 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 				ui.Text(c, caret).FontSize(a.us(9.5)).TextColor(t.TextMuted)
 			})
 		} else {
-			ui.Text(c, "").Width(16)
+			ui.Text(c, "").Width(18)
 		}
 		if it.kind == "call" {
 			ui.Text(c, it.method).FontSize(a.us(9)).Bold().TextColor(t.Accent).Width(42)
@@ -637,17 +638,12 @@ func (a *app) main(c *ui.Context) {
 func (a *app) tabStrip(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Shrink(0).Height(36).Padding(0, 8).Gap(2).AlignItems(ui.Center).
-		Background(t.Background).Children(func() {
+		Background(t.Background).Role(ui.RoleTabList).Children(func() {
 		for i, key := range a.tabs {
 			i, key := i, key
 			active := i == a.active
-			tab := ui.Row(c).Shrink(0).Height(30).Padding(0, 10).Gap(8).AlignItems(ui.Center).
-				Cursor(ui.CursorPointer).
-				Transition(ui.ElementTransition{Duration: 120 * time.Millisecond, Colors: true}).
-				OnClick(func() {
-					pid, sid, oid, cid := splitKey(key)
-					a.openCall(pid, sid, oid, cid)
-				})
+			tab := ui.Row(c).Shrink(0).Height(30).Padding(0, 6, 0, 8).Gap(6).AlignItems(ui.Center).
+				Transition(ui.ElementTransition{Duration: 120 * time.Millisecond, Colors: true})
 			// The open request takes the accent color so it stands out among
 			// the tabs; the others stay quiet and only tint on hover.
 			switch {
@@ -657,21 +653,38 @@ func (a *app) tabStrip(c *ui.Context) {
 				tab = tab.Background(t.SurfaceHover).Radius(6)
 			}
 			tab.Children(func() {
-				ui.Text(c, a.callMethod(key)).FontSize(a.us(8.5)).Bold().TextColor(t.Accent)
-				lc := t.TextMuted
-				if active {
-					lc = t.Accent
-				}
-				title := ui.Text(c, a.callTitle(key)).FontSize(a.us(12)).TextColor(lc).SingleLine().MaxWidth(180)
-				if active {
-					title.Bold()
-				}
+				title := a.callTitle(key)
+				label := title
 				if a.dirtyKey(key) {
-					ui.Text(c, "●").FontSize(a.us(8)).TextColor(t.Accent).Shrink(0).
-						Tooltip("有未保存的修改")
+					label += "（未保存）"
 				}
+				// The title is its own focusable tab, so assistive technology
+				// reads it by name; the close button stays a sibling control
+				// rather than being swallowed as content of the tab.
+				open := ui.Row(c).Height(24).Padding(0, 4).Gap(8).AlignItems(ui.Center).
+					Cursor(ui.CursorPointer).Focusable().Label(label).Tooltip(title).
+					Role(ui.RoleTab).AccessSelected(active).
+					OnClick(func() {
+						pid, sid, oid, cid := splitKey(key)
+						a.openCall(pid, sid, oid, cid)
+					})
+				open.Children(func() {
+					ui.Text(c, a.callMethod(key)).FontSize(a.us(8.5)).Bold().TextColor(t.Accent)
+					lc := t.TextMuted
+					if active {
+						lc = t.Accent
+					}
+					txt := ui.Text(c, title).FontSize(a.us(12)).TextColor(lc).SingleLine().MaxWidth(180)
+					if active {
+						txt.Bold()
+					}
+					if a.dirtyKey(key) {
+						ui.Text(c, "●").FontSize(a.us(8)).TextColor(t.Accent).Shrink(0).
+							Tooltip("有未保存的修改")
+					}
+				})
 				closeBox := ui.Row(c).Width(20).Height(20).Center().Justify(ui.Center).Radius(10).
-					Cursor(ui.CursorPointer).Label("关闭标签").
+					Cursor(ui.CursorPointer).Label("关闭标签").Focusable().
 					Transition(ui.ElementTransition{Duration: 100 * time.Millisecond, Colors: true})
 				closeHovered := closeBox.Hovered()
 				closeCol := t.TextMuted
@@ -683,6 +696,9 @@ func (a *app) tabStrip(c *ui.Context) {
 					ui.Icon(c, iconClose).FontSize(a.us(10.5)).TextColor(closeCol)
 				})
 			})
+		}
+		if len(a.tabs) == 0 {
+			ui.Text(c, "没有打开的请求").FontSize(a.us(11.5)).TextColor(t.TextMuted).Padding(0, 4)
 		}
 		ui.Spacer(c)
 		a.splitSwitch(c)
@@ -794,7 +810,7 @@ func (a *app) bodyPanel(c *ui.Context) {
 		switch {
 		case a.bodyType == model.BodyNone:
 			ui.Column(c).Grow(1).Center().Justify(ui.Center).Children(func() {
-				ui.Text(c, "No Body").FontSize(a.us(12)).TextColor(t.TextMuted)
+				ui.Text(c, "无请求体").FontSize(a.us(12)).TextColor(t.TextMuted)
 			})
 		case a.bodyType == model.BodyBinary:
 			a.binaryBodyPanel(c)
@@ -864,7 +880,7 @@ func (a *app) formBodyPanel(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200)
 				ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1)
-				a.closeIconButton(c, 18, "删除该字段", func() {
+				a.closeIconButton(c, 20, "删除该字段", func() {
 					if i >= 0 && i < len(a.bodyFields) {
 						a.bodyFields = append(a.bodyFields[:i], a.bodyFields[i+1:]...)
 					}
@@ -885,15 +901,15 @@ func bodyTypeLabel(bt string) string {
 	case model.BodyGraphQL:
 		return "GraphQL"
 	case model.BodyText:
-		return "Other"
+		return "文本"
 	case model.BodyURLEncoded:
-		return "Url Encoded"
+		return "URL 编码"
 	case model.BodyMultipart:
-		return "Multi-Part"
+		return "多部分表单"
 	case model.BodyBinary:
-		return "Binary File"
+		return "二进制文件"
 	default:
-		return "No Body"
+		return "无请求体"
 	}
 }
 
@@ -904,19 +920,19 @@ func (a *app) bodyTypeMenu(m *ui.Menu) {
 			a.setBodyType(bt)
 		}
 	}
-	m.Item("Form Data").Disabled(true)
-	choice("Url Encoded", model.BodyURLEncoded)
-	choice("Multi-Part", model.BodyMultipart)
+	m.Item("表单数据").Disabled(true)
+	choice("URL 编码", model.BodyURLEncoded)
+	choice("多部分表单", model.BodyMultipart)
 	m.Separator()
-	m.Item("Text Content").Disabled(true)
+	m.Item("文本内容").Disabled(true)
 	choice("GraphQL", model.BodyGraphQL)
 	choice("JSON", model.BodyJSON)
 	choice("XML", model.BodyXML)
-	choice("Other", model.BodyText)
+	choice("其他", model.BodyText)
 	m.Separator()
-	m.Item("Other").Disabled(true)
-	choice("Binary File", model.BodyBinary)
-	choice("No Body", model.BodyNone)
+	m.Item("其他").Disabled(true)
+	choice("二进制文件", model.BodyBinary)
+	choice("无请求体", model.BodyNone)
 }
 
 func (a *app) headersPanel(c *ui.Context) {
@@ -1000,7 +1016,7 @@ func (a *app) headersPanel(c *ui.Context) {
 				} else {
 					ui.TextInput(c, &a.headers[i].Value).Placeholder("值").Grow(1)
 				}
-				a.closeIconButton(c, 18, "删除该请求头", func() {
+				a.closeIconButton(c, 20, "删除该请求头", func() {
 					if i >= 0 && i < len(a.headers) {
 						a.headers = append(a.headers[:i], a.headers[i+1:]...)
 					}
@@ -1038,7 +1054,7 @@ func (a *app) queryPanel(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.TextInput(c, &a.queryRows[i].Key).Placeholder("参数名").Width(200)
 				ui.TextInput(c, &a.queryRows[i].Value).Placeholder("值").Grow(1)
-				a.closeIconButton(c, 18, "删除该参数", func() {
+				a.closeIconButton(c, 20, "删除该参数", func() {
 					if i >= 0 && i < len(a.queryRows) {
 						a.queryRows = append(a.queryRows[:i], a.queryRows[i+1:]...)
 					}
@@ -1175,7 +1191,7 @@ func (a *app) responsePanel(c *ui.Context) {
 			}
 		})
 		ui.Row(c).Shrink(0).Padding(0, 14, 0).Gap(8).AlignItems(ui.Center).Children(func() {
-			if ui.Tabs(c, &a.respTab, "格式化", "原始", "请求", "Headers").Shrink(0).Changed() {
+			if ui.Tabs(c, &a.respTab, "格式化", "原始", "请求", "响应头").Shrink(0).Changed() {
 				a.syncResponse()
 			}
 			ui.Spacer(c)
@@ -1223,7 +1239,7 @@ func (a *app) importModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "导入").FontSize(a.us(17)).Bold()
 				ui.Spacer(c)
-				a.closeIconButton(c, 22, "关闭导入", func() { a.importOpen = false })
+				a.closeIconButton(c, 24, "关闭导入", func() { a.importOpen = false })
 			})
 			ui.Text(c, "选择一种方式把接口定义带进来。").FontSize(a.us(11)).TextColor(t.TextMuted)
 
@@ -1282,7 +1298,7 @@ func (a *app) importModal(c *ui.Context) {
 func (a *app) importOption(c *ui.Context, icon, title, desc string, onClick func()) {
 	t := c.Theme()
 	row := ui.Row(c).Gap(12).AlignItems(ui.Center).Padding(12).Radius(9).
-		Border(1, t.Border).OnClick(onClick)
+		Border(1, t.Border).OnClick(onClick).Focusable().Label(title)
 	if row.Hovered() {
 		row = row.Background(t.SurfaceHover)
 	}
@@ -1306,7 +1322,7 @@ func (a *app) exportModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "导出工作空间").FontSize(a.us(17)).Bold()
 				ui.Spacer(c)
-				a.closeIconButton(c, 22, "关闭导出", func() { a.exportOpen = false })
+				a.closeIconButton(c, 24, "关闭导出", func() { a.exportOpen = false })
 			})
 			ui.Text(c, "把当前工作空间的项目导出为 JSON，可在另一台机器或另一个实例导入。").
 				FontSize(11).TextColor(t.TextMuted).Wrap()
@@ -1336,7 +1352,7 @@ func (a *app) proxyModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "项目代理设置").FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				a.closeIconButton(c, 22, "关闭代理设置", func() { a.proxyOpen = false })
+				a.closeIconButton(c, 24, "关闭代理设置", func() { a.proxyOpen = false })
 			})
 			ui.Text(c, "代理模式").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.Select(c, &a.proxyModeSel, []string{"系统代理", "直连", "自定义代理"})
@@ -1385,7 +1401,7 @@ func (a *app) newProjectModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "项目").FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				a.closeIconButton(c, 22, "关闭新建项目", func() { a.newProjectOpen = false })
+				a.closeIconButton(c, 24, "关闭新建项目", func() { a.newProjectOpen = false })
 			})
 			ui.Text(c, "项目名称").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder("新建项目").Grow(1)
@@ -1415,7 +1431,7 @@ func (a *app) workspaceModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, title).FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				a.closeIconButton(c, 22, "关闭", func() { a.wsOpen = false })
+				a.closeIconButton(c, 24, "关闭", func() { a.wsOpen = false })
 			})
 			ui.Text(c, "名称").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder("工作空间名称").Grow(1)
@@ -1454,7 +1470,7 @@ func (a *app) treeModal(c *ui.Context) {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, title).FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				a.closeIconButton(c, 22, "关闭", func() { a.treeModalOpen = false })
+				a.closeIconButton(c, 24, "关闭", func() { a.treeModalOpen = false })
 			})
 			ui.Text(c, placeholder).FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder(placeholder).Grow(1)
@@ -1642,7 +1658,8 @@ func (a *app) accentSwatches(c *ui.Context) {
 			p := p
 			selected := p.Color == active
 			ring := ui.Row(c).Width(24).Height(24).Center().Justify(ui.Center).Radius(12).
-				OnClick(func() { a.setAccent(p.Color) }).Tooltip(p.Name)
+				OnClick(func() { a.setAccent(p.Color) }).Tooltip(p.Name).Focusable().Label(p.Name).
+				AccessSelected(selected)
 			if selected {
 				ring = ring.Border(2, t.Text)
 			}
@@ -1736,7 +1753,7 @@ func (a *app) stepBtn(c *ui.Context, label string, enabled bool, onClick func())
 	col := t.TextMuted
 	if enabled {
 		col = t.Text
-		btn = btn.OnClick(onClick)
+		btn = btn.OnClick(onClick).Focusable().Label(label)
 		if btn.Hovered() {
 			btn = btn.Background(t.SurfaceHover)
 		}
@@ -1749,7 +1766,7 @@ func (a *app) stepBtn(c *ui.Context, label string, enabled bool, onClick func())
 // segment is one choice of a small segmented control.
 func (a *app) segment(c *ui.Context, label string, active bool, onClick func()) {
 	t := c.Theme()
-	box := ui.Row(c).Padding(3, 12).Radius(6).OnClick(onClick)
+	box := ui.Row(c).Padding(3, 12).Radius(6).OnClick(onClick).Focusable().Label(label)
 	switch {
 	case active:
 		box = box.Background(t.SurfacePressed)
@@ -1778,7 +1795,7 @@ func (a *app) splitOption(c *ui.Context, mode int, icon *ui.SVG, tip string) {
 	t := c.Theme()
 	active := a.splitSide == mode
 	btn := ui.Row(c).Width(28).Height(24).Center().Justify(ui.Center).Radius(6).
-		OnClick(func() { a.splitSide = mode; a.saveUIState() }).Tooltip(tip)
+		OnClick(func() { a.splitSide = mode; a.saveUIState() }).Tooltip(tip).Focusable().Label(tip)
 	if active {
 		btn = btn.Background(t.SurfacePressed)
 	} else if btn.Hovered() {
@@ -1796,7 +1813,7 @@ func (a *app) splitOption(c *ui.Context, mode int, icon *ui.SVG, tip string) {
 func (a *app) iconBtn(c *ui.Context, icon *ui.SVG, tip string, onClick func()) {
 	t := c.Theme()
 	btn := ui.Row(c).Width(26).Height(24).Center().Justify(ui.Center).Radius(6).
-		OnClick(onClick).Tooltip(tip)
+		OnClick(onClick).Tooltip(tip).Focusable().Label(tip)
 	if btn.Hovered() {
 		btn = btn.Background(t.SurfaceHover)
 	}
@@ -1810,7 +1827,7 @@ func (a *app) iconBtn(c *ui.Context, icon *ui.SVG, tip string, onClick func()) {
 func (a *app) closeIconButton(c *ui.Context, size float32, label string, onClick func()) {
 	t := c.Theme()
 	btn := ui.Row(c).Width(size).Height(size).Center().Justify(ui.Center).
-		Radius(size / 2).Cursor(ui.CursorPointer).Label(label).
+		Radius(size / 2).Cursor(ui.CursorPointer).Label(label).Focusable().
 		Transition(ui.ElementTransition{Duration: 100 * time.Millisecond, Colors: true}).
 		OnClick(onClick)
 	hovered := btn.Hovered()
@@ -1875,7 +1892,7 @@ func (a *app) plainButton(c *ui.Context, label string) bool {
 func (a *app) copyIcon(c *ui.Context, copied string, text func() string) ui.Element {
 	t := c.Theme()
 	btn := ui.Row(c).Width(26).Height(24).Center().Justify(ui.Center).Radius(6).
-		Background(t.Surface).Border(1, t.Border).Tooltip("复制").
+		Background(t.Surface).Border(1, t.Border).Tooltip("复制").Focusable().Label("复制").
 		OnClick(func() {
 			mygo.Clipboard.WriteText(text())
 			a.statusMsg = copied
