@@ -132,3 +132,30 @@ func TestEnsureIDsCoversNativeTree(t *testing.T) {
 		t.Fatal("call id not assigned")
 	}
 }
+
+// TestMoveProjectCall moves a request between folders and back to the root,
+// rejecting a folder from outside the project.
+func TestMoveProjectCall(t *testing.T) {
+	s, p := newNativeStore(t)
+	a, _ := s.AddGroup(p.ID, "A", "")
+	b, _ := s.AddGroup(p.ID, "B", "")
+	call, _ := s.AddProjectCall(p.ID, a.ID, model.Call{Title: "R"})
+
+	if err := s.MoveProjectCall(p.ID, call.ID, b.ID); err != nil {
+		t.Fatalf("move to B: %v", err)
+	}
+	got, _ := s.Get(p.ID)
+	if got.Calls[0].FolderID != b.ID {
+		t.Fatalf("after move FolderID = %q, want %q", got.Calls[0].FolderID, b.ID)
+	}
+	if err := s.MoveProjectCall(p.ID, call.ID, ""); err != nil {
+		t.Fatalf("move to root: %v", err)
+	}
+	got, _ = s.Get(p.ID)
+	if got.Calls[0].FolderID != "" {
+		t.Fatalf("after move to root FolderID = %q", got.Calls[0].FolderID)
+	}
+	if err := s.MoveProjectCall(p.ID, call.ID, "missing"); err == nil {
+		t.Fatal("move into a missing folder should fail")
+	}
+}

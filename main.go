@@ -38,11 +38,24 @@ func main() {
 
 	a := newApp(reg)
 	// Persist the theme and split layout when the app quits, as a backstop for
-	// changes the running view has not written yet.
-	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.saveUIState() })
+	// changes the running view has not written yet. When a request has unsaved
+	// edits, ask first instead of losing them.
+	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+		if !a.quitting && a.hasUnsavedTabs() {
+			e.PreventDefault()
+			a.askQuit()
+			if a.win != nil {
+				a.win.Invalidate()
+			}
+			return
+		}
+		a.saveUIState()
+	})
+	mygo.App.OnQuitCanceled(func() { a.quitting = false })
 	mygo.App.WhenReady(func() {
 		a.win = mygo.NewWindow(mygo.WindowOptions{
 			Title:                "soap-go",
+			StateKey:             "main",
 			Width:                1440,
 			Height:               920,
 			MinWidth:             1040,
@@ -53,6 +66,15 @@ func main() {
 			TrafficLightPosition: trafficLightPosition(),
 			Content:              ui.View(a.view),
 		})
+		// Closing the window is the other way out; guard it the same way.
+		a.win.OnClose(func(e *mygo.CloseEvent) {
+			if !a.quitting && a.hasUnsavedTabs() {
+				e.PreventDefault()
+				a.askQuit()
+				a.win.Invalidate()
+			}
+		})
+
 		// The executable carries no icon resource, so set the window's icon
 		// from the embedded PNG; without this the title bar and taskbar show a
 		// blank default.

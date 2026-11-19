@@ -235,6 +235,9 @@ type app struct {
 	pendingTabs      []string
 	pendingActive    int
 	pendingTabsSaved bool
+	// quitting is set once the user confirmed quitting with unsaved edits, so
+	// the quit and window-close guards let the next attempt through.
+	quitting bool
 
 	// Tree.
 	expanded  map[string]bool
@@ -260,11 +263,13 @@ type app struct {
 	treeModalKind  int // 1 add service, 2 add operation
 	confirmOpen    bool
 	confirmText    string
+	confirmLabel   string
 	confirmAction  func()
 	wsOpen         bool
 	wsKind         int // 0 create, 1 rename, 2 import
 	wsImportPath   string
 	nameInput      string
+	helpOpen       bool
 
 	// Settings dialog: the section shown, the search filter, and the font
 	// preferences (a choice is "系统默认" or a family name).
@@ -1026,7 +1031,7 @@ func (a *app) closeTab(i int) {
 	}
 	key := a.tabs[i]
 	if a.dirtyKey(key) {
-		a.askConfirm("该请求有未保存的修改，关闭标签会丢失。确定关闭？", func() {
+		a.askConfirm("该请求有未保存的修改，关闭标签会丢失。确定关闭？", "关闭标签", func() {
 			for j, k := range a.tabs {
 				if k == key {
 					a.removeTabAt(j)
@@ -1282,7 +1287,7 @@ func (a *app) saveCall() {
 		err = a.st.UpdateProjectCall(p.ID, call)
 	}
 	if err != nil {
-		a.errMsg = "保存失败：" + err.Error()
+		a.errMsg = "无法保存：" + err.Error()
 		return
 	}
 	a.savedSnapshot = call.Request
@@ -1318,7 +1323,7 @@ func (a *app) deleteCall() {
 	if s != nil && o != nil {
 		sid, oid = s.ID, o.ID
 	}
-	a.askConfirm("确定删除该请求？", func() {
+	a.askConfirm("确定删除该请求？", "删除", func() {
 		var err error
 		if sid != "" {
 			err = a.st.DeleteCall(pid, sid, oid, cid)
@@ -1326,7 +1331,7 @@ func (a *app) deleteCall() {
 			err = a.st.DeleteProjectCall(pid, cid)
 		}
 		if err != nil {
-			a.errMsg = "删除失败：" + err.Error()
+			a.errMsg = "无法删除：" + err.Error()
 			return
 		}
 		a.statusMsg = "已删除请求"
@@ -1377,7 +1382,7 @@ func (a *app) newCall() {
 		Request:  o.DefaultRequestBody(),
 	})
 	if err != nil {
-		a.errMsg = "新建请求失败：" + err.Error()
+		a.errMsg = "无法新建请求：" + err.Error()
 		return
 	}
 	a.reload()
@@ -1399,12 +1404,26 @@ func (a *app) newProjectCall(folderID string) {
 		BodyType: model.BodyNone,
 	})
 	if err != nil {
-		a.errMsg = "新建请求失败：" + err.Error()
+		a.errMsg = "无法新建请求：" + err.Error()
 		return
 	}
 	a.reload()
 	a.openCall(p.ID, "", "", call.ID)
 	a.statusMsg = "已新建请求"
+}
+
+// moveProjectCall moves a native request into folderID ("" for the project
+// root) when it is dragged onto a folder or the project row.
+func (a *app) moveProjectCall(pid, cid, folderID string) {
+	if err := a.st.MoveProjectCall(pid, cid, folderID); err != nil {
+		a.errMsg = "无法移动请求：" + err.Error()
+		return
+	}
+	if folderID != "" {
+		a.expanded[folderID] = true
+	}
+	a.statusMsg = "已移动请求"
+	a.reload()
 }
 
 // newGroup creates a folder under the selected project or group.
@@ -1415,7 +1434,7 @@ func (a *app) newGroup(parentID, name string) {
 		return
 	}
 	if _, err := a.st.AddGroup(p.ID, name, parentID); err != nil {
-		a.errMsg = "新建目录失败：" + err.Error()
+		a.errMsg = "无法新建目录：" + err.Error()
 		return
 	}
 	if parentID != "" {
@@ -1428,7 +1447,7 @@ func (a *app) newGroup(parentID, name string) {
 // renameGroupAt renames a folder by id without moving the selection.
 func (a *app) renameGroupAt(pid, gid, name string) {
 	if err := a.st.RenameGroup(pid, gid, name); err != nil {
-		a.errMsg = "重命名目录失败：" + err.Error()
+		a.errMsg = "无法重命名目录：" + err.Error()
 		return
 	}
 	a.statusMsg = "已重命名目录"
@@ -1438,10 +1457,10 @@ func (a *app) renameGroupAt(pid, gid, name string) {
 // deleteGroup removes a folder and everything inside it, after confirmation,
 // then closes the tabs of the removed requests.
 func (a *app) deleteGroup(pid, gid, name string) {
-	a.askConfirm("确定删除目录「"+name+"」及其下所有请求？", func() {
+	a.askConfirm("确定删除目录「"+name+"」及其下所有请求？", "删除", func() {
 		removed, err := a.st.DeleteGroup(pid, gid)
 		if err != nil {
-			a.errMsg = "删除目录失败：" + err.Error()
+			a.errMsg = "无法删除目录：" + err.Error()
 			return
 		}
 		a.statusMsg = "已删除目录"
@@ -1480,7 +1499,7 @@ func (a *app) duplicateCall() {
 		}
 	}
 	if err != nil {
-		a.errMsg = "复制失败：" + err.Error()
+		a.errMsg = "无法复制：" + err.Error()
 		return
 	}
 	a.statusMsg = "已复制请求"
@@ -1494,9 +1513,9 @@ func (a *app) deleteOperation() {
 		return
 	}
 	pid, sid, oid := p.ID, s.ID, o.ID
-	a.askConfirm("确定删除该操作及其下所有请求？", func() {
+	a.askConfirm("确定删除该操作及其下所有请求？", "删除", func() {
 		if err := a.st.DeleteOperation(pid, sid, oid); err != nil {
-			a.errMsg = "删除操作失败：" + err.Error()
+			a.errMsg = "无法删除操作：" + err.Error()
 			return
 		}
 		a.statusMsg = "已删除操作"
@@ -1520,7 +1539,7 @@ func (a *app) addService(name string) {
 		name = "新服务"
 	}
 	if _, err := a.st.AddService(p.ID, model.Service{Name: name}); err != nil {
-		a.errMsg = "新建服务失败：" + err.Error()
+		a.errMsg = "无法新建服务：" + err.Error()
 		return
 	}
 	a.statusMsg = "已新建服务：" + name
@@ -1539,7 +1558,7 @@ func (a *app) addOperation(name string) {
 		name = "新操作"
 	}
 	if _, err := a.st.AddOperation(p.ID, s.ID, model.Operation{Name: name}); err != nil {
-		a.errMsg = "新建操作失败：" + err.Error()
+		a.errMsg = "无法新建操作：" + err.Error()
 		return
 	}
 	a.statusMsg = "已新建操作：" + name
@@ -1582,7 +1601,7 @@ func (a *app) renameCallAt(pid, sid, oid, cid, title string) {
 					call := op.Calls[ci]
 					call.Title = title
 					if err := a.st.UpdateCall(pid, sid, oid, call); err != nil {
-						a.errMsg = "重命名失败：" + err.Error()
+						a.errMsg = "无法重命名：" + err.Error()
 						return
 					}
 					a.statusMsg = "已重命名请求"
@@ -1599,7 +1618,7 @@ func (a *app) renameCallAt(pid, sid, oid, cid, title string) {
 			call := p.Calls[ci]
 			call.Title = title
 			if err := a.st.UpdateProjectCall(pid, call); err != nil {
-				a.errMsg = "重命名失败：" + err.Error()
+				a.errMsg = "无法重命名：" + err.Error()
 				return
 			}
 			a.statusMsg = "已重命名请求"
@@ -1624,11 +1643,11 @@ func (a *app) exportProject(path string) {
 	}
 	data, err := soapuiproj.Marshal(*p)
 	if err != nil {
-		a.errMsg = "生成 SoapUI XML 失败：" + err.Error()
+		a.errMsg = "无法生成 SoapUI XML：" + err.Error()
 		return
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		a.errMsg = "写出文件失败：" + err.Error()
+		a.errMsg = "无法写出文件：" + err.Error()
 		return
 	}
 	a.statusMsg = "已导出 SoapUI XML：" + filepath.Base(path)
@@ -1725,11 +1744,38 @@ func (a *app) dirtyKey(key string) bool {
 	return draftDirty(a.drafts[key])
 }
 
-// askConfirm opens the confirmation dialog and runs fn if the user agrees.
-func (a *app) askConfirm(text string, fn func()) {
+// askConfirm opens the confirmation dialog, whose commit button says label,
+// and runs fn if the user agrees.
+func (a *app) askConfirm(text, label string, fn func()) {
 	a.confirmText = text
+	a.confirmLabel = label
 	a.confirmAction = fn
 	a.confirmOpen = true
+}
+
+// emptyWorkbench reports whether nothing is open to edit: no tab, no selection,
+// no response and no body, as a fresh start or after closing every tab.
+func (a *app) emptyWorkbench() bool {
+	return len(a.tabs) == 0 && a.pid == "" && a.cid == "" && a.selGroup == "" &&
+		!a.hasResp && !a.sending && strings.TrimSpace(a.xmlEd.Buffer.String()) == ""
+}
+
+// hasUnsavedTabs reports whether any open tab holds unsaved changes.
+func (a *app) hasUnsavedTabs() bool {
+	for _, key := range a.tabs {
+		if a.dirtyKey(key) {
+			return true
+		}
+	}
+	return false
+}
+
+// askQuit confirms quitting when a tab holds unsaved edits; agreeing quits.
+func (a *app) askQuit() {
+	a.askConfirm("有未保存的请求修改，退出后会丢失。确定退出？", "退出", func() {
+		a.quitting = true
+		mygo.App.Quit()
+	})
 }
 
 // deleteService removes the selected service.
@@ -1740,9 +1786,9 @@ func (a *app) deleteService() {
 		return
 	}
 	pid, sid := p.ID, s.ID
-	a.askConfirm("确定删除该服务及其下所有操作？", func() {
+	a.askConfirm("确定删除该服务及其下所有操作？", "删除", func() {
 		if err := a.st.DeleteService(pid, sid); err != nil {
-			a.errMsg = "删除服务失败：" + err.Error()
+			a.errMsg = "无法删除服务：" + err.Error()
 			return
 		}
 		a.statusMsg = "已删除服务"
@@ -1811,7 +1857,7 @@ func (a *app) persistResponse(pid, sid, oid, cid string, resp model.SendResponse
 		Truncated:  resp.Truncated,
 	}
 	if err := a.storeSaveResponse(pid, sid, oid, cid, saved); err != nil {
-		a.errMsg = "保存响应失败：" + err.Error()
+		a.errMsg = "无法保存响应：" + err.Error()
 		return
 	}
 	a.reload()
@@ -1928,7 +1974,7 @@ func (a *app) requestBody(kind, method string) (body, contentType string, err er
 		}
 		data, rerr := os.ReadFile(a.bodyFile)
 		if rerr != nil {
-			return "", "", fmt.Errorf("读取文件失败：%w", rerr)
+			return "", "", fmt.Errorf("无法读取文件：%w", rerr)
 		}
 		ct := strings.TrimSpace(a.contentType)
 		if ct == "" {
@@ -2011,7 +2057,7 @@ func (a *app) sendRequest() {
 					a.errMsg = ""
 					a.statusMsg = "已取消"
 				case resp.Error != "":
-					a.errMsg = "发送失败：" + resp.Error
+					a.errMsg = "无法发送请求：" + friendlySendError(resp.Error)
 					a.statusMsg = ""
 				default:
 					a.statusMsg = fmt.Sprintf("%d %s · %d ms · %s", resp.Status, resp.StatusText, resp.DurationMS, humanSize(resp.Size))
@@ -2022,7 +2068,7 @@ func (a *app) sendRequest() {
 				case resp.Error == "已取消":
 					a.statusMsg = "后台请求已取消"
 				case resp.Error != "":
-					a.errMsg = "后台请求失败：" + resp.Error
+					a.errMsg = "后台请求无法完成：" + friendlySendError(resp.Error)
 				default:
 					a.statusMsg = fmt.Sprintf("后台请求完成：%d %s · %d ms", resp.Status, resp.StatusText, resp.DurationMS)
 				}
@@ -2100,6 +2146,29 @@ func (a *app) responseContentType() string {
 	return ""
 }
 
+// friendlySendError explains a transport error in terms a user can act on,
+// keeping the original text for errors it does not recognize.
+func friendlySendError(msg string) string {
+	low := strings.ToLower(msg)
+	switch {
+	case strings.Contains(low, "no such host"), strings.Contains(low, "name resolution"),
+		strings.Contains(low, "dns"), strings.Contains(low, "lookup"):
+		return "无法解析服务器地址，请检查域名和网络"
+	case strings.Contains(low, "connection refused"):
+		return "服务器拒绝连接，请确认地址和端口"
+	case strings.Contains(low, "timeout"), strings.Contains(low, "deadline exceeded"),
+		strings.Contains(low, "超时"):
+		return "请求超时，可调大超时时间或检查网络"
+	case strings.Contains(low, "certificate"), strings.Contains(low, "tls"),
+		strings.Contains(low, "x509"):
+		return "TLS 证书校验失败，请检查证书或代理设置"
+	case strings.Contains(low, "eof"), strings.Contains(low, "connection reset"):
+		return "服务器提前关闭了连接"
+	default:
+		return msg
+	}
+}
+
 func (a *app) responseText() string {
 	if !a.hasResp {
 		return ""
@@ -2175,7 +2244,7 @@ func (a *app) formatBody() {
 	if a.isJSONRequest() {
 		out, err := formatJSON(a.xmlEd.Buffer.String())
 		if err != nil {
-			a.errMsg = "格式化失败：" + err.Error()
+			a.errMsg = "无法格式化：" + err.Error()
 			return
 		}
 		a.xmlEd.Buffer.Reset(out)
@@ -2183,7 +2252,7 @@ func (a *app) formatBody() {
 	}
 	out, err := formatXML(a.xmlEd.Buffer.String())
 	if err != nil {
-		a.errMsg = "格式化失败：" + err.Error()
+		a.errMsg = "无法格式化：" + err.Error()
 		return
 	}
 	a.xmlEd.Buffer.Reset(out)
@@ -2195,7 +2264,7 @@ func (a *app) minifyBody() {
 	if a.isJSONRequest() {
 		out, err := minifyJSON(a.xmlEd.Buffer.String())
 		if err != nil {
-			a.errMsg = "压缩失败：" + err.Error()
+			a.errMsg = "无法压缩：" + err.Error()
 			return
 		}
 		a.xmlEd.Buffer.Reset(out)
@@ -2203,7 +2272,7 @@ func (a *app) minifyBody() {
 	}
 	toks, err := xmlTokenize(strings.TrimSpace(a.xmlEd.Buffer.String()))
 	if err != nil {
-		a.errMsg = "压缩失败：" + err.Error()
+		a.errMsg = "无法压缩：" + err.Error()
 		return
 	}
 	var b strings.Builder
@@ -2271,7 +2340,7 @@ func (a *app) createProject(name string) {
 	}
 	saved, err := a.st.AddProject(model.Project{Name: name, Source: "native"})
 	if err != nil {
-		a.errMsg = "新建项目失败：" + err.Error()
+		a.errMsg = "无法新建项目：" + err.Error()
 		return
 	}
 	a.pid, a.sid, a.oid, a.cid = saved.ID, "", "", ""
@@ -2286,9 +2355,9 @@ func (a *app) deleteProject() {
 		return
 	}
 	pid, name := p.ID, p.Name
-	a.askConfirm("确定删除整个项目「"+name+"」？", func() {
+	a.askConfirm("确定删除整个项目「"+name+"」？", "删除", func() {
 		if err := a.st.DeleteProject(pid); err != nil {
-			a.errMsg = "删除项目失败：" + err.Error()
+			a.errMsg = "无法删除项目：" + err.Error()
 			return
 		}
 		a.statusMsg = "已删除项目：" + name
@@ -2312,7 +2381,7 @@ func (a *app) renameProject(name string) {
 		return
 	}
 	if err := a.st.RenameProject(p.ID, name); err != nil {
-		a.errMsg = "重命名失败：" + err.Error()
+		a.errMsg = "无法重命名：" + err.Error()
 		return
 	}
 	a.statusMsg = "项目已重命名"
@@ -2323,19 +2392,19 @@ func (a *app) renameProject(name string) {
 func (a *app) importSoapUI(path string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		a.errMsg = "读取文件失败：" + err.Error()
+		a.errMsg = "无法读取文件：" + err.Error()
 		return
 	}
 	project, err := soapuiproj.Parse(data)
 	if err != nil {
-		a.errMsg = "解析 SoapUI 项目失败：" + err.Error()
+		a.errMsg = "无法解析 SoapUI 项目：" + err.Error()
 		return
 	}
 	if project.Name == "" {
 		project.Name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	}
 	if _, err := a.st.AddProject(*project); err != nil {
-		a.errMsg = "保存项目失败：" + err.Error()
+		a.errMsg = "无法保存项目：" + err.Error()
 		return
 	}
 	a.reload()
@@ -2346,12 +2415,12 @@ func (a *app) importSoapUI(path string) {
 func (a *app) importWSDLFile(path string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		a.errMsg = "读取文件失败：" + err.Error()
+		a.errMsg = "无法读取文件：" + err.Error()
 		return
 	}
 	res, err := wsdl.Parse(data)
 	if err != nil {
-		a.errMsg = "解析 WSDL 失败：" + err.Error()
+		a.errMsg = "无法解析 WSDL：" + err.Error()
 		return
 	}
 	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
@@ -2371,12 +2440,12 @@ func (a *app) importWSDLURL(rawURL string) {
 	}
 	fetched, err := wsdlfetch.Fetch(strings.TrimSpace(rawURL), proxy)
 	if err != nil {
-		a.errMsg = "获取 WSDL 失败：" + err.Error()
+		a.errMsg = "无法获取 WSDL：" + err.Error()
 		return
 	}
 	res, err := wsdl.Parse(fetched.Data)
 	if err != nil {
-		a.errMsg = "解析 WSDL 失败：" + err.Error()
+		a.errMsg = "无法解析 WSDL：" + err.Error()
 		return
 	}
 	a.persistWSDL(res, fetched.Name, fetched.FinalURL, "wsdl-url")
@@ -2413,7 +2482,7 @@ func (a *app) persistWSDL(res *wsdl.Result, fallbackName, source, projectSource 
 		}},
 	}
 	if _, err := a.st.AddProject(project); err != nil {
-		a.errMsg = "保存 WSDL 项目失败：" + err.Error()
+		a.errMsg = "无法保存 WSDL 项目：" + err.Error()
 		return
 	}
 	a.reload()
@@ -2449,7 +2518,7 @@ func (a *app) updateProxy() {
 		return
 	}
 	if err := a.st.UpdateProjectProxy(p.ID, cfg); err != nil {
-		a.errMsg = "保存代理失败：" + err.Error()
+		a.errMsg = "无法保存代理：" + err.Error()
 		return
 	}
 	a.statusMsg = "代理设置已保存"
@@ -2492,7 +2561,7 @@ func (a *app) openProxy() {
 
 func (a *app) switchWorkspace(id string) {
 	if a.isDirty() {
-		a.askConfirm("当前请求有未保存的修改，切换工作空间会丢失这些修改。确定继续？", func() {
+		a.askConfirm("当前请求有未保存的修改，切换工作空间会丢失这些修改。确定继续？", "切换", func() {
 			a.doSwitchWorkspace(id)
 		})
 		return
@@ -2503,7 +2572,7 @@ func (a *app) switchWorkspace(id string) {
 func (a *app) doSwitchWorkspace(id string) {
 	info, err := a.reg.Switch(id)
 	if err != nil {
-		a.errMsg = "切换工作空间失败：" + err.Error()
+		a.errMsg = "无法切换工作空间：" + err.Error()
 		return
 	}
 	a.st, a.info = a.reg.Active()
@@ -2514,7 +2583,7 @@ func (a *app) doSwitchWorkspace(id string) {
 
 func (a *app) createWorkspace(name string) {
 	if a.isDirty() {
-		a.askConfirm("当前请求有未保存的修改，新建工作空间会切换并丢失这些修改。确定继续？", func() {
+		a.askConfirm("当前请求有未保存的修改，新建工作空间会切换并丢失这些修改。确定继续？", "继续", func() {
 			a.doCreateWorkspace(name)
 		})
 		return
@@ -2525,7 +2594,7 @@ func (a *app) createWorkspace(name string) {
 func (a *app) doCreateWorkspace(name string) {
 	info, err := a.reg.Create(name)
 	if err != nil {
-		a.errMsg = "新建工作空间失败：" + err.Error()
+		a.errMsg = "无法新建工作空间：" + err.Error()
 		return
 	}
 	a.st, a.info = a.reg.Active()
@@ -2536,7 +2605,7 @@ func (a *app) doCreateWorkspace(name string) {
 
 func (a *app) renameWorkspace(name string) {
 	if _, err := a.reg.Rename(a.info.ID, name); err != nil {
-		a.errMsg = "重命名工作空间失败：" + err.Error()
+		a.errMsg = "无法重命名工作空间：" + err.Error()
 		return
 	}
 	a.info = a.reg.CurrentInfo()
@@ -2548,9 +2617,9 @@ func (a *app) deleteWorkspace() {
 	if a.isDirty() {
 		text += "\n当前请求的未保存修改也会丢失。"
 	}
-	a.askConfirm(text, func() {
+	a.askConfirm(text, "删除", func() {
 		if err := a.reg.Delete(a.info.ID); err != nil {
-			a.errMsg = "删除工作空间失败：" + err.Error()
+			a.errMsg = "无法删除工作空间：" + err.Error()
 			return
 		}
 		a.st, a.info = a.reg.Active()
@@ -2570,11 +2639,11 @@ func (a *app) exportWorkspace(path string) {
 	}
 	data, err := json.MarshalIndent(projects, "", "  ")
 	if err != nil {
-		a.errMsg = "导出失败：" + err.Error()
+		a.errMsg = "无法导出：" + err.Error()
 		return
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		a.errMsg = "写出文件失败：" + err.Error()
+		a.errMsg = "无法写出文件：" + err.Error()
 		return
 	}
 	a.statusMsg = "已导出工作空间：" + filepath.Base(path)
@@ -2583,7 +2652,7 @@ func (a *app) exportWorkspace(path string) {
 // importWorkspaceNamed imports with an explicit workspace name.
 func (a *app) importWorkspaceNamed(path, name string) {
 	if a.isDirty() {
-		a.askConfirm("当前请求有未保存的修改，导入工作空间会切换并丢失这些修改。确定继续？", func() {
+		a.askConfirm("当前请求有未保存的修改，导入工作空间会切换并丢失这些修改。确定继续？", "导入", func() {
 			a.doImportWorkspace(path, name)
 		})
 		return
@@ -2594,7 +2663,7 @@ func (a *app) importWorkspaceNamed(path, name string) {
 func (a *app) doImportWorkspace(path, name string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		a.errMsg = "读取文件失败：" + err.Error()
+		a.errMsg = "无法读取文件：" + err.Error()
 		return
 	}
 	var projects []model.Project
@@ -2606,7 +2675,7 @@ func (a *app) doImportWorkspace(path, name string) {
 		name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	}
 	if _, err := a.reg.Import(name, projects); err != nil {
-		a.errMsg = "导入工作空间失败：" + err.Error()
+		a.errMsg = "无法导入工作空间：" + err.Error()
 		return
 	}
 	a.st, a.info = a.reg.Active()

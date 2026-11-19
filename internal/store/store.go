@@ -772,6 +772,27 @@ func (s *Store) UpdateProjectCall(projectID string, call model.Call) error {
 	})
 }
 
+// MoveProjectCall moves a project-level request into folderID, "" being the
+// project root, keeping its other fields.
+func (s *Store) MoveProjectCall(projectID, callID, folderID string) error {
+	return s.commit(func(list []model.Project) ([]model.Project, error) {
+		i := indexOfProject(list, projectID)
+		if i < 0 {
+			return nil, ErrNotFound
+		}
+		if folderID != "" && !hasGroup(list[i].Groups, folderID) {
+			return nil, ErrNotFound
+		}
+		for ci := range list[i].Calls {
+			if list[i].Calls[ci].ID == callID {
+				list[i].Calls[ci].FolderID = folderID
+				return list, nil
+			}
+		}
+		return nil, ErrNotFound
+	})
+}
+
 // UpdateProjectCallResponse stores (or clears) one project-level request's
 // saved response.
 func (s *Store) UpdateProjectCallResponse(projectID, callID string, resp *model.SavedResponse) error {

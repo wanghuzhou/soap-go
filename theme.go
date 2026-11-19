@@ -118,7 +118,7 @@ func newLightTheme() *ui.Theme {
 	t.Border = ui.Hex("#e1e6ef")
 
 	t.Text = ui.Hex("#171c27")
-	t.TextMuted = ui.Hex("#667085")
+	t.TextMuted = ui.Hex("#5a6579")
 
 	t.Accent = ui.Hex("#5b5ef0")
 	t.AccentHover = ui.Hex("#7175f5")

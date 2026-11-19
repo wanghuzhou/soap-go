@@ -17,20 +17,24 @@ import (
 // Icons drawn as SVG, so the chrome does not fall back to the look of a
 // platform button. They take the text color of their element.
 var (
-	iconSliders  = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`))
-	iconCode     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`))
-	iconInfo     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><line x1="12" y1="7.5" x2="12" y2="7.6"/></svg>`))
-	iconMore     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>`))
-	iconSplitV   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 12h17"/></svg>`))
-	iconSplitH   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M12 4.5v15"/></svg>`))
-	iconPlus     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`))
-	iconCopy     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>`))
-	iconClose    = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`))
-	iconSun      = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2M12 19.4v2M2.6 12h2M19.4 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>`))
-	iconMoon     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>`))
-	iconSettings = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`))
-	iconEye      = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`))
-	iconEyeOff   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1"/><path d="M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a10.8 10.8 0 0 0 4.4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>`))
+	iconSliders      = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`))
+	iconCode         = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`))
+	iconInfo         = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><line x1="12" y1="7.5" x2="12" y2="7.6"/></svg>`))
+	iconMore         = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>`))
+	iconSplitV       = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 12h17"/></svg>`))
+	iconSplitH       = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M12 4.5v15"/></svg>`))
+	iconPlus         = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`))
+	iconCopy         = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>`))
+	iconClose        = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`))
+	iconFolder       = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`))
+	iconFolderOpen   = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/></svg>`))
+	iconChevronRight = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>`))
+	iconChevronDown  = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`))
+	iconSun          = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2M12 19.4v2M2.6 12h2M19.4 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>`))
+	iconMoon         = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>`))
+	iconSettings     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`))
+	iconEye          = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`))
+	iconEyeOff       = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1"/><path d="M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a10.8 10.8 0 0 0 4.4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>`))
 )
 
 // ---- view ----
@@ -66,6 +70,7 @@ func (a *app) view(c *ui.Context) {
 		a.treeModal(c)
 		a.confirmModal(c)
 		a.settingsModal(c)
+		a.helpModal(c)
 	})
 	a.maybeSaveUIState()
 }
@@ -210,10 +215,19 @@ func (a *app) sidebar(c *ui.Context) {
 						a.saveProjectXML()
 					}
 				}
+				m.Separator()
+				if m.Item("快捷键…").Chosen() {
+					a.helpOpen = true
+				}
 			})
 		})
-		ui.Row(c).Padding(0, 12, 8, 12).Children(func() {
-			ui.TextInput(c, &a.search).Placeholder("搜索接口").Grow(1).Ref(&a.searchRef)
+		ui.Row(c).Padding(0, 12, 8, 12).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.TextInput(c, &a.search).Placeholder("搜索接口").Grow(1).Ref(&a.searchRef).
+				Label("搜索接口").
+				OnShortcut(0, ui.KeyEscape, func() { a.search = "" })
+			if a.search != "" {
+				a.closeIconButton(c, 20, "清空搜索", func() { a.search = "" })
+			}
 		})
 		ui.Scroll(c).Grow(1).Padding(4, 6, 6).Children(func() {
 			items := a.treeItems()
@@ -224,11 +238,22 @@ func (a *app) sidebar(c *ui.Context) {
 				})
 				return
 			}
+			matched := 0
 			for _, it := range items {
 				if a.search != "" && !strings.Contains(strings.ToLower(it.label), strings.ToLower(a.search)) {
 					continue
 				}
 				a.treeRow(c, it)
+				matched++
+			}
+			if matched == 0 && a.search != "" {
+				ui.Column(c).Padding(16).Gap(8).Children(func() {
+					ui.Text(c, "没有匹配的接口").FontSize(a.us(12.5)).Bold()
+					ui.Text(c, "换个关键词，或清空搜索查看全部。").FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
+					if a.plainButton(c, "清空搜索") {
+						a.search = ""
+					}
+				})
 			}
 		})
 	})
@@ -246,6 +271,12 @@ type treeItem struct {
 	hasChildren   bool
 	expanded      bool
 	status        int
+}
+
+// callDrag is the value a request row carries while dragged onto a folder or a
+// project row, to move it there.
+type callDrag struct {
+	projectID, callID string
 }
 
 // sourceLabel is the short badge shown next to a project name.
@@ -380,18 +411,14 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 	case !editing && row.Hovered():
 		row = row.Background(t.SurfaceHover).Radius(6)
 	}
-	row.Children(func() {
+	row = row.Children(func() {
 		if selected {
 			ui.Column(c).Width(2).Height(15).Background(t.Accent).Radius(1)
 		} else {
 			ui.Text(c, "").Width(2)
 		}
 		if it.hasChildren {
-			caret := "▸"
-			if it.expanded {
-				caret = "▾"
-			}
-			box := ui.Row(c).Width(18).Height(18).Center().Justify(ui.Center).Radius(4).
+			box := ui.Row(c).Width(20).Height(20).Center().Justify(ui.Center).Radius(4).
 				Tooltip("展开/收起")
 			if !editing {
 				box = box.Cursor(ui.CursorPointer).OnClick(func() {
@@ -402,15 +429,21 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 				})
 			}
 			box.Children(func() {
-				ui.Text(c, caret).FontSize(a.us(9.5)).TextColor(t.TextMuted)
+				chev := iconChevronRight
+				if it.expanded {
+					chev = iconChevronDown
+				}
+				ui.Icon(c, chev).FontSize(a.us(11)).TextColor(t.TextMuted)
 			})
 		} else {
-			ui.Text(c, "").Width(18)
+			ui.Text(c, "").Width(20)
 		}
 		if it.kind == "call" {
 			ui.Text(c, it.method).FontSize(a.us(9)).Bold().TextColor(t.Accent).Width(42)
+		} else if icon := kindIcon(it.kind, it.expanded); icon != nil {
+			ui.Icon(c, icon).FontSize(a.us(15)).TextColor(kindColor(t, it.kind)).Width(16)
 		} else {
-			ui.Text(c, kindGlyph(it.kind)).FontSize(a.us(11)).TextColor(kindColor(t, it.kind)).Width(14)
+			ui.Text(c, kindGlyph(it.kind)).FontSize(a.us(11)).TextColor(kindColor(t, it.kind)).Width(16)
 		}
 		if editing {
 			inp := ui.TextInput(c, &a.renameInput).Grow(1).MinWidth(0).Ref(&a.renameRef).
@@ -445,6 +478,21 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			ui.Text(c, it.badge).FontSize(a.us(9.5)).TextColor(t.TextMuted).Shrink(0)
 		}
 	})
+	// A native request row drags to a folder or to its project (the root);
+	// both take it, and the folder under the pointer lights up.
+	if it.kind == "call" && it.cid != "" && it.sid == "" {
+		row = row.Drag(callDrag{projectID: it.pid, callID: it.cid}).
+			Tooltip("拖动可移动到其他目录")
+	}
+	if it.kind == "project" || it.kind == "group" {
+		folderID := it.gid // "" on a project row means the project root
+		if v, over := ui.DragOver[callDrag](row); over && v.projectID == it.pid {
+			row = row.Background(t.Accent.Alpha(0.22)).Radius(6)
+		}
+		if v, ok := ui.Drop[callDrag](row); ok && v.projectID == it.pid {
+			a.moveProjectCall(v.projectID, v.callID, folderID)
+		}
+	}
 }
 
 // treeContextMenu is the right-click menu of a tree row: the create/rename/
@@ -618,7 +666,12 @@ func (a *app) main(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).FillHeight().Background(t.Background).Children(func() {
 		a.tabStrip(c)
+		if a.emptyWorkbench() {
+			a.emptyWorkbenchPanel(c)
+			return
+		}
 		a.urlBar(c)
+		a.errorBanner(c)
 		if a.splitSide == 1 {
 			ui.SplitPercent(c, &a.splitH, func() {
 				a.requestPanel(c)
@@ -683,7 +736,7 @@ func (a *app) tabStrip(c *ui.Context) {
 							Tooltip("有未保存的修改")
 					}
 				})
-				closeBox := ui.Row(c).Width(20).Height(20).Center().Justify(ui.Center).Radius(10).
+				closeBox := ui.Row(c).Width(24).Height(24).Center().Justify(ui.Center).Radius(12).
 					Cursor(ui.CursorPointer).Label("关闭标签").Focusable().
 					Transition(ui.ElementTransition{Duration: 100 * time.Millisecond, Colors: true})
 				closeHovered := closeBox.Hovered()
@@ -707,6 +760,25 @@ func (a *app) tabStrip(c *ui.Context) {
 	ui.Divider(c)
 }
 
+// emptyWorkbenchPanel guides a user with nothing open to their next step.
+func (a *app) emptyWorkbenchPanel(c *ui.Context) {
+	t := c.Theme()
+	ui.Column(c).Grow(1).Center().Justify(ui.Center).Gap(10).Children(func() {
+		ui.Text(c, "开始使用 soap-go").FontSize(a.us(16)).Bold().TextColor(t.Text)
+		ui.Text(c, "新建项目，或导入 SoapUI / WSDL 定义；"+
+			"打开请求后，这里会显示请求与响应。").
+			FontSize(a.us(11.5)).TextColor(t.TextMuted).Wrap()
+		ui.Row(c).Gap(8).Children(func() {
+			if ui.PrimaryButton(c, "新建项目").Clicked() {
+				a.newProjectOpen, a.nameInput = true, ""
+			}
+			if ui.Button(c, "导入…").Clicked() {
+				a.importOpen, a.importKind = true, 0
+			}
+		})
+	})
+}
+
 func (a *app) urlBar(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Shrink(0).Padding(10, 14).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -725,7 +797,7 @@ func (a *app) urlBar(c *ui.Context) {
 				}
 			}).BorderWidth(0)
 		}
-		ui.TextInput(c, &a.endpoint).Placeholder("http://host/api/path").Grow(1).OnSubmit(func() { a.sendRequest() })
+		ui.TextInput(c, &a.endpoint).Placeholder("http://host/api/path").Grow(1).Label("请求地址").OnSubmit(func() { a.sendRequest() })
 		if a.sending {
 			if ui.PrimaryButton(c, "取消  ■").Clicked() {
 				a.cancelSend()
@@ -866,6 +938,7 @@ func (a *app) binaryBodyPanel(c *ui.Context) {
 
 // formBodyPanel edits urlencoded / multipart name-value pairs.
 func (a *app) formBodyPanel(c *ui.Context) {
+	t := c.Theme()
 	ui.Column(c).Grow(1).Gap(8).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "字段").FontSize(a.us(11.5)).Bold()
@@ -875,12 +948,21 @@ func (a *app) formBodyPanel(c *ui.Context) {
 			}
 		})
 		ui.Divider(c)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "字段名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
+			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
+			ui.Text(c, "").Width(24)
+		})
+		if a.bodyType == model.BodyMultipart {
+			ui.Text(c, "多部分表单目前只支持文本字段；上传文件请改用“二进制文件”类型。").
+				FontSize(a.us(10)).TextColor(t.TextMuted).Wrap()
+		}
 		for i := range a.bodyFields {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200)
-				ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1)
-				a.closeIconButton(c, 20, "删除该字段", func() {
+				ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200).Label("字段名")
+				ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1).Label("字段值")
+				a.closeIconButton(c, 24, "删除该字段", func() {
 					if i >= 0 && i < len(a.bodyFields) {
 						a.bodyFields = append(a.bodyFields[:i], a.bodyFields[i+1:]...)
 					}
@@ -987,7 +1069,7 @@ func (a *app) headersPanel(c *ui.Context) {
 					if ph == "" {
 						ph = "application/json"
 					}
-					ui.TextInput(c, &a.contentType).Placeholder(ph).Grow(1)
+					ui.TextInput(c, &a.contentType).Placeholder(ph).Grow(1).Label("Content-Type")
 				})
 			}
 		}
@@ -1007,16 +1089,21 @@ func (a *app) headersPanel(c *ui.Context) {
 		}
 
 		ui.Text(c, "样例头").FontSize(a.us(10.5)).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "名称").FontSize(a.us(10)).TextColor(t.TextMuted).Width(190)
+			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
+			ui.Text(c, "").Width(24)
+		})
 		for i := range a.headers {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.TextInput(c, &a.headers[i].Name).Placeholder("Header-Name").Width(190)
+				ui.TextInput(c, &a.headers[i].Name).Placeholder("Header-Name").Width(190).Label("请求头名称")
 				if a.maskSecrets && isSensitiveName(a.headers[i].Name) {
 					ui.Text(c, "••••••（已遮蔽）").FontSize(a.us(11)).TextColor(t.TextMuted).Grow(1)
 				} else {
-					ui.TextInput(c, &a.headers[i].Value).Placeholder("值").Grow(1)
+					ui.TextInput(c, &a.headers[i].Value).Placeholder("值").Grow(1).Label("请求头值")
 				}
-				a.closeIconButton(c, 20, "删除该请求头", func() {
+				a.closeIconButton(c, 24, "删除该请求头", func() {
 					if i >= 0 && i < len(a.headers) {
 						a.headers = append(a.headers[:i], a.headers[i+1:]...)
 					}
@@ -1049,12 +1136,17 @@ func (a *app) queryPanel(c *ui.Context) {
 		ui.Text(c, "查询参数与上方 URL 查询串双向同步。").
 			FontSize(a.us(10.5)).TextColor(t.TextMuted)
 		ui.Divider(c)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "参数名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
+			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
+			ui.Text(c, "").Width(24)
+		})
 		for i := range a.queryRows {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.TextInput(c, &a.queryRows[i].Key).Placeholder("参数名").Width(200)
-				ui.TextInput(c, &a.queryRows[i].Value).Placeholder("值").Grow(1)
-				a.closeIconButton(c, 20, "删除该参数", func() {
+				ui.TextInput(c, &a.queryRows[i].Key).Placeholder("参数名").Width(200).Label("参数名")
+				ui.TextInput(c, &a.queryRows[i].Value).Placeholder("值").Grow(1).Label("参数值")
+				a.closeIconButton(c, 24, "删除该参数", func() {
 					if i >= 0 && i < len(a.queryRows) {
 						a.queryRows = append(a.queryRows[:i], a.queryRows[i+1:]...)
 					}
@@ -1173,7 +1265,7 @@ func (a *app) responsePanel(c *ui.Context) {
 		ui.Divider(c)
 		ui.Row(c).Shrink(0).Padding(6, 14).Gap(12).AlignItems(ui.Center).Children(func() {
 			if a.hasResp && a.resp.Error != "" {
-				ui.Text(c, "发送失败："+a.resp.Error).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
+				ui.Text(c, "无法发送请求："+a.resp.Error).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
 			} else if a.hasResp && a.resp.Error == "" {
 				col := t.Success
 				if a.resp.Status >= 400 {
@@ -1211,6 +1303,21 @@ func (a *app) responsePanel(c *ui.Context) {
 	})
 }
 
+// errorBanner shows the latest error where the work happens, above the
+// request and response, instead of only in the status bar.
+func (a *app) errorBanner(c *ui.Context) {
+	if a.errMsg == "" {
+		return
+	}
+	t := c.Theme()
+	ui.Row(c).Shrink(0).Padding(6, 12).Gap(8).AlignItems(ui.Center).
+		Background(t.Danger.Alpha(0.12)).Children(func() {
+		ui.Text(c, "⚠").FontSize(a.us(11)).TextColor(t.Danger).Shrink(0)
+		ui.Text(c, a.errMsg).FontSize(a.us(11)).TextColor(t.Danger).Grow(1).Wrap()
+		a.closeIconButton(c, 20, "关闭错误提示", func() { a.errMsg = "" })
+	})
+}
+
 func (a *app) statusBar(c *ui.Context) {
 	t := c.Theme()
 	ui.Divider(c)
@@ -1221,9 +1328,7 @@ func (a *app) statusBar(c *ui.Context) {
 		ui.Text(c, "·").FontSize(a.us(10.5)).TextColor(t.Border)
 		ui.Text(c, "UTF-8").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 		ui.Spacer(c)
-		if a.errMsg != "" {
-			ui.Text(c, a.errMsg).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
-		} else if a.statusMsg != "" {
+		if a.statusMsg != "" {
 			ui.Text(c, a.statusMsg).FontSize(a.us(10.5)).TextColor(t.Success).SingleLine()
 		}
 		ui.Text(c, fmt.Sprintf("%d 个项目", len(a.projects))).FontSize(a.us(10.5)).TextColor(t.TextMuted)
@@ -1409,7 +1514,7 @@ func (a *app) newProjectModal(c *ui.Context) {
 				if ui.Button(c, "取消").Clicked() {
 					a.newProjectOpen = false
 				}
-				if ui.PrimaryButton(c, "确定").Clicked() {
+				if ui.PrimaryButton(c, "创建").Clicked() {
 					a.createProject(a.nameInput)
 					a.newProjectOpen = false
 				}
@@ -1435,11 +1540,17 @@ func (a *app) workspaceModal(c *ui.Context) {
 			})
 			ui.Text(c, "名称").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 			ui.TextInput(c, &a.nameInput).Placeholder("工作空间名称").Grow(1)
+			commit := "创建"
+			if a.wsKind == 1 {
+				commit = "重命名"
+			} else if a.wsKind == 2 {
+				commit = "导入"
+			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
 					a.wsOpen = false
 				}
-				if ui.PrimaryButton(c, "确定").Clicked() {
+				if ui.PrimaryButton(c, commit).Clicked() {
 					switch a.wsKind {
 					case 1:
 						a.renameWorkspace(a.nameInput)
@@ -1478,7 +1589,7 @@ func (a *app) treeModal(c *ui.Context) {
 				if ui.Button(c, "取消").Clicked() {
 					a.treeModalOpen = false
 				}
-				if ui.PrimaryButton(c, "确定").Clicked() {
+				if ui.PrimaryButton(c, "创建").Clicked() {
 					switch a.treeModalKind {
 					case 1:
 						a.addService(a.nameInput)
@@ -1501,12 +1612,16 @@ func (a *app) confirmModal(c *ui.Context) {
 		ui.Column(c).Width(440).Gap(14).Children(func() {
 			ui.Text(c, "请确认").FontSize(a.us(16)).Bold()
 			ui.Text(c, a.confirmText).FontSize(a.us(11.5)).TextColor(t.TextMuted).Wrap()
+			label := a.confirmLabel
+			if label == "" {
+				label = "确定"
+			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
 					a.confirmOpen = false
 					a.confirmAction = nil
 				}
-				if ui.PrimaryButton(c, "确定").Clicked() {
+				if ui.PrimaryButton(c, label).Clicked() {
 					a.confirmOpen = false
 					fn := a.confirmAction
 					a.confirmAction = nil
@@ -1520,6 +1635,42 @@ func (a *app) confirmModal(c *ui.Context) {
 }
 
 // ---- chrome ----
+
+// shortcutHelp lists the window-wide keyboard shortcuts for the help dialog.
+var shortcutHelp = []struct{ keys, desc string }{
+	{"Ctrl/Cmd + Enter", "发送当前请求"},
+	{"Ctrl/Cmd + S", "保存当前请求"},
+	{"Ctrl/Cmd + Shift + F", "格式化请求报文"},
+	{"Ctrl/Cmd + K", "聚焦左侧搜索框"},
+	{"Esc", "关闭弹窗或清空搜索"},
+	{"Tab / Shift+Tab", "在可聚焦控件间移动"},
+	{"Enter / Space", "激活当前聚焦的按钮"},
+}
+
+// helpModal lists the keyboard shortcuts, opened from the 更多 menu.
+func (a *app) helpModal(c *ui.Context) {
+	t := c.Theme()
+	ui.Modal(c, &a.helpOpen, func() {
+		ui.Column(c).Width(520).Gap(12).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "快捷键").FontSize(a.us(17)).Bold()
+				ui.Spacer(c)
+				a.closeIconButton(c, 24, "关闭快捷键", func() { a.helpOpen = false })
+			})
+			ui.Text(c, "以下快捷键在本窗口内生效。").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+			ui.Divider(c)
+			for _, s := range shortcutHelp {
+				s := s
+				ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, s.keys).FontSize(a.us(11.5)).Bold().TextColor(t.Accent).Width(170)
+					ui.Text(c, s.desc).FontSize(a.us(11.5)).TextColor(t.Text)
+				})
+			}
+			ui.Divider(c)
+			ui.Text(c, "soap-go "+appVersion).FontSize(a.us(10.5)).TextColor(t.TextMuted)
+		})
+	})
+}
 
 // settingsModal is a two-pane settings window: a navigation list on the left
 // and the chosen section's rows on the right, after a reference the user
@@ -1949,6 +2100,20 @@ func isSensitiveName(name string) bool {
 }
 
 // ---- look helpers ----
+
+// kindIcon returns the folder icon a tree row draws instead of a glyph, open
+// when expanded and closed when not: projects and native folders read as
+// directories, the way a file explorer shows them.
+func kindIcon(kind string, expanded bool) *ui.SVG {
+	switch kind {
+	case "project", "group":
+		if expanded {
+			return iconFolderOpen
+		}
+		return iconFolder
+	}
+	return nil
+}
 
 func kindGlyph(kind string) string {
 	switch kind {

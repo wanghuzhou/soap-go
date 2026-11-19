@@ -678,6 +678,219 @@ func TestSendContextCancel(t *testing.T) {
 	}
 }
 
+// TestDragCallToFolder drives the real view: pressing a request row, dragging
+// it over a folder and releasing moves the request into that folder.
+func TestDragCallToFolder(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	ga, _ := a.st.AddGroup(p.ID, "A", "")
+	gb, _ := a.st.AddGroup(p.ID, "B", "")
+	call, _ := a.st.AddProjectCall(p.ID, ga.ID, model.Call{Title: "R", Method: "GET", BodyType: model.BodyNone})
+	a.reload()
+	a.expanded[p.ID] = true
+	a.expanded[ga.ID] = true
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	src, ok := tt.Find("R")
+	if !ok {
+		t.Fatal("request row not found")
+	}
+	dst, ok := tt.Find("B")
+	if !ok {
+		t.Fatal("target folder not found")
+	}
+	sx, sy := src.X+src.W/2, src.Y+src.H/2
+	dx, dy := dst.X+dst.W/2, dst.Y+dst.H/2
+	tt.Press(sx, sy)
+	for i := 1; i <= 6; i++ {
+		f := float32(i) / 6
+		tt.Move(sx+(dx-sx)*f, sy+(dy-sy)*f)
+		tt.Frame()
+	}
+	tt.Release(dx, dy)
+	tt.Frame()
+
+	got, _ := a.st.Get(p.ID)
+	if got.Calls[0].ID != call.ID || got.Calls[0].FolderID != gb.ID {
+		t.Fatalf("after drag FolderID = %q, want %q", got.Calls[0].FolderID, gb.ID)
+	}
+}
+
+// TestMoveProjectCall checks a request can be moved between folders and back
+// to the project root through the app method the drag uses.
+func TestMoveProjectCall(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	ga, _ := a.st.AddGroup(p.ID, "A", "")
+	gb, _ := a.st.AddGroup(p.ID, "B", "")
+	call, _ := a.st.AddProjectCall(p.ID, ga.ID, model.Call{Title: "R", Method: "GET", BodyType: model.BodyNone})
+	a.reload()
+
+	a.moveProjectCall(p.ID, call.ID, gb.ID)
+	got, _ := a.st.Get(p.ID)
+	if got.Calls[0].FolderID != gb.ID {
+		t.Fatalf("after move FolderID = %q, want %q", got.Calls[0].FolderID, gb.ID)
+	}
+	a.moveProjectCall(p.ID, call.ID, "")
+	got, _ = a.st.Get(p.ID)
+	if got.Calls[0].FolderID != "" {
+		t.Fatalf("after move to root FolderID = %q", got.Calls[0].FolderID)
+	}
+	a.moveProjectCall(p.ID, call.ID, "missing")
+	if a.errMsg == "" {
+		t.Fatal("moving into a missing folder should report an error")
+	}
+}
+
+// TestKindIconFolders checks projects and native folders draw distinct open
+// and closed folder icons, while other nodes keep their glyphs.
+func TestKindIconFolders(t *testing.T) {
+	for _, kind := range []string{"project", "group"} {
+		closed := kindIcon(kind, false)
+		open := kindIcon(kind, true)
+		if closed == nil || open == nil {
+			t.Fatalf("%s has no folder icon", kind)
+		}
+		if closed == open {
+			t.Fatalf("%s uses the same icon open and closed", kind)
+		}
+	}
+	if kindIcon("call", false) != nil || kindIcon("operation", true) != nil {
+		t.Fatal("non-folder nodes should keep their glyph")
+	}
+}
+
+// TestEmptyWorkbenchGuidance checks a fresh window explains how to start
+// instead of showing a blank form.
+func TestEmptyWorkbenchGuidance(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("开始使用 soap-go") {
+		t.Fatal("no empty workbench guidance")
+	}
+	if err := tt.Click("新建项目"); err != nil {
+		t.Fatalf("click 新建项目: %v", err)
+	}
+	tt.Frame()
+	if !a.newProjectOpen {
+		t.Fatal("新建项目 button did not open the dialog")
+	}
+}
+
+// TestHelpModalShowsShortcuts checks the help dialog lists the shortcuts.
+func TestHelpModalShowsShortcuts(t *testing.T) {
+	a := newTestApp(t)
+	a.helpOpen = true
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("快捷键") || !tt.HasText("Ctrl/Cmd + Enter") {
+		t.Fatal("help dialog does not list shortcuts")
+	}
+}
+
+// TestConfirmUsesSpecificLabel checks the confirmation button says what it
+// does instead of a generic 确定.
+func TestConfirmUsesSpecificLabel(t *testing.T) {
+	a := newTestApp(t)
+	a.confirmOpen = true
+	a.confirmText = "确定删除该请求？"
+	a.confirmLabel = "删除"
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if _, ok := tt.AccessByRole(ui.RoleButton, "删除"); !ok {
+		t.Fatal("confirm button does not use the specific label")
+	}
+}
+
+// TestNameValueInputsAccessible checks the name/value rows carry accessible
+// names instead of relying on disappearing placeholders alone.
+func TestNameValueInputsAccessible(t *testing.T) {
+	a, _ := newNativeCall(t)
+	a.reqKind = model.KindHTTP
+	a.headers = []headerRow{{}}
+	a.reqSection = 2
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if _, ok := tt.Access("请求头名称"); !ok {
+		t.Fatal("header name input has no accessible name")
+	}
+	if _, ok := tt.Access("请求头值"); !ok {
+		t.Fatal("header value input has no accessible name")
+	}
+
+	a.queryRows = []queryRow{{}}
+	a.reqSection = 1
+	tt.Frame()
+	if _, ok := tt.Access("参数名"); !ok {
+		t.Fatal("query key input has no accessible name")
+	}
+	if _, ok := tt.Access("参数值"); !ok {
+		t.Fatal("query value input has no accessible name")
+	}
+}
+
+// TestTreeSearchEmptyState checks that filtering to nothing explains it and
+// offers a way to clear the search.
+func TestTreeSearchEmptyState(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	a.search = "不存在的接口"
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("没有匹配的接口") {
+		t.Fatal("no empty search state")
+	}
+	if err := tt.Click("清空搜索"); err != nil {
+		t.Fatalf("click 清空搜索: %v", err)
+	}
+	tt.Frame()
+	if a.search != "" {
+		t.Fatalf("search = %q, want cleared", a.search)
+	}
+}
+
+// TestFriendlySendError checks transport errors become actionable Chinese
+// messages while unknown errors pass through unchanged.
+func TestFriendlySendError(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"dial tcp: lookup api.test: no such host", "无法解析服务器地址"},
+		{"dial tcp 127.0.0.1:80: connect: connection refused", "服务器拒绝连接"},
+		{"context deadline exceeded (Client.Timeout exceeded)", "请求超时"},
+		{"x509: certificate signed by unknown authority", "TLS 证书校验失败"},
+		{"some odd failure", "some odd failure"},
+	}
+	for _, c := range cases {
+		if got := friendlySendError(c.in); !strings.Contains(got, c.want) {
+			t.Errorf("friendlySendError(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestHasUnsavedTabs checks the quit guard sees edits and forgets them once
+// saved.
+func TestHasUnsavedTabs(t *testing.T) {
+	a, _ := newNativeCall(t)
+	if a.hasUnsavedTabs() {
+		t.Fatal("a freshly opened request is dirty")
+	}
+	a.xmlEd.Buffer.Reset(`{"a":1}`)
+	if !a.hasUnsavedTabs() {
+		t.Fatal("edited request not seen as dirty")
+	}
+	a.saveCall()
+	if a.hasUnsavedTabs() {
+		t.Fatal("saved request still seen as dirty")
+	}
+}
+
 // TestKeyboardAccessibleWidgets checks the custom clickable rows are in the
 // accessibility tree as focusable controls with names, so keyboard and screen
 // reader users can reach the tabs, tree rows and close button.
