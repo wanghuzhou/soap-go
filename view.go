@@ -217,7 +217,7 @@ func (a *app) sidebar(c *ui.Context) {
 				Label("搜索接口").
 				OnShortcut(0, ui.KeyEscape, func() { a.search = "" })
 			if a.search != "" {
-				a.closeIconButton(c, 18, "清空搜索", func() { a.search = "" })
+				a.closeIconButton(c, 20, "清空搜索", func() { a.search = "" })
 			}
 		})
 		ui.Scroll(c).Grow(1).Padding(4, 6, 6).Children(func() {
@@ -407,7 +407,7 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 			if it.expanded {
 				caret = "▾"
 			}
-			box := ui.Row(c).Width(18).Height(18).Center().Justify(ui.Center).Radius(4).
+			box := ui.Row(c).Width(20).Height(20).Center().Justify(ui.Center).Radius(4).
 				Tooltip("展开/收起")
 			if !editing {
 				box = box.Cursor(ui.CursorPointer).OnClick(func() {
@@ -421,7 +421,7 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 				ui.Text(c, caret).FontSize(a.us(9.5)).TextColor(t.TextMuted)
 			})
 		} else {
-			ui.Text(c, "").Width(18)
+			ui.Text(c, "").Width(20)
 		}
 		if it.kind == "call" {
 			ui.Text(c, it.method).FontSize(a.us(9)).Bold().TextColor(t.Accent).Width(42)
@@ -700,7 +700,7 @@ func (a *app) tabStrip(c *ui.Context) {
 							Tooltip("有未保存的修改")
 					}
 				})
-				closeBox := ui.Row(c).Width(20).Height(20).Center().Justify(ui.Center).Radius(10).
+				closeBox := ui.Row(c).Width(24).Height(24).Center().Justify(ui.Center).Radius(12).
 					Cursor(ui.CursorPointer).Label("关闭标签").Focusable().
 					Transition(ui.ElementTransition{Duration: 100 * time.Millisecond, Colors: true})
 				closeHovered := closeBox.Hovered()
@@ -896,14 +896,14 @@ func (a *app) formBodyPanel(c *ui.Context) {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "字段名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
 			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
-			ui.Text(c, "").Width(20)
+			ui.Text(c, "").Width(24)
 		})
 		for i := range a.bodyFields {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200).Label("字段名")
 				ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1).Label("字段值")
-				a.closeIconButton(c, 20, "删除该字段", func() {
+				a.closeIconButton(c, 24, "删除该字段", func() {
 					if i >= 0 && i < len(a.bodyFields) {
 						a.bodyFields = append(a.bodyFields[:i], a.bodyFields[i+1:]...)
 					}
@@ -1033,7 +1033,7 @@ func (a *app) headersPanel(c *ui.Context) {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "名称").FontSize(a.us(10)).TextColor(t.TextMuted).Width(190)
 			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
-			ui.Text(c, "").Width(20)
+			ui.Text(c, "").Width(24)
 		})
 		for i := range a.headers {
 			i := i
@@ -1044,7 +1044,7 @@ func (a *app) headersPanel(c *ui.Context) {
 				} else {
 					ui.TextInput(c, &a.headers[i].Value).Placeholder("值").Grow(1).Label("请求头值")
 				}
-				a.closeIconButton(c, 20, "删除该请求头", func() {
+				a.closeIconButton(c, 24, "删除该请求头", func() {
 					if i >= 0 && i < len(a.headers) {
 						a.headers = append(a.headers[:i], a.headers[i+1:]...)
 					}
@@ -1080,14 +1080,14 @@ func (a *app) queryPanel(c *ui.Context) {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "参数名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
 			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
-			ui.Text(c, "").Width(20)
+			ui.Text(c, "").Width(24)
 		})
 		for i := range a.queryRows {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.TextInput(c, &a.queryRows[i].Key).Placeholder("参数名").Width(200).Label("参数名")
 				ui.TextInput(c, &a.queryRows[i].Value).Placeholder("值").Grow(1).Label("参数值")
-				a.closeIconButton(c, 20, "删除该参数", func() {
+				a.closeIconButton(c, 24, "删除该参数", func() {
 					if i >= 0 && i < len(a.queryRows) {
 						a.queryRows = append(a.queryRows[:i], a.queryRows[i+1:]...)
 					}
@@ -1255,7 +1255,7 @@ func (a *app) errorBanner(c *ui.Context) {
 		Background(t.Danger.Alpha(0.12)).Children(func() {
 			ui.Text(c, "⚠").FontSize(a.us(11)).TextColor(t.Danger).Shrink(0)
 			ui.Text(c, a.errMsg).FontSize(a.us(11)).TextColor(t.Danger).Grow(1).Wrap()
-			a.closeIconButton(c, 18, "关闭错误提示", func() { a.errMsg = "" })
+			a.closeIconButton(c, 20, "关闭错误提示", func() { a.errMsg = "" })
 		})
 }
 
