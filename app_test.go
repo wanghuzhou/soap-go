@@ -783,14 +783,15 @@ func TestEmptyWorkbenchGuidance(t *testing.T) {
 	}
 }
 
-// TestHelpModalShowsShortcuts checks the help dialog lists the shortcuts.
-func TestHelpModalShowsShortcuts(t *testing.T) {
+// TestShortcutHelpInSettings checks the shortcuts live in the settings dialog.
+func TestShortcutHelpInSettings(t *testing.T) {
 	a := newTestApp(t)
-	a.helpOpen = true
+	a.settingsOpen = true
+	a.settingsSection = 2
 	tt := ui.NewTester(a.view, 1200, 800)
 	tt.Frame()
 	if !tt.HasText("快捷键") || !tt.HasText("Ctrl/Cmd + Enter") {
-		t.Fatal("help dialog does not list shortcuts")
+		t.Fatal("settings dialog does not list shortcuts")
 	}
 }
 

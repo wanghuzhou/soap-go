@@ -20,6 +20,7 @@ var (
 	iconSliders      = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`))
 	iconCode         = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`))
 	iconInfo         = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><line x1="12" y1="7.5" x2="12" y2="7.6"/></svg>`))
+	iconKeyboard     = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4.5" width="20" height="15" rx="2.5"/><path d="M6 8.5h.01M10 8.5h.01M14 8.5h.01M18 8.5h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7.5 15.5h9"/></svg>`))
 	iconMore         = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>`))
 	iconSplitV       = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 12h17"/></svg>`))
 	iconSplitH       = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M12 4.5v15"/></svg>`))
@@ -70,7 +71,6 @@ func (a *app) view(c *ui.Context) {
 		a.treeModal(c)
 		a.confirmModal(c)
 		a.settingsModal(c)
-		a.helpModal(c)
 	})
 	a.maybeSaveUIState()
 }
@@ -214,10 +214,6 @@ func (a *app) sidebar(c *ui.Context) {
 					if m.Item("导出 SoapUI XML…").Chosen() {
 						a.saveProjectXML()
 					}
-				}
-				m.Separator()
-				if m.Item("快捷键…").Chosen() {
-					a.helpOpen = true
 				}
 			})
 		})
@@ -1636,7 +1632,7 @@ func (a *app) confirmModal(c *ui.Context) {
 
 // ---- chrome ----
 
-// shortcutHelp lists the window-wide keyboard shortcuts for the help dialog.
+// shortcutHelp lists the window-wide keyboard shortcuts shown in settings.
 var shortcutHelp = []struct{ keys, desc string }{
 	{"Ctrl/Cmd + Enter", "发送当前请求"},
 	{"Ctrl/Cmd + S", "保存当前请求"},
@@ -1645,31 +1641,6 @@ var shortcutHelp = []struct{ keys, desc string }{
 	{"Esc", "关闭弹窗或清空搜索"},
 	{"Tab / Shift+Tab", "在可聚焦控件间移动"},
 	{"Enter / Space", "激活当前聚焦的按钮"},
-}
-
-// helpModal lists the keyboard shortcuts, opened from the 更多 menu.
-func (a *app) helpModal(c *ui.Context) {
-	t := c.Theme()
-	ui.Modal(c, &a.helpOpen, func() {
-		ui.Column(c).Width(520).Gap(12).Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "快捷键").FontSize(a.us(17)).Bold()
-				ui.Spacer(c)
-				a.closeIconButton(c, 24, "关闭快捷键", func() { a.helpOpen = false })
-			})
-			ui.Text(c, "以下快捷键在本窗口内生效。").FontSize(a.us(10.5)).TextColor(t.TextMuted)
-			ui.Divider(c)
-			for _, s := range shortcutHelp {
-				s := s
-				ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, s.keys).FontSize(a.us(11.5)).Bold().TextColor(t.Accent).Width(170)
-					ui.Text(c, s.desc).FontSize(a.us(11.5)).TextColor(t.Text)
-				})
-			}
-			ui.Divider(c)
-			ui.Text(c, "soap-go "+appVersion).FontSize(a.us(10.5)).TextColor(t.TextMuted)
-		})
-	})
 }
 
 // settingsModal is a two-pane settings window: a navigation list on the left
@@ -1700,7 +1671,8 @@ func (a *app) settingsNav(c *ui.Context) {
 		}{
 			{0, "外观", iconSliders},
 			{1, "编辑器", iconCode},
-			{2, "关于", iconInfo},
+			{2, "快捷键", iconKeyboard},
+			{3, "关于", iconInfo},
 		}
 		q := strings.ToLower(strings.TrimSpace(a.settingsQuery))
 		for _, it := range items {
@@ -1739,6 +1711,8 @@ func (a *app) settingsContent(c *ui.Context) {
 		case 1:
 			title = "编辑器"
 		case 2:
+			title = "快捷键"
+		case 3:
 			title = "关于"
 		}
 		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
@@ -1751,6 +1725,8 @@ func (a *app) settingsContent(c *ui.Context) {
 		case 1:
 			a.editorSettings(c)
 		case 2:
+			a.shortcutsSettings(c)
+		case 3:
 			a.aboutSettings(c)
 		default:
 			a.appearanceSettings(c)
@@ -1758,7 +1734,7 @@ func (a *app) settingsContent(c *ui.Context) {
 
 		ui.Spacer(c)
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			if a.settingsSection != 2 && ui.Button(c, "恢复默认").Clicked() {
+			if a.settingsSection <= 1 && ui.Button(c, "恢复默认").Clicked() {
 				a.resetFontSettings()
 				if a.settingsSection == 0 {
 					a.setAccent("")
@@ -1860,6 +1836,25 @@ func (a *app) aboutSettings(c *ui.Context) {
 			ui.Text(c, "SOAP / WSDL 接口调试桌面工具").FontSize(a.us(12.5)).TextColor(t.TextMuted)
 		})
 	})
+}
+
+// shortcutsSettings is the "快捷键" section: the window-wide keyboard shortcuts.
+func (a *app) shortcutsSettings(c *ui.Context) {
+	t := c.Theme()
+	a.settingsCard(c, func() {
+		for i, s := range shortcutHelp {
+			s := s
+			if i > 0 {
+				ui.Divider(c)
+			}
+			ui.Row(c).Padding(11, 14).Gap(12).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, s.keys).FontSize(a.us(11.5)).Bold().TextColor(t.Accent).Width(170)
+				ui.Text(c, s.desc).FontSize(a.us(11.5)).TextColor(t.Text)
+			})
+		}
+	})
+	ui.Text(c, "以下快捷键在本窗口内生效。").
+		FontSize(a.us(10.5)).TextColor(t.TextMuted)
 }
 
 // settingsCard is a rounded group of rows inside a section.
