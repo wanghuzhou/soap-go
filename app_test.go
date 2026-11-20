@@ -2259,6 +2259,32 @@ func TestTabContextMenu(t *testing.T) {
 	}
 }
 
+// TestMenusDrawnInWindow checks the app draws its popup menus in the window
+// with the theme instead of letting the system draw them, so the tab, tree and
+// text-field menus match the rest of the UI.
+func TestMenusDrawnInWindow(t *testing.T) {
+	a, _ := tabTestApp(t, 3)
+	var got ui.MenuPresentation
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.view(c)
+		got = c.MenuPresentation()
+	}, 900, 700)
+	tt.Frame()
+	if got != ui.PopoverMenus {
+		t.Fatalf("menu presentation = %d, want ui.PopoverMenus", got)
+	}
+	tt.RightClickAt(300, 62)
+	tt.Frame()
+	// A menu the system draws is not part of the window's frame, so its labels
+	// do not show in the rendered window; one drawn in the window does.
+	if !tt.HasText("关闭当前标签页") {
+		t.Fatalf("the tab menu is not drawn in the window")
+	}
+	if items := tt.Menu(); len(items) == 0 {
+		t.Fatalf("the drawn tab menu offers no items")
+	}
+}
+
 // TestCloseTabsBulk checks the close-other/left/right operations keep the right
 // tabs and move the selection to a survivor.
 func TestCloseTabsBulk(t *testing.T) {

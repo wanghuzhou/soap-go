@@ -43,6 +43,10 @@ var (
 
 func (a *app) view(c *ui.Context) {
 	c.SetTheme(a.theme())
+	// Draw popup menus in the window with the app's theme rather than letting
+	// the system draw them, so the tab, tree and text-field menus look like the
+	// rest of the UI instead of the desktop's own menus.
+	c.SetMenuPresentation(ui.PopoverMenus)
 	a.syncEditorFont()
 	// Editor shortcuts, as the browser app's: send and save.
 	c.OnWindowShortcut(ui.Ctrl, ui.KeyEnter, func() { a.sendRequest() })

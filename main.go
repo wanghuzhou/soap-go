@@ -10,6 +10,9 @@ import (
 	"os"
 
 	"github.com/egoist/mygo"
+	// Register MyGo's own strings, such as the text fields' edit menu, in
+	// Chinese, as the rest of this app's UI is written in Chinese.
+	_ "github.com/egoist/mygo/locales/zh-Hans"
 	"github.com/egoist/mygo/ui"
 
 	"soapgo/internal/applog"
