@@ -1756,11 +1756,22 @@ func (a *app) confirmModal(c *ui.Context) {
 				if ui.Button(c, "取消").Clicked() {
 					a.confirmOpen = false
 					a.confirmAction = nil
+					a.confirmAltLabel, a.confirmAltAction = "", nil
+				}
+				if a.confirmAltLabel != "" && ui.Button(c, a.confirmAltLabel).Clicked() {
+					a.confirmOpen = false
+					fn := a.confirmAltAction
+					a.confirmAction = nil
+					a.confirmAltLabel, a.confirmAltAction = "", nil
+					if fn != nil {
+						fn()
+					}
 				}
 				if ui.PrimaryButton(c, label).Clicked() {
 					a.confirmOpen = false
 					fn := a.confirmAction
 					a.confirmAction = nil
+					a.confirmAltLabel, a.confirmAltAction = "", nil
 					if fn != nil {
 						fn()
 					}

@@ -292,6 +292,10 @@ type app struct {
 	confirmText    string
 	confirmLabel   string
 	confirmAction  func()
+	// confirmAltLabel / confirmAltAction are the optional second action of the
+	// confirmation dialog (e.g. "save all" beside "quit").
+	confirmAltLabel  string
+	confirmAltAction func()
 	// Bulk edit of the multipart / urlencoded field rows, as text.
 	bulkOpen bool
 	bulkText string
@@ -1962,9 +1966,18 @@ func (a *app) dirtyKey(key string) bool {
 // askConfirm opens the confirmation dialog, whose commit button says label,
 // and runs fn if the user agrees.
 func (a *app) askConfirm(text, label string, fn func()) {
+	a.askConfirmAlt(text, label, fn, "", nil)
+}
+
+// askConfirmAlt is askConfirm with a second, optional action shown beside the
+// main one (as quit's "save all" next to "quit"), so a dialog can offer two
+// ways out of the same decision.
+func (a *app) askConfirmAlt(text, label string, fn func(), altLabel string, altFn func()) {
 	a.confirmText = text
 	a.confirmLabel = label
 	a.confirmAction = fn
+	a.confirmAltLabel = altLabel
+	a.confirmAltAction = altFn
 	a.confirmOpen = true
 }
 
@@ -1985,12 +1998,55 @@ func (a *app) hasUnsavedTabs() bool {
 	return false
 }
 
-// askQuit confirms quitting when a tab holds unsaved edits; agreeing quits.
+// askQuit confirms quitting when a tab holds unsaved edits, offering to save
+// every changed tab first.
 func (a *app) askQuit() {
-	a.askConfirm("有未保存的请求修改，退出后会丢失。确定退出？", "退出", func() {
-		a.quitting = true
-		mygo.App.Quit()
-	})
+	a.askConfirmAlt(
+		"有未保存的请求修改。可以全部保存后再退出，或直接退出丢弃这些修改。",
+		"全部保存并退出",
+		func() { a.saveAllAndQuit() },
+		"退出",
+		func() {
+			a.quitting = true
+			mygo.App.Quit()
+		},
+	)
+}
+
+// saveAllTabs saves every tab with unsaved edits. It reports false and leaves
+// errMsg set when a save fails, so the quit is aborted instead of losing data.
+func (a *app) saveAllTabs() bool {
+	for _, key := range append([]string(nil), a.tabs...) {
+		if !a.hasTabKey(key) || !a.dirtyKey(key) {
+			continue
+		}
+		if a.activeTabKey() != key {
+			pid, sid, oid, cid := splitKey(key)
+			a.openCall(pid, sid, oid, cid)
+		}
+		a.errMsg = ""
+		a.saveCall()
+		if a.errMsg != "" {
+			return false
+		}
+		// The tab's draft still holds the pre-save values; refresh it so the
+		// tab reads as clean afterwards.
+		a.drafts[key] = a.captureDraft()
+	}
+	return true
+}
+
+// saveAllAndQuit saves every changed tab, then quits. A failed save keeps the
+// app open with the error instead of dropping the changes.
+func (a *app) saveAllAndQuit() {
+	if !a.saveAllTabs() {
+		if a.errMsg == "" {
+			a.errMsg = "保存失败，已取消退出"
+		}
+		return
+	}
+	a.quitting = true
+	mygo.App.Quit()
 }
 
 // deleteService removes the selected service.

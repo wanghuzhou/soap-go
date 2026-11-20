@@ -796,6 +796,51 @@ func TestShortcutHelpInSettings(t *testing.T) {
 	}
 }
 
+// TestSaveAllTabs checks every changed tab is written, including a non-active
+// tab whose edits live in its draft.
+func TestSaveAllTabs(t *testing.T) {
+	a, keys := tabTestApp(t, 2)
+	if d := a.drafts[keys[0]]; d != nil {
+		d.endpoint = "http://changed/0"
+	} else {
+		t.Fatal("missing draft for the first tab")
+	}
+	a.endpoint = "http://changed/1"
+	if !a.saveAllTabs() {
+		t.Fatalf("saveAllTabs failed: %s", a.errMsg)
+	}
+	if a.hasUnsavedTabs() {
+		t.Fatal("tabs still dirty after save-all")
+	}
+	a.reload()
+	changed := 0
+	for _, c := range a.projects[0].Calls {
+		if strings.HasPrefix(c.Endpoint, "http://changed/") {
+			changed++
+		}
+	}
+	if changed != 2 {
+		t.Fatalf("saved endpoints changed=%d, calls=%+v", changed, a.projects[0].Calls)
+	}
+}
+
+// TestQuitDialogOffersSaveAll checks the unsaved-changes quit dialog shows both
+// "save all and quit" and the plain "quit".
+func TestQuitDialogOffersSaveAll(t *testing.T) {
+	a, keys := tabTestApp(t, 1)
+	_ = keys
+	a.endpoint = "http://dirty"
+	a.askQuit()
+	if !a.confirmOpen || a.confirmLabel != "全部保存并退出" || a.confirmAltLabel != "退出" {
+		t.Fatalf("quit dialog labels: %q / %q", a.confirmLabel, a.confirmAltLabel)
+	}
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("全部保存并退出") || !tt.HasText("退出") {
+		t.Fatal("quit dialog does not show both actions")
+	}
+}
+
 // TestConfirmUsesSpecificLabel checks the confirmation button says what it
 // does instead of a generic 确定.
 func TestConfirmUsesSpecificLabel(t *testing.T) {
