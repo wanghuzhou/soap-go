@@ -1031,7 +1031,7 @@ func (a *app) formBodyPanel(c *ui.Context) {
 func (a *app) fileFieldButton(c *ui.Context, i int) {
 	t := c.Theme()
 	path := a.bodyFields[i].Value
-	btn := ui.ButtonBase(c).Grow(1).Height(28).Padding(4, 8).Radius(6).
+	btn := ui.ButtonBase(c).Grow(1).Padding(t.Space(1.5), t.Space(2.5)).Radius(t.Radius).
 		Border(1, t.Border).Justify(ui.Start).Label("选择文件").Tooltip(path)
 	if btn.Hovered() {
 		btn = btn.Background(t.SurfaceHover)
@@ -1041,7 +1041,7 @@ func (a *app) fileFieldButton(c *ui.Context, i int) {
 		if strings.TrimSpace(path) != "" {
 			label, col = path, t.Text
 		}
-		ui.Text(c, label).FontSize(a.us(11)).TextColor(col).SingleLine()
+		ui.Text(c, label).FontSize(a.us(14)).TextColor(col).SingleLine()
 	})
 	if btn.Clicked() {
 		if picked, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
