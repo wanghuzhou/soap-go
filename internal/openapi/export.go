@@ -34,6 +34,11 @@ func Build(p model.Project) (*Document, error) {
 
 	servers := make([]Server, 0, 1)
 	seenServer := map[string]bool{}
+	// The project host is the server relative request paths are written against.
+	if host := model.NormalizeHost(p.Host); host != "" {
+		seenServer[host] = true
+		servers = append(servers, Server{URL: host})
+	}
 	tagSeen := map[string]bool{}
 	for _, call := range p.Calls {
 		if strings.TrimSpace(call.Endpoint) == "" {

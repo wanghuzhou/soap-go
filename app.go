@@ -195,6 +195,11 @@ type app struct {
 
 	projects []model.Project
 
+	// projectPage shows the selected project's overview page in the main area
+	// instead of the active request tab; hostInput is its host draft.
+	projectPage bool
+	hostInput   string
+
 	// Selection.
 	pid, sid, oid, cid string
 	// selGroup is the selected folder id in the native tree ("" when the
@@ -284,7 +289,6 @@ type app struct {
 	importProxySel string
 	exportOpen     bool
 	keepProxy      bool
-	proxyOpen      bool
 	newProjectOpen bool
 	treeModalOpen  bool
 	treeModalKind  int // 1 add service, 2 add operation
@@ -722,6 +726,8 @@ func (a *app) findCallByKey(key string) *model.Call {
 }
 
 // openFirstCall opens the first saved call so the workbench starts populated.
+// With no call anywhere, it shows the first project's page instead of a blank
+// workbench, so a project's settings stay one click away.
 func (a *app) openFirstCall() {
 	for _, p := range a.projects {
 		if len(p.Calls) > 0 {
@@ -736,6 +742,9 @@ func (a *app) openFirstCall() {
 				}
 			}
 		}
+	}
+	if len(a.projects) > 0 {
+		a.openProjectPage(a.projects[0].ID)
 	}
 }
 
@@ -831,6 +840,7 @@ func (a *app) openCall(pid, sid, oid, cid string) {
 	if a.renamingID != "" {
 		a.cancelInlineRename()
 	}
+	a.projectPage = false
 	key := callKey(pid, sid, oid, cid)
 	if prev := a.activeTabKey(); prev != "" {
 		if prev == key {
@@ -1403,6 +1413,32 @@ func (a *app) callMethod(key string) string {
 // selectedProject returns the project of the selection, if any.
 func (a *app) selectedProject() *model.Project {
 	return a.findProject(a.pid)
+}
+
+// selectedProjectHost returns the selected project's host, "" when none.
+func (a *app) selectedProjectHost() string {
+	if p := a.selectedProject(); p != nil {
+		return p.Host
+	}
+	return ""
+}
+
+// projectCounts reports the size of a project for its page: folders, requests
+// (native calls plus operation samples), services and operations.
+func projectCounts(p *model.Project) (groups, calls, services, ops int) {
+	if p == nil {
+		return
+	}
+	groups = len(p.Groups)
+	calls = len(p.Calls)
+	for _, s := range p.Services {
+		services++
+		for _, o := range s.Operations {
+			ops++
+			calls += len(o.Calls)
+		}
+	}
+	return
 }
 
 // startInlineRename turns the tree node id into an input holding name, focused
@@ -2106,6 +2142,8 @@ func (a *app) clearEditor() {
 // clearSelection resets the editor and closes every tab, for actions that
 // replace the active workspace.
 func (a *app) clearSelection() {
+	a.projectPage = false
+	a.hostInput = ""
 	a.clearEditor()
 	a.tabs = nil
 	a.active = -1
@@ -2157,8 +2195,14 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 	if p == nil || c == nil {
 		return model.SendRequest{}, nil, fmt.Errorf("请先选择一个请求")
 	}
-	url := strings.TrimSpace(a.endpoint)
+	endpoint := strings.TrimSpace(a.endpoint)
+	// A relative endpoint is appended to the project's host; a full address is
+	// sent as typed.
+	url := model.JoinProjectURL(p.Host, endpoint)
 	if err := model.ValidateEndpoint(url); err != nil {
+		if !model.EndpointAbsolute(endpoint) && strings.TrimSpace(p.Host) == "" {
+			return model.SendRequest{}, nil, fmt.Errorf("接口地址不是完整地址：请填写 http(s) 开头的地址，或在项目页面设置 Host")
+		}
 		return model.SendRequest{}, nil, err
 	}
 	kind := a.reqKind
@@ -2322,7 +2366,8 @@ func buildMultipart(fields []bodyField) (body, contentType string, err error) {
 }
 
 func (a *app) sendRequest() {
-	if a.sending {
+	if a.sending || a.projectPage {
+		// Nothing to send while the project page is shown.
 		return
 	}
 	req, proxy, err := a.buildSendRequest()
@@ -2597,8 +2642,11 @@ func (a *app) copyCurl() {
 		contentType = strings.TrimSpace(a.contentType)
 	}
 	authHeader := a.auth.modelAuth().Authorization()
+	// Copy the address the request actually goes to, so a relative endpoint
+	// carries the project host it is joined to.
+	url := model.JoinProjectURL(a.selectedProjectHost(), a.endpoint)
 	var b strings.Builder
-	b.WriteString("curl -X " + method + " " + shellQuote(a.endpoint))
+	b.WriteString("curl -X " + method + " " + shellQuote(url))
 	for _, h := range a.projHeaders {
 		if authHeader != "" && strings.EqualFold(strings.TrimSpace(h.Name), "Authorization") {
 			continue
@@ -2643,6 +2691,7 @@ func (a *app) createProject(name string) {
 	}
 	a.pid, a.sid, a.oid, a.cid = saved.ID, "", "", ""
 	a.reload()
+	a.openProjectPage(saved.ID)
 	a.statusMsg = "已新建项目：" + saved.Name
 }
 
@@ -2664,6 +2713,10 @@ func (a *app) deleteProject() {
 			kp, _, _, _ := splitKey(k)
 			return kp == pid
 		})
+		if a.pid == pid {
+			a.pid, a.sid, a.oid, a.cid = "", "", "", ""
+			a.projectPage = false
+		}
 	})
 }
 
@@ -2850,6 +2903,61 @@ func (a *app) persistWSDL(res *wsdl.Result, fallbackName, source, projectSource 
 	a.statusMsg = "已导入 WSDL：" + name
 }
 
+// openProjectPage shows pid's project page in the main area: the project's
+// counts, its host and its proxy settings. It replaces the request editor until
+// a request is opened again.
+func (a *app) openProjectPage(pid string) {
+	if pid == "" {
+		return
+	}
+	if a.renamingID != "" {
+		a.cancelInlineRename()
+	}
+	a.selGroup = ""
+	a.pid, a.sid, a.oid, a.cid = pid, "", "", ""
+	a.projectPage = true
+	a.loadProjectForms()
+}
+
+// loadProjectForms fills the project page's host and proxy drafts from the
+// selected project.
+func (a *app) loadProjectForms() {
+	p := a.selectedProject()
+	if p == nil {
+		a.hostInput = ""
+		return
+	}
+	a.hostInput = p.Host
+	a.loadProxyForm(p)
+}
+
+// loadProxyForm fills the proxy form from p without opening a dialog; the form
+// now lives on the project page.
+func (a *app) loadProxyForm(p *model.Project) {
+	a.proxyModeSel, a.proxyTypeSel = "系统代理", "HTTP"
+	a.proxyHost, a.proxyPort, a.proxyUser, a.proxyPass = "", "", "", ""
+	if p == nil || p.Proxy == nil {
+		return
+	}
+	switch p.Proxy.Mode {
+	case "direct":
+		a.proxyModeSel = "直连"
+	case "custom":
+		a.proxyModeSel = "自定义代理"
+	default:
+		a.proxyModeSel = "系统代理"
+	}
+	if p.Proxy.Type == "socks5" {
+		a.proxyTypeSel = "SOCKS5"
+	}
+	a.proxyHost = p.Proxy.Host
+	if p.Proxy.Port > 0 {
+		a.proxyPort = strconv.Itoa(p.Proxy.Port)
+	}
+	a.proxyUser = p.Proxy.Username
+	a.proxyPass = p.Proxy.Password
+}
+
 // updateProxy saves the proxy form on the selected project.
 func (a *app) updateProxy() {
 	p := a.selectedProject()
@@ -2883,39 +2991,28 @@ func (a *app) updateProxy() {
 		return
 	}
 	a.statusMsg = "代理设置已保存"
-	a.proxyOpen = false
 	a.reload()
 }
 
-// openProxy loads the selected project's proxy settings into the form.
-func (a *app) openProxy() {
+// applyProjectHost validates and saves the project page's host draft.
+func (a *app) applyProjectHost() {
 	p := a.selectedProject()
 	if p == nil {
 		a.errMsg = "请先选择一个项目"
 		return
 	}
-	a.proxyModeSel, a.proxyTypeSel = "系统代理", "HTTP"
-	a.proxyHost, a.proxyPort, a.proxyUser, a.proxyPass = "", "", "", ""
-	if p.Proxy != nil {
-		switch p.Proxy.Mode {
-		case "direct":
-			a.proxyModeSel = "直连"
-		case "custom":
-			a.proxyModeSel = "自定义代理"
-		default:
-			a.proxyModeSel = "系统代理"
-		}
-		if p.Proxy.Type == "socks5" {
-			a.proxyTypeSel = "SOCKS5"
-		}
-		a.proxyHost = p.Proxy.Host
-		if p.Proxy.Port > 0 {
-			a.proxyPort = strconv.Itoa(p.Proxy.Port)
-		}
-		a.proxyUser = p.Proxy.Username
-		a.proxyPass = p.Proxy.Password
+	host := strings.TrimSpace(a.hostInput)
+	if err := model.ValidateHost(host); err != nil {
+		a.errMsg = "Host 设置无效：" + err.Error()
+		return
 	}
-	a.proxyOpen = true
+	if err := a.st.UpdateProjectHost(p.ID, host); err != nil {
+		a.errMsg = "无法保存 Host：" + err.Error()
+		return
+	}
+	a.hostInput = model.NormalizeHost(host)
+	a.statusMsg = "项目 Host 已保存"
+	a.reload()
 }
 
 // ---- workspace management ----

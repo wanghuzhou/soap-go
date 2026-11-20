@@ -2285,6 +2285,142 @@ func TestMenusDrawnInWindow(t *testing.T) {
 	}
 }
 
+// TestProjectPageShowsCounts checks clicking a project opens its page, with the
+// folder and request counts and the proxy form that used to be a dialog.
+func TestProjectPageShowsCounts(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("演示项目")
+	p := a.projects[0]
+	a.st.AddGroup(p.ID, "User", "")
+	a.st.AddProjectCall(p.ID, "", model.Call{
+		Title: "登录", Kind: model.KindHTTP, Method: "POST", Endpoint: "/login",
+	})
+	a.reload()
+	a.selectTree(treeItem{kind: "project", pid: p.ID})
+	if !a.projectPage {
+		t.Fatal("clicking a project did not open its page")
+	}
+	tt := ui.NewTester(a.view, 1000, 700)
+	tt.Frame()
+	for _, want := range []string{"目录数", "接口数", "项目 Host", "代理模式"} {
+		if !tt.HasText(want) {
+			t.Fatalf("project page lacks %q", want)
+		}
+	}
+	if !tt.HasText("1 个目录 · 1 个接口") {
+		t.Fatal("project page does not show the folder and request counts")
+	}
+}
+
+// TestProjectPageSavesHostAndProxy checks the page's save buttons write the
+// host and proxy settings back to the selected project.
+func TestProjectPageSavesHostAndProxy(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("演示项目")
+	p := a.projects[0]
+
+	a.hostInput = "http://localhost/projectA/"
+	a.applyProjectHost()
+	if got := a.projects[0].Host; got != "http://localhost/projectA" {
+		t.Fatalf("host = %q, want the normalized value", got)
+	}
+
+	a.proxyModeSel, a.proxyTypeSel = "自定义代理", "HTTP"
+	a.proxyHost, a.proxyPort, a.proxyUser, a.proxyPass = "127.0.0.1", "8080", "u", "p"
+	a.updateProxy()
+	proxy := a.projects[0].Proxy
+	if proxy == nil || proxy.Mode != "custom" || proxy.Host != "127.0.0.1" || proxy.Port != 8080 {
+		t.Fatalf("proxy = %+v, want the custom settings", proxy)
+	}
+
+	a.st.UpdateProjectProxy(p.ID, &model.ProxySettings{
+		Mode: "custom", Type: "socks5", Host: "10.0.0.1", Port: 1080,
+	})
+	a.reload()
+	a.openProjectPage(p.ID)
+	if a.proxyModeSel != "自定义代理" || a.proxyTypeSel != "SOCKS5" ||
+		a.proxyHost != "10.0.0.1" || a.proxyPort != "1080" {
+		t.Fatalf("proxy form = %q/%q/%q/%q, want the stored settings",
+			a.proxyModeSel, a.proxyTypeSel, a.proxyHost, a.proxyPort)
+	}
+}
+
+// TestProjectHostPrefixInUrlBar checks the host shows in front of the request
+// address only while the endpoint is a relative path.
+func TestProjectHostPrefixInUrlBar(t *testing.T) {
+	a, _ := tabTestApp(t, 2)
+	p := a.projects[0]
+	a.st.UpdateProjectHost(p.ID, "http://localhost/projectA")
+	a.reload()
+	p = a.projects[0]
+	a.openCall(p.ID, "", "", p.Calls[0].ID)
+	a.endpoint = "/a/b/list"
+
+	tt := ui.NewTester(a.view, 900, 700)
+	tt.Frame()
+	if !tt.HasText("http://localhost/projectA") {
+		t.Fatal("the project host is not shown before a relative endpoint")
+	}
+
+	a.endpoint = "http://other.test/x/y"
+	tt.Frame()
+	if tt.HasText("http://localhost/projectA") {
+		t.Fatal("the project host still shows for a full endpoint address")
+	}
+}
+
+// TestSendJoinsProjectHost checks the request built for sending appends a
+// relative endpoint to the project host, and leaves a full address alone.
+func TestSendJoinsProjectHost(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("演示项目")
+	p := a.projects[0]
+	if _, err := a.st.AddProjectCall(p.ID, "", model.Call{
+		Title: "列表", Kind: model.KindHTTP, Method: "GET", Endpoint: "/a/b/list",
+	}); err != nil {
+		t.Fatalf("AddProjectCall: %v", err)
+	}
+	if err := a.st.UpdateProjectHost(p.ID, "http://localhost/projectA"); err != nil {
+		t.Fatalf("UpdateProjectHost: %v", err)
+	}
+	a.reload()
+	p = a.projects[0]
+	a.openCall(p.ID, "", "", p.Calls[0].ID)
+
+	req, _, err := a.buildSendRequest()
+	if err != nil {
+		t.Fatalf("buildSendRequest: %v", err)
+	}
+	if want := "http://localhost/projectA/a/b/list"; req.URL != want {
+		t.Fatalf("URL = %q, want %q", req.URL, want)
+	}
+
+	a.endpoint = "http://other.test/x/y"
+	req, _, err = a.buildSendRequest()
+	if err != nil {
+		t.Fatalf("buildSendRequest (absolute): %v", err)
+	}
+	if req.URL != "http://other.test/x/y" {
+		t.Fatalf("URL = %q, want the endpoint as typed", req.URL)
+	}
+}
+
+// TestOpenCallLeavesProjectPage checks opening a request returns the main area
+// to the request editor.
+func TestOpenCallLeavesProjectPage(t *testing.T) {
+	a, keys := tabTestApp(t, 2)
+	p := a.projects[0]
+	a.openProjectPage(p.ID)
+	if !a.projectPage {
+		t.Fatal("openProjectPage did not switch to the page")
+	}
+	pid, sid, oid, cid := splitKey(keys[0])
+	a.openCall(pid, sid, oid, cid)
+	if a.projectPage {
+		t.Fatal("opening a request left the project page showing")
+	}
+}
+
 // TestCloseTabsBulk checks the close-other/left/right operations keep the right
 // tabs and move the selection to a survivor.
 func TestCloseTabsBulk(t *testing.T) {

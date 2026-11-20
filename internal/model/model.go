@@ -23,6 +23,10 @@ type Project struct {
 	Name   string         `json:"name"`
 	Source string         `json:"source"` // e.g. "soapui", "wsdl", "wsdl-url" or "native"
 	Proxy  *ProxySettings `json:"proxy,omitempty"`
+	// Host is the project's base address, such as http://localhost/projectA.
+	// A request whose endpoint is a relative path is appended to it; a request
+	// with a full http(s) address ignores it. See JoinProjectURL.
+	Host string `json:"host,omitempty"`
 	// Headers are sent with every request of this project. A call may override
 	// an individual value; see Call.Headers.
 	Headers []Header `json:"headers,omitempty"`
@@ -547,6 +551,83 @@ func ValidateEndpoint(rawURL string) error {
 		return errors.New("Endpoint 缺少主机名")
 	}
 	return nil
+}
+
+// NormalizeHost trims a project host: surrounding spaces, trailing slashes and
+// any query or fragment, so joining it with an endpoint never doubles a slash.
+// A host that is not a parseable absolute URL is only trimmed.
+func NormalizeHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+	u, err := url.Parse(host)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return strings.TrimRight(host, "/")
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
+// ValidateHost rejects a project host that could not prefix a request: it must
+// be empty, or an absolute http(s) URL with a host and no query or fragment.
+func ValidateHost(host string) error {
+	h := strings.TrimSpace(host)
+	if h == "" {
+		return nil
+	}
+	u, err := url.Parse(h)
+	if err != nil {
+		return fmt.Errorf("Host 地址无效: %w", err)
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("Host 仅支持 http/https 协议，当前为 %q", u.Scheme)
+	}
+	if u.Host == "" || u.Hostname() == "" {
+		return errors.New("Host 缺少主机名，例如 http://localhost/projectA")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("Host 只填基地址，不能带查询参数或片段")
+	}
+	return nil
+}
+
+// EndpointAbsolute reports whether endpoint is already a full http(s) address,
+// in which case a project host must not be prefixed to it.
+func EndpointAbsolute(endpoint string) bool {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	return (scheme == "http" || scheme == "https") && u.Host != ""
+}
+
+// JoinProjectURL returns the address a request finally goes to: the endpoint
+// as it is when it is already absolute (or the project has no host), else the
+// project host followed by the relative endpoint.
+//
+//	JoinProjectURL("http://localhost/projectA", "/a/b/list")
+//	// "http://localhost/projectA/a/b/list"
+func JoinProjectURL(host, endpoint string) string {
+	e := strings.TrimSpace(endpoint)
+	if e == "" {
+		return NormalizeHost(host)
+	}
+	if EndpointAbsolute(e) {
+		return e
+	}
+	h := NormalizeHost(host)
+	if h == "" {
+		return e
+	}
+	if !strings.HasPrefix(e, "/") {
+		e = "/" + e
+	}
+	return h + e
 }
 
 // SendRequest is the payload the frontend posts to execute an HTTP/SOAP call.

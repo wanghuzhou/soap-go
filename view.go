@@ -70,7 +70,6 @@ func (a *app) view(c *ui.Context) {
 		a.statusBar(c)
 		a.importModal(c)
 		a.exportModal(c)
-		a.proxyModal(c)
 		a.newProjectModal(c)
 		a.workspaceModal(c)
 		a.treeModal(c)
@@ -544,9 +543,14 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			}
 			a.startInlineRename(it.pid, name)
 		}
+		if m.Item("项目页面…").Chosen() {
+			a.openProjectPage(it.pid)
+		}
 		if m.Item("代理设置…").Chosen() {
-			pick()
-			a.openProxy()
+			// The proxy settings now live on the project page; this entry just
+			// takes the user there instead of opening its old dialog.
+			a.openProjectPage(it.pid)
+			a.statusMsg = "代理设置已移到项目页面下方"
 		}
 		if proj != nil && proj.CanExportSoapUI() {
 			if m.Item("导出 SoapUI XML…").Chosen() {
@@ -667,16 +671,23 @@ func (a *app) selectTree(it treeItem) {
 	a.selGroup = ""
 	switch it.kind {
 	case "project":
-		a.pid, a.sid, a.oid, a.cid = it.pid, "", "", ""
+		// Re-clicking the project that is already on show keeps unsaved edits
+		// in its host and proxy fields.
+		if !a.projectPage || a.pid != it.pid {
+			a.openProjectPage(it.pid)
+		}
 		a.toggleExpanded(it.pid, true)
 	case "group":
+		a.projectPage = false
 		a.pid, a.sid, a.oid, a.cid = it.pid, "", "", ""
 		a.selGroup = it.gid
 		a.toggleExpanded(it.gid, true)
 	case "service":
+		a.projectPage = false
 		a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, "", ""
 		a.toggleExpanded(it.sid, true)
 	case "operation":
+		a.projectPage = false
 		a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, ""
 		a.toggleExpanded(it.oid, true)
 	case "call":
@@ -687,7 +698,15 @@ func (a *app) selectTree(it treeItem) {
 func (a *app) main(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).FillHeight().Background(t.Background).Children(func() {
-		a.tabStrip(c)
+		// A project page has no tab of its own; hide the strip when no request
+		// was open, so an empty "没有打开的请求" line does not sit above it.
+		if !a.projectPage || len(a.tabs) > 0 {
+			a.tabStrip(c)
+		}
+		if a.projectPage && a.pid != "" && a.sid == "" && a.cid == "" {
+			a.projectPagePanel(c)
+			return
+		}
 		if a.emptyWorkbench() {
 			a.emptyWorkbenchPanel(c)
 			return
@@ -727,9 +746,23 @@ func (a *app) tabStrip(c *ui.Context) {
 				}
 				return false
 			}).Children(func() {
+			// The project page has no tab of its own, so it shows as a leading
+			// chip while it is the thing in the main area.
+			if a.projectPage {
+				if p := a.selectedProject(); p != nil {
+					ui.Row(c).Shrink(0).Height(30).Padding(0, 10).Gap(6).Radius(6).
+						AlignItems(ui.Center).Background(t.Accent.Alpha(0.20)).
+						Tooltip("项目页面：" + p.Name).Children(func() {
+						ui.Icon(c, iconFolder).FontSize(a.us(12)).TextColor(t.Accent)
+						ui.Text(c, p.Name).FontSize(a.us(12)).Bold().TextColor(t.Accent).
+							SingleLine().MaxWidth(160)
+					})
+					ui.Text(c, "").Width(2)
+				}
+			}
 			for i, key := range a.tabs {
 				i, key := i, key
-				active := i == a.active
+				active := i == a.active && !a.projectPage
 				tab := ui.Row(c).Shrink(0).Height(30).Padding(0, 6, 0, 8).Gap(6).AlignItems(ui.Center).
 					Transition(ui.ElementTransition{Duration: 120 * time.Millisecond, Colors: true})
 				// The open request takes the accent color so it stands out among
@@ -828,8 +861,172 @@ func (a *app) emptyWorkbenchPanel(c *ui.Context) {
 	})
 }
 
+// projectPagePanel is the selected project's overview: its counts, the project
+// host that relative request paths are joined to, and the project proxy
+// settings, which used to live in a dialog of their own.
+func (a *app) projectPagePanel(c *ui.Context) {
+	t := c.Theme()
+	p := a.selectedProject()
+	if p == nil {
+		a.emptyWorkbenchPanel(c)
+		return
+	}
+	groups, calls, services, ops := projectCounts(p)
+	ui.Scroll(c).Grow(1).Children(func() {
+		ui.Column(c).Padding(20, 24, 24).Gap(16).MaxWidth(760).Children(func() {
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.Icon(c, kindIcon("project", true)).FontSize(a.us(20)).TextColor(t.Accent)
+				ui.Column(c).Gap(3).Children(func() {
+					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, p.Name).FontSize(a.us(18)).Bold().SingleLine()
+						ui.Badge(c, sourceLabel(p.Source))
+					})
+					ui.Text(c, fmt.Sprintf("%d 个目录 · %d 个接口", groups, calls)).
+						FontSize(a.us(11)).TextColor(t.TextMuted)
+				})
+				ui.Spacer(c)
+				if ui.Button(c, "新建请求").Clicked() {
+					a.newProjectCall("")
+				}
+				if ui.Button(c, "新建目录…").Clicked() {
+					a.newGroupParent = ""
+					a.treeModalOpen, a.treeModalKind, a.nameInput = true, 3, ""
+				}
+			})
+			a.errorBanner(c)
+			ui.Row(c).Gap(12).Children(func() {
+				a.statCard(c, fmt.Sprint(groups), "目录数")
+				a.statCard(c, fmt.Sprint(calls), "接口数")
+				if services > 0 {
+					a.statCard(c, fmt.Sprint(services), "服务数")
+				}
+				if ops > 0 {
+					a.statCard(c, fmt.Sprint(ops), "操作数")
+				}
+			})
+			a.projectHostCard(c, p)
+			a.projectProxyCard(c)
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.Column(c).Gap(2).Children(func() {
+					ui.Text(c, "删除项目").FontSize(a.us(12.5)).Bold()
+					ui.Text(c, "删除整个项目及其全部目录、接口，无法撤销。").
+						FontSize(a.us(10.5)).TextColor(t.TextMuted)
+				})
+				ui.Spacer(c)
+				if ui.Button(c, "删除项目").Clicked() {
+					a.deleteProject()
+				}
+			})
+		})
+	})
+}
+
+// statCard is one number-and-label tile of the project page.
+func (a *app) statCard(c *ui.Context, value, label string) {
+	t := c.Theme()
+	ui.Column(c).Gap(2).Width(118).Padding(12, 16).Radius(10).
+		Background(t.Surface).Border(1, t.Border).Children(func() {
+		ui.Text(c, value).FontSize(a.us(20)).Bold().TextColor(t.Text)
+		ui.Text(c, label).FontSize(a.us(10.5)).TextColor(t.TextMuted)
+	})
+}
+
+// projectHostCard edits the project host, previewing how a relative path is
+// joined to it.
+func (a *app) projectHostCard(c *ui.Context, p *model.Project) {
+	t := c.Theme()
+	ui.Column(c).Gap(8).Children(func() {
+		ui.Text(c, "项目 Host").FontSize(a.us(12.5)).Bold()
+		ui.Text(c, "接口只写相对路径（如 /a/b/list）时自动拼在 Host 后面；"+
+			"接口本身是完整地址时，以接口填写的地址为准。").
+			FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
+		a.settingsCard(c, func() {
+			ui.Row(c).Padding(11, 14).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.TextInput(c, &a.hostInput).Placeholder("http://localhost/projectA").Grow(1).
+					Label("项目 Host").OnSubmit(func() { a.applyProjectHost() })
+				if ui.Button(c, "保存").Clicked() {
+					a.applyProjectHost()
+				}
+			})
+			if strings.TrimSpace(a.hostInput) != "" {
+				ui.Divider(c)
+				ui.Row(c).Padding(11, 14).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, "示例：/a/b/list → "+model.JoinProjectURL(a.hostInput, "/a/b/list")).
+						FontSize(a.us(10.5)).TextColor(t.TextMuted).SingleLine()
+				})
+			}
+		})
+	})
+}
+
+// projectProxyCard is the proxy settings form of the selected project.
+func (a *app) projectProxyCard(c *ui.Context) {
+	t := c.Theme()
+	ui.Column(c).Gap(8).Children(func() {
+		ui.Text(c, "代理设置").FontSize(a.us(12.5)).Bold()
+		ui.Text(c, "只作用于本项目的请求。").
+			FontSize(a.us(10.5)).TextColor(t.TextMuted)
+		a.settingsCard(c, func() {
+			a.settingsRow(c, "代理模式", func() {
+				ui.Select(c, &a.proxyModeSel, []string{"系统代理", "直连", "自定义代理"}).Width(160)
+			})
+			if a.proxyModeSel == "自定义代理" {
+				ui.Divider(c)
+				ui.Column(c).Padding(11, 14).Gap(8).Children(func() {
+					ui.Row(c).Gap(8).Children(func() {
+						ui.Column(c).Grow(1).Gap(4).Children(func() {
+							ui.Text(c, "类型").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+							ui.Select(c, &a.proxyTypeSel, []string{"HTTP", "SOCKS5"})
+						})
+						ui.Column(c).Grow(2).Gap(4).Children(func() {
+							ui.Text(c, "主机").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+							ui.TextInput(c, &a.proxyHost).Placeholder("127.0.0.1")
+						})
+						ui.Column(c).Width(100).Gap(4).Children(func() {
+							ui.Text(c, "端口").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+							ui.TextInput(c, &a.proxyPort).Placeholder("8080")
+						})
+					})
+					ui.Row(c).Gap(8).Children(func() {
+						ui.Column(c).Grow(1).Gap(4).Children(func() {
+							ui.Text(c, "用户名").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+							ui.TextInput(c, &a.proxyUser).Placeholder("可留空")
+						})
+						ui.Column(c).Grow(1).Gap(4).Children(func() {
+							ui.Text(c, "密码").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+							ui.TextInput(c, &a.proxyPass).Placeholder("可留空")
+						})
+					})
+				})
+			}
+			ui.Divider(c)
+			ui.Row(c).Padding(11, 14).AlignItems(ui.Center).Children(func() {
+				ui.Spacer(c)
+				if ui.PrimaryButton(c, "保存代理设置").Clicked() {
+					a.updateProxy()
+				}
+			})
+		})
+	})
+}
+
 func (a *app) urlBar(c *ui.Context) {
 	t := c.Theme()
+	// A project host shows in front of the address while the endpoint is a
+	// relative path; a full endpoint address hides it, as it wins over the host.
+	host := ""
+	if p := a.selectedProject(); p != nil {
+		host = model.NormalizeHost(p.Host)
+	}
+	showHost := host != "" && !model.EndpointAbsolute(a.endpoint)
+	placeholder := "http://host/api/path"
+	if showHost {
+		placeholder = "/a/b/list"
+	}
+	input := func() {
+		ui.TextInput(c, &a.endpoint).Placeholder(placeholder).Grow(1).Label("请求地址").
+			OnSubmit(func() { a.sendRequest() })
+	}
 	ui.Row(c).Shrink(0).Padding(10, 14).Gap(8).AlignItems(ui.Center).Children(func() {
 		if a.reqKind == model.KindSOAP {
 			ui.Text(c, "POST").FontSize(a.us(10)).Bold().TextColor(t.AccentText).
@@ -846,7 +1043,22 @@ func (a *app) urlBar(c *ui.Context) {
 				}
 			}).BorderWidth(0)
 		}
-		ui.TextInput(c, &a.endpoint).Placeholder("http://host/api/path").Grow(1).Label("请求地址").OnSubmit(func() { a.sendRequest() })
+		if showHost {
+			// The host reads as a prefix segment of the address field, so the
+			// user sees what the relative path will be joined to.
+			ui.Row(c).Grow(1).Gap(0).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Shrink(0).Height(32).Padding(0, 8).Radius(7).AlignItems(ui.Center).
+					Background(t.SurfaceHover).
+					Tooltip("项目 Host：" + host + "\n最终地址：" + model.JoinProjectURL(host, a.endpoint)).
+					Children(func() {
+						ui.Text(c, host).FontSize(a.us(11)).TextColor(t.TextMuted).
+							SingleLine().MaxWidth(260)
+					})
+				input()
+			})
+		} else {
+			input()
+		}
 		if a.sending {
 			if ui.PrimaryButton(c, "取消  ■").Clicked() {
 				a.cancelSend()
@@ -1584,55 +1796,6 @@ func (a *app) exportModal(c *ui.Context) {
 						a.exportWorkspace(path)
 						a.exportOpen = false
 					}
-				}
-			})
-		})
-	})
-}
-
-func (a *app) proxyModal(c *ui.Context) {
-	t := c.Theme()
-	ui.Modal(c, &a.proxyOpen, func() {
-		ui.Column(c).Width(480).Gap(10).Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "项目代理设置").FontSize(a.us(16)).Bold()
-				ui.Spacer(c)
-				a.closeIconButton(c, 24, "关闭代理设置", func() { a.proxyOpen = false })
-			})
-			ui.Text(c, "代理模式").FontSize(a.us(10.5)).TextColor(t.TextMuted)
-			ui.Select(c, &a.proxyModeSel, []string{"系统代理", "直连", "自定义代理"})
-			if a.proxyModeSel == "自定义代理" {
-				ui.Row(c).Gap(8).Children(func() {
-					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "类型").FontSize(a.us(10.5)).TextColor(t.TextMuted)
-						ui.Select(c, &a.proxyTypeSel, []string{"HTTP", "SOCKS5"})
-					})
-					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "主机").FontSize(a.us(10.5)).TextColor(t.TextMuted)
-						ui.TextInput(c, &a.proxyHost).Placeholder("127.0.0.1")
-					})
-					ui.Column(c).Width(100).Gap(4).Children(func() {
-						ui.Text(c, "端口").FontSize(a.us(10.5)).TextColor(t.TextMuted)
-						ui.TextInput(c, &a.proxyPort).Placeholder("8080")
-					})
-				})
-				ui.Row(c).Gap(8).Children(func() {
-					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "用户名").FontSize(a.us(10.5)).TextColor(t.TextMuted)
-						ui.TextInput(c, &a.proxyUser).Placeholder("可留空")
-					})
-					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "密码").FontSize(a.us(10.5)).TextColor(t.TextMuted)
-						ui.TextInput(c, &a.proxyPass).Placeholder("可留空")
-					})
-				})
-			}
-			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				if ui.Button(c, "取消").Clicked() {
-					a.proxyOpen = false
-				}
-				if ui.PrimaryButton(c, "保存").Clicked() {
-					a.updateProxy()
 				}
 			})
 		})

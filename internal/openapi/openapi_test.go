@@ -218,6 +218,38 @@ func TestBuildRoundTrip(t *testing.T) {
 	}
 }
 
+// TestBuildUsesProjectHostAsServer checks that relative request paths are
+// exported against the project host, so importing the document back yields the
+// joined absolute address.
+func TestBuildUsesProjectHostAsServer(t *testing.T) {
+	project := model.Project{
+		Name: "hosted", Source: "native", Host: "http://localhost/projectA",
+		Calls: []model.Call{{Title: "列表", Method: "GET", Kind: model.KindHTTP, Endpoint: "/a/b/list"}},
+	}
+	doc, err := Build(project)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(doc.Servers) != 1 || doc.Servers[0].URL != "http://localhost/projectA" {
+		t.Fatalf("servers = %+v, want the project host", doc.Servers)
+	}
+	if doc.Paths["/a/b/list"] == nil {
+		t.Fatalf("paths = %+v, want /a/b/list", doc.Paths)
+	}
+
+	data, err := Marshal(doc, "json")
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	back, err := Parse(data, "x.json")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, want := back.Calls[0].Endpoint, "http://localhost/projectA/a/b/list"; got != want {
+		t.Fatalf("re-imported endpoint = %q, want %q", got, want)
+	}
+}
+
 // TestMarshalYAMLShape checks YAML uses OpenAPI's snake/lowercase keys rather
 // than Go field names.
 func TestMarshalYAMLShape(t *testing.T) {

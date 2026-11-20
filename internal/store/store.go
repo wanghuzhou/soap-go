@@ -390,6 +390,22 @@ func (s *Store) UpdateProjectProxy(id string, proxy *model.ProxySettings) error 
 	})
 }
 
+// UpdateProjectHost updates only a project's base address. A narrow write keeps
+// a stale snapshot from overwriting concurrent edits elsewhere.
+func (s *Store) UpdateProjectHost(id, host string) error {
+	if err := model.ValidateHost(host); err != nil {
+		return err
+	}
+	return s.commit(func(list []model.Project) ([]model.Project, error) {
+		i := indexOfProject(list, id)
+		if i < 0 {
+			return nil, ErrNotFound
+		}
+		list[i].Host = model.NormalizeHost(host)
+		return list, nil
+	})
+}
+
 // RenameProject updates only a project's name.
 func (s *Store) RenameProject(id, name string) error {
 	return s.commit(func(list []model.Project) ([]model.Project, error) {
