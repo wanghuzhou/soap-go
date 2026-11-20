@@ -303,10 +303,13 @@ func DefaultContentType(kind string) string {
 	return "application/json"
 }
 
-// BodyField is one name/value pair of a urlencoded or multipart body.
+// BodyField is one name/value pair of a urlencoded or multipart body. Type is
+// "" or "text" for a text value, and "file" for a file part, where Value is the
+// file's path.
 type BodyField struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
+	Type  string `json:"type,omitempty"`
 }
 
 // Plain-HTTP body shapes, mirroring the body-type menu.

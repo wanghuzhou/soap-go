@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"mime"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -44,9 +45,12 @@ type queryRow struct {
 }
 
 // bodyField is one editable name/value pair of a urlencoded or multipart body.
+// Type is "" or "text" for a text value, and "file" when Value names a file to
+// upload (multipart only).
 type bodyField struct {
 	Name  string
 	Value string
+	Type  string
 }
 
 // authForm is the request form's authentication: the same fields as
@@ -288,6 +292,9 @@ type app struct {
 	confirmText    string
 	confirmLabel   string
 	confirmAction  func()
+	// Bulk edit of the multipart / urlencoded field rows, as text.
+	bulkOpen bool
+	bulkText string
 	wsOpen         bool
 	wsKind         int // 0 create, 1 rename, 2 import
 	wsImportPath   string
@@ -1049,7 +1056,7 @@ func bodyFieldsOf(in []model.BodyField) []bodyField {
 	}
 	out := make([]bodyField, len(in))
 	for i, f := range in {
-		out[i] = bodyField{Name: f.Name, Value: f.Value}
+		out[i] = bodyField{Name: f.Name, Value: f.Value, Type: f.Type}
 	}
 	return out
 }
@@ -1062,10 +1069,62 @@ func modelBodyFields(rows []bodyField) []model.BodyField {
 		if strings.TrimSpace(r.Name) == "" && strings.TrimSpace(r.Value) == "" {
 			continue
 		}
-		out = append(out, model.BodyField{Name: r.Name, Value: r.Value})
+		typ := ""
+		if r.Type == "file" {
+			typ = "file"
+		}
+		out = append(out, model.BodyField{Name: r.Name, Value: r.Value, Type: typ})
 	}
 	return out
 }
+
+// openBulkEdit shows the current fields as editable text, one "name: value" per
+// line, so a list copied from elsewhere can replace them all at once.
+func (a *app) openBulkEdit() {
+	lines := make([]string, 0, len(a.bodyFields))
+	for _, f := range a.bodyFields {
+		if strings.TrimSpace(f.Name) == "" && strings.TrimSpace(f.Value) == "" {
+			continue
+		}
+		lines = append(lines, f.Name+": "+f.Value)
+	}
+	a.bulkText = strings.Join(lines, "\n")
+	a.bulkOpen = true
+}
+
+// applyBulkEdit replaces the field rows from the bulk text. A line reads
+// "name: value" or "name=value"; a line without either is a bare field name.
+func (a *app) applyBulkEdit() {
+	// Keep a file part's type when its name survives the bulk edit, so pasting
+	// the same text back does not silently turn uploads into text fields.
+	types := make(map[string]string, len(a.bodyFields))
+	for _, f := range a.bodyFields {
+		if f.Type != "" {
+			types[f.Name] = f.Type
+		}
+	}
+	var out []bodyField
+	for _, line := range strings.Split(a.bulkText, "\n") {
+		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if line == "" {
+			continue
+		}
+		name, value := line, ""
+		if i := strings.IndexAny(line, ":="); i >= 0 {
+			name = strings.TrimSpace(line[:i])
+			value = strings.TrimSpace(line[i+1:])
+		}
+		if name == "" {
+			continue
+		}
+		out = append(out, bodyField{Name: name, Value: value, Type: types[name]})
+	}
+	a.bodyFields = out
+	a.bulkOpen = false
+}
+
+// fieldIsFile reports whether a field row uploads a file rather than text.
+func fieldIsFile(typ string) bool { return typ == "file" }
 
 // setBodyType switches the plain-HTTP body shape and aligns the content type
 // with it, seeding one empty field row for the form-based types.
@@ -2123,7 +2182,10 @@ func (a *app) requestBody(kind, method string) (body, contentType string, err er
 	case model.BodyURLEncoded:
 		return encodeForm(a.bodyFields), "application/x-www-form-urlencoded", nil
 	case model.BodyMultipart:
-		b, ct := buildMultipart(a.bodyFields)
+		b, ct, berr := buildMultipart(a.bodyFields)
+		if berr != nil {
+			return "", "", berr
+		}
 		return b, ct, nil
 	case model.BodyBinary:
 		if strings.TrimSpace(a.bodyFile) == "" {
@@ -2165,19 +2227,42 @@ func encodeForm(fields []bodyField) string {
 const multipartBoundary = "----soapgoFormBoundary7MA4YWxkTrZu0gW"
 
 // buildMultipart renders name/value pairs as a multipart/form-data body and the
-// matching Content-Type (including the boundary).
-func buildMultipart(fields []bodyField) (body, contentType string) {
+// matching Content-Type (including the boundary). A field of type "file" reads
+// its file from disk and adds the filename and a guessed content type.
+func buildMultipart(fields []bodyField) (body, contentType string, err error) {
 	var b strings.Builder
 	for _, f := range fields {
 		if f.Name == "" {
 			continue
 		}
 		b.WriteString("--" + multipartBoundary + "\r\n")
-		b.WriteString(`Content-Disposition: form-data; name="` + strings.ReplaceAll(f.Name, `"`, `\"`) + `"` + "\r\n\r\n")
+		name := strings.ReplaceAll(f.Name, `"`, `\"`)
+		if f.Type == "file" {
+			path := strings.TrimSpace(f.Value)
+			if path == "" {
+				return "", "", fmt.Errorf("字段「%s」未选择文件", f.Name)
+			}
+			data, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return "", "", fmt.Errorf("无法读取文件 %s：%w", filepath.Base(path), rerr)
+			}
+			filename := filepath.Base(path)
+			ct := mime.TypeByExtension(filepath.Ext(path))
+			if ct == "" {
+				ct = "application/octet-stream"
+			}
+			b.WriteString(`Content-Disposition: form-data; name="` + name + `"; filename="` +
+				strings.ReplaceAll(filename, `"`, `\"`) + `"` + "\r\n")
+			b.WriteString("Content-Type: " + ct + "\r\n\r\n")
+			b.Write(data)
+			b.WriteString("\r\n")
+			continue
+		}
+		b.WriteString(`Content-Disposition: form-data; name="` + name + `"` + "\r\n\r\n")
 		b.WriteString(f.Value + "\r\n")
 	}
 	b.WriteString("--" + multipartBoundary + "--\r\n")
-	return b.String(), "multipart/form-data; boundary=" + multipartBoundary
+	return b.String(), "multipart/form-data; boundary=" + multipartBoundary, nil
 }
 
 func (a *app) sendRequest() {

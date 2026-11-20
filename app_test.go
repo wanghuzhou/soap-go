@@ -1703,6 +1703,84 @@ func TestNativeExportRefused(t *testing.T) {
 	}
 }
 
+// TestBulkEditFields checks the bulk editor round-trips the rows and parses both
+// "name: value" and "name=value" lines.
+func TestBulkEditFields(t *testing.T) {
+	a, _ := newNativeCall(t)
+	a.setBodyType(model.BodyMultipart)
+	a.bodyFields = []bodyField{{Name: "a", Value: "1"}}
+	a.openBulkEdit()
+	if a.bulkText != "a: 1" {
+		t.Fatalf("bulkText = %q", a.bulkText)
+	}
+	a.bulkText = "x=2\ny: 3\nbare\n\n"
+	a.applyBulkEdit()
+	if a.bulkOpen {
+		t.Fatal("bulk modal still open")
+	}
+	if len(a.bodyFields) != 3 ||
+		a.bodyFields[0].Name != "x" || a.bodyFields[0].Value != "2" ||
+		a.bodyFields[1].Name != "y" || a.bodyFields[1].Value != "3" ||
+		a.bodyFields[2].Name != "bare" || a.bodyFields[2].Value != "" {
+		t.Fatalf("fields = %+v", a.bodyFields)
+	}
+
+	// A file field keeps its type when its name survives the bulk edit.
+	a.bodyFields = []bodyField{{Name: "doc", Value: "/tmp/a.bin", Type: "file"}}
+	a.openBulkEdit()
+	a.applyBulkEdit()
+	if len(a.bodyFields) != 1 || a.bodyFields[0].Type != "file" {
+		t.Fatalf("file type lost: %+v", a.bodyFields)
+	}
+}
+
+// TestMultipartFileField checks a file field becomes a file part with its
+// filename, content type and bytes, and that a missing file is an error.
+func TestMultipartFileField(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "up.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body, ct, err := buildMultipart([]bodyField{
+		{Name: "doc", Value: path, Type: "file"},
+		{Name: "note", Value: "hi"},
+	})
+	if err != nil {
+		t.Fatalf("buildMultipart: %v", err)
+	}
+	if !strings.HasPrefix(ct, "multipart/form-data; boundary=") {
+		t.Fatalf("ct = %q", ct)
+	}
+	if !strings.Contains(body, `name="doc"; filename="up.txt"`) ||
+		!strings.Contains(body, "Content-Type: text/plain") ||
+		!strings.Contains(body, "hello") ||
+		!strings.Contains(body, `name="note"`) {
+		t.Fatalf("body = %q", body)
+	}
+	if _, _, err := buildMultipart([]bodyField{{Name: "doc", Type: "file"}}); err == nil {
+		t.Fatal("a file field without a path should fail")
+	}
+}
+
+// TestMultipartFileFieldPersists checks a file field's type and path survive a
+// save and reload.
+func TestMultipartFileFieldPersists(t *testing.T) {
+	a, _ := newNativeCall(t)
+	a.setBodyType(model.BodyMultipart)
+	path := filepath.Join(t.TempDir(), "a.bin")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.bodyFields = []bodyField{{Name: "f", Value: path, Type: "file"}}
+	a.saveCall()
+	a.reload()
+	got := a.projects[0].Calls[0].BodyFields
+	if len(got) != 1 || got[0].Type != "file" || got[0].Value != path {
+		t.Fatalf("stored fields = %+v", got)
+	}
+}
+
 // TestBodyTypeRequestBodies checks each plain-HTTP body shape produces the
 // right body and content type.
 func TestBodyTypeRequestBodies(t *testing.T) {

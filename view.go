@@ -71,6 +71,7 @@ func (a *app) view(c *ui.Context) {
 		a.workspaceModal(c)
 		a.treeModal(c)
 		a.confirmModal(c)
+		a.bulkEditModal(c)
 		a.settingsModal(c)
 	})
 	a.maybeSaveUIState()
@@ -995,17 +996,25 @@ func (a *app) formBodyPanel(c *ui.Context) {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "字段名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
 			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
+			ui.Text(c, "").Width(26)
 			ui.Text(c, "").Width(24)
 		})
 		if a.bodyType == model.BodyMultipart {
-			ui.Text(c, "Multi-Part 目前只支持文本字段；上传文件请改用“Binary File”类型。").
+			ui.Text(c, "字段类型为 file 时，发送会读取所选文件作为该部分内容。").
 				FontSize(a.us(10)).TextColor(t.TextMuted).Wrap()
 		}
 		for i := range a.bodyFields {
 			i := i
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200).Label("字段名")
-				ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1).Label("字段值")
+				if a.bodyType == model.BodyMultipart && fieldIsFile(a.bodyFields[i].Type) {
+					a.fileFieldButton(c, i)
+				} else {
+					ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1).Label("字段值")
+				}
+				a.iconMenuBtn(c, iconMore, "更多", func(m *ui.Menu) {
+					a.bodyFieldMenu(i, m)
+				})
 				a.closeIconButton(c, 24, "删除该字段", func() {
 					if i >= 0 && i < len(a.bodyFields) {
 						a.bodyFields = append(a.bodyFields[:i], a.bodyFields[i+1:]...)
@@ -1014,6 +1023,77 @@ func (a *app) formBodyPanel(c *ui.Context) {
 			})
 		}
 		ui.Spacer(c)
+	})
+}
+
+// fileFieldButton is the value control of a file-type field: it shows the
+// chosen path and opens a file dialog when clicked.
+func (a *app) fileFieldButton(c *ui.Context, i int) {
+	t := c.Theme()
+	path := a.bodyFields[i].Value
+	btn := ui.ButtonBase(c).Grow(1).Height(28).Padding(4, 8).Radius(6).
+		Border(1, t.Border).Justify(ui.Start).Label("选择文件").Tooltip(path)
+	if btn.Hovered() {
+		btn = btn.Background(t.SurfaceHover)
+	}
+	btn.Children(func() {
+		label, col := "选择文件…", t.TextMuted
+		if strings.TrimSpace(path) != "" {
+			label, col = path, t.Text
+		}
+		ui.Text(c, label).FontSize(a.us(11)).TextColor(col).SingleLine()
+	})
+	if btn.Clicked() {
+		if picked, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+			Parent: a.win, Title: "选择要上传的文件",
+		}); err == nil && len(picked) > 0 {
+			a.bodyFields[i].Value = picked[0]
+		}
+	}
+}
+
+// bodyFieldMenu is the "…" menu of a field row: bulk editing, then (for
+// multipart) the part's data type.
+func (a *app) bodyFieldMenu(i int, m *ui.Menu) {
+	if m.Item("批量编辑").Chosen() {
+		a.openBulkEdit()
+	}
+	if a.bodyType != model.BodyMultipart {
+		return
+	}
+	m.Separator()
+	m.Item("数据类型").Disabled(true)
+	isFile := fieldIsFile(a.bodyFields[i].Type)
+	if m.Item("text").Checked(!isFile).Chosen() {
+		a.bodyFields[i].Type = ""
+	}
+	if m.Item("file").Checked(isFile).Chosen() {
+		a.bodyFields[i].Type = "file"
+	}
+}
+
+// bulkEditModal edits every field row as text, one "name: value" per line.
+func (a *app) bulkEditModal(c *ui.Context) {
+	t := c.Theme()
+	ui.Modal(c, &a.bulkOpen, func() {
+		ui.Column(c).Width(560).Gap(12).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "批量编辑").FontSize(a.us(17)).Bold()
+				ui.Spacer(c)
+				a.closeIconButton(c, 24, "关闭批量编辑", func() { a.bulkOpen = false })
+			})
+			ui.Text(c, "每行一个参数，用 name: value 或 name=value 分隔；直接粘贴整段文本即可替换全部字段。").
+				FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
+			ui.TextArea(c, &a.bulkText).Height(240).Label("参数文本")
+			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+				if ui.Button(c, "取消").Clicked() {
+					a.bulkOpen = false
+				}
+				if ui.PrimaryButton(c, "应用").Clicked() {
+					a.applyBulkEdit()
+				}
+			})
+		})
 	})
 }
 

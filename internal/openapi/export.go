@@ -181,7 +181,11 @@ func requestBodyFromCall(call model.Call) *RequestBody {
 		props := make(map[string]*Schema, len(call.BodyFields))
 		for _, f := range call.BodyFields {
 			obj[f.Name] = f.Value
-			props[f.Name] = &Schema{Type: "string"}
+			if f.Type == "file" {
+				props[f.Name] = &Schema{Type: "string", Format: "binary"}
+			} else {
+				props[f.Name] = &Schema{Type: "string"}
+			}
 		}
 		media.Schema = &Schema{Type: "object", Properties: props}
 		media.Example = obj
