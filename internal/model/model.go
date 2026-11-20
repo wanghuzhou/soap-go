@@ -230,8 +230,8 @@ type Call struct {
 	// ContentType is the request body's media type. Empty means the kind's
 	// default (see DefaultContentType).
 	ContentType string `json:"contentType,omitempty"`
-	// BodyType is the shape of a plain HTTP body: none, json, xml, graphql,
-	// text, urlencoded, multipart or binary. Empty means "infer from
+	// BodyType is the shape of a plain HTTP body: none, json, xml, text,
+	// urlencoded, multipart or binary. Empty means "infer from
 	// ContentType/Request"; see NormalizeBodyType.
 	BodyType string `json:"bodyType,omitempty"`
 	// BodyFields holds the name/value pairs of a urlencoded or multipart body.
@@ -314,7 +314,6 @@ const (
 	BodyNone       = "none"
 	BodyJSON       = "json"
 	BodyXML        = "xml"
-	BodyGraphQL    = "graphql"
 	BodyText       = "text"
 	BodyURLEncoded = "urlencoded"
 	BodyMultipart  = "multipart"
@@ -325,7 +324,7 @@ const (
 // "" only when the value is unknown.
 func NormalizeBodyType(s string) string {
 	switch s {
-	case BodyNone, BodyJSON, BodyXML, BodyGraphQL, BodyText,
+	case BodyNone, BodyJSON, BodyXML, BodyText,
 		BodyURLEncoded, BodyMultipart, BodyBinary:
 		return s
 	}
@@ -361,7 +360,7 @@ func InferBodyType(contentType, body string) string {
 // BodyTypeContentType is the media type a text body type implies.
 func BodyTypeContentType(bt string) string {
 	switch bt {
-	case BodyJSON, BodyGraphQL:
+	case BodyJSON:
 		return "application/json"
 	case BodyXML:
 		return "application/xml"
@@ -380,7 +379,7 @@ func BodyTypeContentType(bt string) string {
 // BodyTypeHasTextEditor reports whether a body type is edited as free text.
 func BodyTypeHasTextEditor(bt string) bool {
 	switch bt {
-	case BodyJSON, BodyXML, BodyGraphQL, BodyText:
+	case BodyJSON, BodyXML, BodyText:
 		return true
 	}
 	return false

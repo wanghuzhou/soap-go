@@ -916,7 +916,7 @@ func (a *app) bodyPanel(c *ui.Context) {
 				a.bodyTypeMenu(m)
 			}).BorderWidth(0).Width(120)
 			ui.Spacer(c)
-			if a.bodyType == model.BodyJSON || a.bodyType == model.BodyGraphQL || a.bodyType == model.BodyXML {
+			if a.bodyType == model.BodyJSON || a.bodyType == model.BodyXML {
 				a.flatButton(c, "格式化", a.formatBody)
 				a.flatButton(c, "压缩", a.minifyBody)
 			}
@@ -998,7 +998,7 @@ func (a *app) formBodyPanel(c *ui.Context) {
 			ui.Text(c, "").Width(24)
 		})
 		if a.bodyType == model.BodyMultipart {
-			ui.Text(c, "多部分表单目前只支持文本字段；上传文件请改用“二进制文件”类型。").
+			ui.Text(c, "Multi-Part 目前只支持文本字段；上传文件请改用“Binary File”类型。").
 				FontSize(a.us(10)).TextColor(t.TextMuted).Wrap()
 		}
 		for i := range a.bodyFields {
@@ -1024,18 +1024,16 @@ func bodyTypeLabel(bt string) string {
 		return "JSON"
 	case model.BodyXML:
 		return "XML"
-	case model.BodyGraphQL:
-		return "GraphQL"
 	case model.BodyText:
-		return "文本"
+		return "Other"
 	case model.BodyURLEncoded:
-		return "URL 编码"
+		return "Url Encoded"
 	case model.BodyMultipart:
-		return "多部分表单"
+		return "Multi-Part"
 	case model.BodyBinary:
-		return "二进制文件"
+		return "Binary File"
 	default:
-		return "无请求体"
+		return "No Body"
 	}
 }
 
@@ -1046,19 +1044,18 @@ func (a *app) bodyTypeMenu(m *ui.Menu) {
 			a.setBodyType(bt)
 		}
 	}
-	m.Item("表单数据").Disabled(true)
-	choice("URL 编码", model.BodyURLEncoded)
-	choice("多部分表单", model.BodyMultipart)
+	m.Item("Form Data").Disabled(true)
+	choice("Url Encoded", model.BodyURLEncoded)
+	choice("Multi-Part", model.BodyMultipart)
 	m.Separator()
-	m.Item("文本内容").Disabled(true)
-	choice("GraphQL", model.BodyGraphQL)
+	m.Item("Text Content").Disabled(true)
 	choice("JSON", model.BodyJSON)
 	choice("XML", model.BodyXML)
-	choice("其他", model.BodyText)
+	choice("Other", model.BodyText)
 	m.Separator()
-	m.Item("其他").Disabled(true)
-	choice("二进制文件", model.BodyBinary)
-	choice("无请求体", model.BodyNone)
+	m.Item("Other").Disabled(true)
+	choice("Binary File", model.BodyBinary)
+	choice("No Body", model.BodyNone)
 }
 
 func (a *app) headersPanel(c *ui.Context) {

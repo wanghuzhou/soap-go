@@ -165,7 +165,7 @@ func requestBodyFromCall(call model.Call) *RequestBody {
 
 	media := &MediaType{}
 	switch bodyType {
-	case model.BodyJSON, model.BodyGraphQL:
+	case model.BodyJSON:
 		var value any
 		if err := json.Unmarshal([]byte(call.Request), &value); err == nil {
 			media.Example = value

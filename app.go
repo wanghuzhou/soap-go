@@ -926,7 +926,7 @@ func (a *app) isJSONRequest() bool {
 		return false
 	}
 	switch a.bodyType {
-	case model.BodyJSON, model.BodyGraphQL:
+	case model.BodyJSON:
 		return true
 	case model.BodyXML, model.BodyText, model.BodyURLEncoded, model.BodyMultipart, model.BodyBinary, model.BodyNone:
 		return false
@@ -950,7 +950,7 @@ func (a *app) isXMLRequest() bool {
 	switch a.bodyType {
 	case model.BodyXML:
 		return true
-	case model.BodyJSON, model.BodyGraphQL, model.BodyText, model.BodyURLEncoded, model.BodyMultipart, model.BodyBinary, model.BodyNone:
+	case model.BodyJSON, model.BodyText, model.BodyURLEncoded, model.BodyMultipart, model.BodyBinary, model.BodyNone:
 		return false
 	}
 	ct := strings.ToLower(a.contentType)
@@ -2138,7 +2138,7 @@ func (a *app) requestBody(kind, method string) (body, contentType string, err er
 			ct = "application/octet-stream"
 		}
 		return string(data), ct, nil
-	default: // text-edited bodies: json / xml / graphql / text
+	default: // text-edited bodies: json / xml / text
 		ct := strings.TrimSpace(a.contentType)
 		if ct == "" {
 			ct = model.BodyTypeContentType(bt)

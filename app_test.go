@@ -2020,6 +2020,28 @@ func TestOtherSettingsTabLimit(t *testing.T) {
 	}
 }
 
+// TestBodyTypeLabelsEnglish checks the body-type names the picker shows are the
+// English ones, and that GraphQL is no longer a body type.
+func TestBodyTypeLabelsEnglish(t *testing.T) {
+	cases := map[string]string{
+		model.BodyJSON:       "JSON",
+		model.BodyXML:        "XML",
+		model.BodyText:       "Other",
+		model.BodyURLEncoded: "Url Encoded",
+		model.BodyMultipart:  "Multi-Part",
+		model.BodyBinary:     "Binary File",
+		model.BodyNone:       "No Body",
+	}
+	for bt, want := range cases {
+		if got := bodyTypeLabel(bt); got != want {
+			t.Errorf("bodyTypeLabel(%q) = %q, want %q", bt, got, want)
+		}
+	}
+	if got := model.NormalizeBodyType("graphql"); got != "" {
+		t.Errorf("graphql should no longer be a body type, got %q", got)
+	}
+}
+
 // tabTestApp builds an app with n native requests and opens every one as a tab.
 func tabTestApp(t *testing.T, n int) (*app, []string) {
 	t.Helper()
