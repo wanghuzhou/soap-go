@@ -1044,12 +1044,11 @@ func (a *app) urlBar(c *ui.Context) {
 			}).BorderWidth(0)
 		}
 		if showHost {
-			// The host reads as a prefix segment of the address field, so the
-			// user sees what the relative path will be joined to.
+			// The host reads as a prefix of the address field, so the user sees
+			// what the relative path will be joined to. It has no background of
+			// its own and shows no tooltip, to sit quietly on the page.
 			ui.Row(c).Grow(1).Gap(0).AlignItems(ui.Center).Children(func() {
-				ui.Row(c).Shrink(0).Height(32).Padding(0, 8).Radius(7).AlignItems(ui.Center).
-					Background(t.SurfaceHover).
-					Tooltip("项目 Host：" + host + "\n最终地址：" + model.JoinProjectURL(host, a.endpoint)).
+				ui.Row(c).Shrink(0).Height(32).Padding(0, 8).AlignItems(ui.Center).
 					Children(func() {
 						ui.Text(c, host).FontSize(a.us(11)).TextColor(t.TextMuted).
 							SingleLine().MaxWidth(260)
