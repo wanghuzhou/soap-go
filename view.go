@@ -1050,7 +1050,10 @@ func (a *app) urlBar(c *ui.Context) {
 			ui.Row(c).Grow(1).Gap(0).AlignItems(ui.Center).Children(func() {
 				ui.Row(c).Shrink(0).Height(32).Padding(0, 8).AlignItems(ui.Center).
 					Children(func() {
-						ui.Text(c, host).FontSize(a.us(11)).TextColor(t.TextMuted).
+						// The same font and size as the address input's text, so
+						// the host reads as part of the address rather than a
+						// smaller caption.
+						ui.Text(c, host).TextColor(t.TextMuted).
 							SingleLine().MaxWidth(260)
 					})
 				input()
