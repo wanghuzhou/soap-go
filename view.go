@@ -1033,10 +1033,7 @@ func (a *app) urlBar(c *ui.Context) {
 		host = model.NormalizeHost(p.Host)
 	}
 	showHost := host != "" && !model.EndpointAbsolute(a.endpoint)
-	placeholder := "http://host/api/path"
-	if showHost {
-		placeholder = "/a/b/list"
-	}
+	const placeholder = "接口路径 “/” 起始，或 http(s) 开头完整 URL"
 	input := func() {
 		ui.TextInput(c, &a.endpoint).Placeholder(placeholder).Grow(1).Label("请求地址").
 			OnSubmit(func() { a.sendRequest() })
