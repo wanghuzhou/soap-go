@@ -1804,109 +1804,75 @@ func (a *app) exportModal(c *ui.Context) {
 	})
 }
 
-func (a *app) newProjectModal(c *ui.Context) {
+// nameModal is the shared "type a name" dialog: a title, one labelled text
+// input and a commit button, closing on cancel. The project, workspace and
+// service/operation/folder prompts used to spell this out three times.
+func (a *app) nameModal(c *ui.Context, open *bool, title, label, placeholder, closeLabel, commit string, onCommit func(name string)) {
 	t := c.Theme()
-	ui.Modal(c, &a.newProjectOpen, func() {
+	ui.Modal(c, open, func() {
 		ui.Column(c).Width(420).Gap(12).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "项目").FontSize(a.us(16)).Bold()
+				ui.Text(c, title).FontSize(a.us(16)).Bold()
 				ui.Spacer(c)
-				a.closeIconButton(c, 24, "关闭新建项目", func() { a.newProjectOpen = false })
+				a.closeIconButton(c, 24, closeLabel, func() { *open = false })
 			})
-			ui.Text(c, "项目名称").FontSize(a.us(10.5)).TextColor(t.TextMuted)
-			ui.TextInput(c, &a.nameInput).Placeholder("新建项目").Grow(1)
+			ui.Text(c, label).FontSize(a.us(10.5)).TextColor(t.TextMuted)
+			ui.TextInput(c, &a.nameInput).Placeholder(placeholder).Grow(1).Label(label)
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
-					a.newProjectOpen = false
+					*open = false
 				}
-				if ui.PrimaryButton(c, "创建").Clicked() {
-					a.createProject(a.nameInput)
-					a.newProjectOpen = false
+				if ui.PrimaryButton(c, commit).Clicked() {
+					onCommit(a.nameInput)
+					*open = false
 				}
 			})
 		})
 	})
+}
+
+func (a *app) newProjectModal(c *ui.Context) {
+	a.nameModal(c, &a.newProjectOpen, "新建项目", "项目名称", "项目名称", "关闭新建项目", "创建", a.createProject)
 }
 
 func (a *app) workspaceModal(c *ui.Context) {
-	t := c.Theme()
-	ui.Modal(c, &a.wsOpen, func() {
-		title := "新建工作空间"
-		if a.wsKind == 1 {
-			title = "重命名工作空间"
-		} else if a.wsKind == 2 {
-			title = "导入工作空间"
+	title, commit := "新建工作空间", "创建"
+	switch a.wsKind {
+	case 1:
+		title, commit = "重命名工作空间", "重命名"
+	case 2:
+		title, commit = "导入工作空间", "导入"
+	}
+	a.nameModal(c, &a.wsOpen, title, "名称", "工作空间名称", "关闭", commit, func(name string) {
+		switch a.wsKind {
+		case 1:
+			a.renameWorkspace(name)
+		case 2:
+			a.importWorkspaceNamed(a.wsImportPath, name)
+		default:
+			a.createWorkspace(name)
 		}
-		ui.Column(c).Width(420).Gap(12).Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, title).FontSize(a.us(16)).Bold()
-				ui.Spacer(c)
-				a.closeIconButton(c, 24, "关闭", func() { a.wsOpen = false })
-			})
-			ui.Text(c, "名称").FontSize(a.us(10.5)).TextColor(t.TextMuted)
-			ui.TextInput(c, &a.nameInput).Placeholder("工作空间名称").Grow(1)
-			commit := "创建"
-			if a.wsKind == 1 {
-				commit = "重命名"
-			} else if a.wsKind == 2 {
-				commit = "导入"
-			}
-			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				if ui.Button(c, "取消").Clicked() {
-					a.wsOpen = false
-				}
-				if ui.PrimaryButton(c, commit).Clicked() {
-					switch a.wsKind {
-					case 1:
-						a.renameWorkspace(a.nameInput)
-					case 2:
-						a.importWorkspaceNamed(a.wsImportPath, a.nameInput)
-					default:
-						a.createWorkspace(a.nameInput)
-					}
-					a.wsOpen = false
-				}
-			})
-		})
 	})
 }
 
-// treeModal handles the small name prompts for services and operations.
+// treeModal handles the small name prompts for services, operations and folders.
 func (a *app) treeModal(c *ui.Context) {
-	t := c.Theme()
-	ui.Modal(c, &a.treeModalOpen, func() {
-		title, placeholder := "新建服务", "服务名称"
+	title, placeholder := "新建服务", "服务名称"
+	switch a.treeModalKind {
+	case 2:
+		title, placeholder = "新建操作", "操作名称"
+	case 3:
+		title, placeholder = "新建目录", "目录名称"
+	}
+	a.nameModal(c, &a.treeModalOpen, title, placeholder, placeholder, "关闭", "创建", func(name string) {
 		switch a.treeModalKind {
+		case 1:
+			a.addService(name)
 		case 2:
-			title, placeholder = "新建操作", "操作名称"
+			a.addOperation(name)
 		case 3:
-			title, placeholder = "新建目录", "目录名称"
+			a.newGroup(a.newGroupParent, name)
 		}
-		ui.Column(c).Width(420).Gap(12).Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, title).FontSize(a.us(16)).Bold()
-				ui.Spacer(c)
-				a.closeIconButton(c, 24, "关闭", func() { a.treeModalOpen = false })
-			})
-			ui.Text(c, placeholder).FontSize(a.us(10.5)).TextColor(t.TextMuted)
-			ui.TextInput(c, &a.nameInput).Placeholder(placeholder).Grow(1)
-			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				if ui.Button(c, "取消").Clicked() {
-					a.treeModalOpen = false
-				}
-				if ui.PrimaryButton(c, "创建").Clicked() {
-					switch a.treeModalKind {
-					case 1:
-						a.addService(a.nameInput)
-					case 2:
-						a.addOperation(a.nameInput)
-					case 3:
-						a.newGroup(a.newGroupParent, a.nameInput)
-					}
-					a.treeModalOpen = false
-				}
-			})
-		})
 	})
 }
 

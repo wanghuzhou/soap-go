@@ -2421,6 +2421,29 @@ func TestOpenCallLeavesProjectPage(t *testing.T) {
 	}
 }
 
+// TestNameDialogPrompts checks the shared name dialog still shows each
+// caller's own title or label after the three copies were merged.
+func TestNameDialogPrompts(t *testing.T) {
+	cases := []struct {
+		name string
+		open func(a *app)
+		want string
+	}{
+		{"project", func(a *app) { a.newProjectOpen = true }, "项目名称"},
+		{"workspace rename", func(a *app) { a.wsOpen, a.wsKind = true, 1 }, "重命名工作空间"},
+		{"folder", func(a *app) { a.treeModalOpen, a.treeModalKind = true, 3 }, "目录名称"},
+	}
+	for _, tc := range cases {
+		a := newTestApp(t)
+		tc.open(a)
+		tt := ui.NewTester(a.view, 900, 700)
+		tt.Frame()
+		if !tt.HasText(tc.want) {
+			t.Fatalf("%s: dialog lacks %q", tc.name, tc.want)
+		}
+	}
+}
+
 // TestCloseTabsBulk checks the close-other/left/right operations keep the right
 // tabs and move the selection to a survivor.
 func TestCloseTabsBulk(t *testing.T) {
