@@ -22,6 +22,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 
+	"soapgo/internal/fileutil"
 	"soapgo/internal/model"
 	"soapgo/internal/openapi"
 	"soapgo/internal/soapuiproj"
@@ -395,7 +396,7 @@ func (a *app) loadUIState() {
 	data, err := os.ReadFile(a.uiPath)
 	if err == nil {
 		var st uiState
-		if json.Unmarshal(stripBOM(data), &st) == nil {
+		if json.Unmarshal(fileutil.StripBOM(data), &st) == nil {
 			a.dark = st.Dark
 			a.splitSide = st.SplitSide
 			if st.SideW > 100 {
@@ -3089,7 +3090,7 @@ func (a *app) doImportWorkspace(path, name string) {
 		return
 	}
 	var projects []model.Project
-	if err := json.Unmarshal(stripBOM(data), &projects); err != nil {
+	if err := json.Unmarshal(fileutil.StripBOM(data), &projects); err != nil {
 		a.errMsg = "不是有效的工作空间 JSON：" + err.Error()
 		return
 	}
@@ -3136,13 +3137,6 @@ func humanSize(n int) string {
 	default:
 		return fmt.Sprintf("%d B", n)
 	}
-}
-
-func stripBOM(b []byte) []byte {
-	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
-		return b[3:]
-	}
-	return b
 }
 
 func shellQuote(s string) string {

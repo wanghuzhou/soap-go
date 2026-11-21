@@ -12,6 +12,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"soapgo/internal/fileutil"
 	"soapgo/internal/model"
 )
 
@@ -31,7 +32,7 @@ func Parse(data []byte, filename string) (*model.Project, error) {
 
 // decode reads the document from JSON or YAML into the typed subset.
 func decode(data []byte, filename string) (*Document, error) {
-	trimmed := bytes.TrimSpace(data)
+	trimmed := bytes.TrimSpace(fileutil.StripBOM(data))
 	if len(trimmed) == 0 {
 		return nil, errors.New("文件为空")
 	}

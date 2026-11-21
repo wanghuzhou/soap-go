@@ -137,6 +137,21 @@ func TestParseJSON(t *testing.T) {
 	}
 }
 
+// TestParseJSONWithBOM checks a document saved by an editor that prefixes a
+// UTF-8 BOM still imports, as the other import paths already allow.
+func TestParseJSONWithBOM(t *testing.T) {
+	plain := `{"openapi":"3.0.3","info":{"title":"带 BOM","version":"1"},` +
+		`"paths":{"/a":{"get":{"responses":{"200":{"description":"ok"}}}}}}`
+	data := append([]byte{0xEF, 0xBB, 0xBF}, []byte(plain)...)
+	p, err := Parse(data, "a.openapi.json")
+	if err != nil {
+		t.Fatalf("Parse with BOM: %v", err)
+	}
+	if len(p.Calls) != 1 || p.Calls[0].Endpoint != "/a" {
+		t.Fatalf("calls = %+v, want the /a request", p.Calls)
+	}
+}
+
 // TestParseYAML checks the YAML path produces the same shape.
 func TestParseYAML(t *testing.T) {
 	p, err := Parse([]byte(sampleYAML), "b.openapi.yaml")
