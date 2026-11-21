@@ -55,6 +55,11 @@ func (a *app) view(c *ui.Context) {
 	c.OnWindowShortcut(ui.Super, ui.KeyS, func() { a.saveCall() })
 	c.OnWindowShortcut(ui.Ctrl|ui.Shift, ui.KeyF, func() { a.formatBody() })
 	c.OnWindowShortcut(ui.Ctrl, ui.KeyK, func() { a.searchRef.SelectAll() })
+	// Tab switching and closing, as most editors have them.
+	c.OnWindowShortcut(ui.Ctrl, ui.KeyTab, func() { a.switchTab(1) })
+	c.OnWindowShortcut(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.switchTab(-1) })
+	c.OnWindowShortcut(ui.Ctrl, ui.KeyW, func() { a.closeActiveTab() })
+	c.OnWindowShortcut(ui.Super, ui.KeyW, func() { a.closeActiveTab() })
 	t := c.Theme()
 	ui.Column(c).Fill().Background(t.Background).Children(func() {
 		a.topBar(c)
@@ -539,7 +544,7 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			// The proxy settings now live on the project page; this entry just
 			// takes the user there instead of opening its old dialog.
 			a.openProjectPage(it.pid)
-			a.statusMsg = "代理设置已移到项目页面下方"
+			a.setStatus("代理设置已移到项目页面下方")
 		}
 		m.Separator()
 		if m.Item("删除项目").Danger().Chosen() {
@@ -1592,12 +1597,18 @@ func (a *app) settingsPanel(c *ui.Context) {
 			ui.Text(c, strings.TrimSpace(a.reqDescription)).FontSize(a.us(11)).TextColor(t.Text).Wrap()
 			ui.Divider(c)
 		}
-		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "超时").FontSize(a.us(11)).TextColor(t.TextMuted).Width(72)
-			ui.TextInput(c, &a.timeout).Placeholder("60000").Width(110)
+			a.stepBtn(c, "−", parseTimeout(a.timeout) > model.MinTimeoutMS, func() { a.stepTimeout(-1000) })
+			inp := ui.TextInput(c, &a.timeout).Placeholder("60000").Width(110).Ref(&a.timeoutRef).
+				OnSubmit(func() { a.normalizeTimeout() })
+			if !inp.Focused() {
+				a.normalizeTimeout()
+			}
+			a.stepBtn(c, "+", parseTimeout(a.timeout) < model.MaxTimeoutMS, func() { a.stepTimeout(1000) })
 			ui.Text(c, "ms").FontSize(a.us(11)).TextColor(t.TextMuted)
 			ui.Spacer(c)
-			ui.Text(c, "范围 1000 – 600000").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+			ui.Text(c, "范围 1000 – 600000，超出自动修正").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 		})
 		ui.Divider(c)
 		ui.Text(c, "请求方式").FontSize(a.us(11.5)).Bold()
@@ -1643,6 +1654,9 @@ func (a *app) responsePanel(c *ui.Context) {
 			if a.resp.Truncated {
 				ui.Text(c, "内容已截断").FontSize(a.us(10)).TextColor(t.Warning)
 			}
+			if a.hasResp && a.resp.Error == "" {
+				a.flatButton(c, "保存到文件…", a.saveResponseFile)
+			}
 		})
 		if !a.hasResp {
 			ui.Column(c).Grow(1).Center().Justify(ui.Center).Gap(6).Children(func() {
@@ -1682,7 +1696,13 @@ func (a *app) statusBar(c *ui.Context) {
 		ui.Text(c, "UTF-8").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 		ui.Spacer(c)
 		if a.statusMsg != "" {
-			ui.Text(c, a.statusMsg).FontSize(a.us(10.5)).TextColor(t.Success).SingleLine()
+			// Transient messages clear themselves; sticky ones (a send in
+			// progress) stay until replaced.
+			if !a.statusHold && time.Since(a.statusAt) > statusTTL {
+				a.statusMsg = ""
+			} else {
+				ui.Text(c, a.statusMsg).FontSize(a.us(10.5)).TextColor(t.Success).SingleLine()
+			}
 		}
 		ui.Text(c, fmt.Sprintf("%d 个项目", len(a.projects))).FontSize(a.us(10.5)).TextColor(t.TextMuted)
 	})
@@ -1935,6 +1955,9 @@ var shortcutHelp = []struct{ keys, desc string }{
 	{"Ctrl/Cmd + S", "保存当前请求"},
 	{"Ctrl/Cmd + Shift + F", "格式化请求报文"},
 	{"Ctrl/Cmd + K", "聚焦左侧搜索框"},
+	{"Ctrl + Tab", "切换到下一个标签页"},
+	{"Ctrl + Shift + Tab", "切换到上一个标签页"},
+	{"Ctrl/Cmd + W", "关闭当前标签页"},
 	{"Esc", "关闭弹窗或清空搜索"},
 	{"Tab / Shift+Tab", "在可聚焦控件间移动"},
 	{"Enter / Space", "激活当前聚焦的按钮"},
@@ -2368,7 +2391,7 @@ func (a *app) copyIcon(c *ui.Context, copied string, text func() string) ui.Elem
 		Background(t.Surface).Border(1, t.Border).Tooltip("复制").Focusable().Label("复制").
 		OnClick(func() {
 			mygo.Clipboard.WriteText(text())
-			a.statusMsg = copied
+			a.setStatus(copied)
 		})
 	if btn.Hovered() {
 		btn = btn.Background(t.SurfaceHover)

@@ -639,6 +639,10 @@ type SendRequest struct {
 	Body        string            `json:"body"`
 	ContentType string            `json:"contentType"`
 	TimeoutMS   int               `json:"timeoutMs"`
+	// FilePath, when set, names a file whose bytes Send reads as the body. It
+	// keeps a large binary upload off the UI thread: the UI only records the
+	// path, and the request goroutine reads the file.
+	FilePath string `json:"filePath,omitempty"`
 }
 
 // SendResponse is what we return to the frontend after a call.

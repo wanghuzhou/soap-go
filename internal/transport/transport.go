@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,6 +59,17 @@ func SendContext(ctx context.Context, req model.SendRequest, proxyCfg *model.Pro
 	timeout := time.Duration(req.TimeoutMS) * time.Millisecond
 	if timeout <= 0 {
 		timeout = time.Duration(model.DefaultTimeoutMS) * time.Millisecond
+	}
+
+	// A file body is read here, inside the caller's sending goroutine, so a
+	// large binary upload never blocks the UI while it is read.
+	if req.FilePath != "" {
+		data, err := os.ReadFile(req.FilePath)
+		if err != nil {
+			out.Error = "无法读取文件：" + err.Error()
+			return out
+		}
+		req.Body = string(data)
 	}
 
 	var bodyReader io.Reader

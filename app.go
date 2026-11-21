@@ -242,10 +242,18 @@ type app struct {
 	xmlEd          *editor.State
 	respEd         *editor.State
 	reqSection     int
+	timeoutRef     ui.Ref
 	// reqLangKey is the kind/body-type/content-type the request editor's
 	// syntax highlighting was last set for, so it only re-resolves when one
 	// of them changes rather than every frame.
 	reqLangKey string
+	// binCache* keep the last binary body read, keyed by path, size and
+	// modification time, so switching to the 请求 response tab does not re-read
+	// a large file every time.
+	binCachePath string
+	binCacheSize int64
+	binCacheMod  time.Time
+	binCacheData string
 
 	// Response.
 	hasResp    bool
@@ -333,7 +341,11 @@ type app struct {
 	proxyPort                                                   string
 
 	statusMsg string
-	errMsg    string
+	// statusAt is when statusMsg was set, and statusHold keeps it on screen
+	// until replaced (for long-running actions such as sending).
+	statusAt   time.Time
+	statusHold bool
+	errMsg     string
 
 	uiPath     string
 	savedUI    uiState
@@ -812,6 +824,7 @@ func (a *app) applyMaxTabsText() {
 // every other tab has unsaved edits the limit is exceeded rather than losing
 // changes, so the caller keeps the user's work.
 func (a *app) enforceTabLimit(keep string) {
+	closed := 0
 	for len(a.tabs) > a.tabLimit() {
 		victim := -1
 		for i, k := range a.tabs {
@@ -822,9 +835,15 @@ func (a *app) enforceTabLimit(keep string) {
 			break
 		}
 		if victim < 0 {
-			return
+			break
 		}
 		a.removeTabAt(victim)
+		closed++
+	}
+	if closed > 0 {
+		// Say what happened: a tab vanishing on its own otherwise looks like
+		// the app lost it.
+		a.setStatus(fmt.Sprintf("标签页超过上限，已自动关闭 %d 个最早打开的标签", closed))
 	}
 }
 
@@ -866,6 +885,32 @@ func (a *app) activeTabKey() string {
 		return a.tabs[a.active]
 	}
 	return ""
+}
+
+// switchTab moves the selection delta tabs along the strip, wrapping around.
+func (a *app) switchTab(delta int) {
+	n := len(a.tabs)
+	if n == 0 {
+		return
+	}
+	i := a.active
+	if i < 0 {
+		i = 0
+	} else {
+		i = (i + delta) % n
+		if i < 0 {
+			i += n
+		}
+	}
+	pid, sid, oid, cid := splitKey(a.tabs[i])
+	a.openCall(pid, sid, oid, cid)
+}
+
+// closeActiveTab closes the tab in the editor, as its close button does.
+func (a *app) closeActiveTab() {
+	if key := a.activeTabKey(); key != "" {
+		a.closeTabByKey(key)
+	}
 }
 
 // captureDraft snapshots the live request form for the active tab.
@@ -1555,7 +1600,7 @@ func (a *app) saveCall() {
 		a.drafts[key] = a.captureDraft()
 	}
 	a.errMsg = ""
-	a.statusMsg = "已保存：" + call.Title
+	a.setStatus("已保存：" + call.Title)
 	a.reload()
 }
 
@@ -1582,7 +1627,7 @@ func (a *app) deleteCall() {
 			a.errMsg = "无法删除：" + err.Error()
 			return
 		}
-		a.statusMsg = "已删除请求"
+		a.setStatus("已删除请求")
 		a.reload()
 		a.aFromCallRemoved(pid, sid, oid, cid)
 	})
@@ -1635,7 +1680,7 @@ func (a *app) newCall() {
 	}
 	a.reload()
 	a.openCall(p.ID, s.ID, o.ID, call.ID)
-	a.statusMsg = "已新建请求样例"
+	a.setStatus("已新建请求样例")
 }
 
 // newProjectCall adds a plain HTTP request under the selected project or one of
@@ -1657,7 +1702,7 @@ func (a *app) newProjectCall(folderID string) {
 	}
 	a.reload()
 	a.openCall(p.ID, "", "", call.ID)
-	a.statusMsg = "已新建请求"
+	a.setStatus("已新建请求")
 }
 
 // moveProjectCall moves a native request into folderID ("" for the project
@@ -1670,7 +1715,7 @@ func (a *app) moveProjectCall(pid, cid, folderID string) {
 	if folderID != "" {
 		a.expanded[folderID] = true
 	}
-	a.statusMsg = "已移动请求"
+	a.setStatus("已移动请求")
 	a.reload()
 }
 
@@ -1688,7 +1733,7 @@ func (a *app) newGroup(parentID, name string) {
 	if parentID != "" {
 		a.expanded[parentID] = true
 	}
-	a.statusMsg = "已新建目录"
+	a.setStatus("已新建目录")
 	a.reload()
 }
 
@@ -1698,7 +1743,7 @@ func (a *app) renameGroupAt(pid, gid, name string) {
 		a.errMsg = "无法重命名目录：" + err.Error()
 		return
 	}
-	a.statusMsg = "已重命名目录"
+	a.setStatus("已重命名目录")
 	a.reload()
 }
 
@@ -1711,7 +1756,7 @@ func (a *app) deleteGroup(pid, gid, name string) {
 			a.errMsg = "无法删除目录：" + err.Error()
 			return
 		}
-		a.statusMsg = "已删除目录"
+		a.setStatus("已删除目录")
 		a.reload()
 		doomed := map[string]bool{}
 		for _, id := range removed {
@@ -1750,7 +1795,7 @@ func (a *app) duplicateCall() {
 		a.errMsg = "无法复制：" + err.Error()
 		return
 	}
-	a.statusMsg = "已复制请求"
+	a.setStatus("已复制请求")
 }
 
 // deleteOperation removes the selected operation and everything under it.
@@ -1766,7 +1811,7 @@ func (a *app) deleteOperation() {
 			a.errMsg = "无法删除操作：" + err.Error()
 			return
 		}
-		a.statusMsg = "已删除操作"
+		a.setStatus("已删除操作")
 		a.reload()
 		a.closeTabsUnder(func(k string) bool {
 			kp, ks, ko, _ := splitKey(k)
@@ -1790,7 +1835,7 @@ func (a *app) addService(name string) {
 		a.errMsg = "无法新建服务：" + err.Error()
 		return
 	}
-	a.statusMsg = "已新建服务：" + name
+	a.setStatus("已新建服务：" + name)
 	a.reload()
 }
 
@@ -1809,7 +1854,7 @@ func (a *app) addOperation(name string) {
 		a.errMsg = "无法新建操作：" + err.Error()
 		return
 	}
-	a.statusMsg = "已新建操作：" + name
+	a.setStatus("已新建操作：" + name)
 	a.reload()
 }
 
@@ -1852,7 +1897,7 @@ func (a *app) renameCallAt(pid, sid, oid, cid, title string) {
 						a.errMsg = "无法重命名：" + err.Error()
 						return
 					}
-					a.statusMsg = "已重命名请求"
+					a.setStatus("已重命名请求")
 					a.reload()
 					return
 				}
@@ -1869,7 +1914,7 @@ func (a *app) renameCallAt(pid, sid, oid, cid, title string) {
 				a.errMsg = "无法重命名：" + err.Error()
 				return
 			}
-			a.statusMsg = "已重命名请求"
+			a.setStatus("已重命名请求")
 			a.reload()
 			return
 		}
@@ -1894,11 +1939,11 @@ func (a *app) exportProject(path string) {
 		a.errMsg = "无法生成 SoapUI XML：" + err.Error()
 		return
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := fileutil.WriteAtomic(path, data, 0o644); err != nil {
 		a.errMsg = "无法写出文件：" + err.Error()
 		return
 	}
-	a.statusMsg = "已导出 SoapUI XML：" + filepath.Base(path)
+	a.setStatus("已导出 SoapUI XML：" + filepath.Base(path))
 }
 
 // isDirty reports whether the editor holds changes not yet saved.
@@ -1949,6 +1994,21 @@ func (a *app) dirtyKey(key string) bool {
 		return a.currentDirty()
 	}
 	return draftDirty(a.drafts[key])
+}
+
+// statusTTL is how long a transient status message stays in the status bar.
+const statusTTL = 4 * time.Second
+
+// setStatus shows a transient message in the status bar; it clears itself after
+// statusTTL instead of staying there for the rest of the session.
+func (a *app) setStatus(msg string) {
+	a.statusMsg, a.statusAt, a.statusHold = msg, time.Now(), false
+}
+
+// setStickyStatus shows a message that stays until replaced, for long-running
+// actions whose progress should not vanish.
+func (a *app) setStickyStatus(msg string) {
+	a.statusMsg, a.statusAt, a.statusHold = msg, time.Now(), true
 }
 
 // askConfirm opens the confirmation dialog, whose commit button says label,
@@ -2066,7 +2126,7 @@ func (a *app) deleteService() {
 			a.errMsg = "无法删除服务：" + err.Error()
 			return
 		}
-		a.statusMsg = "已删除服务"
+		a.setStatus("已删除服务")
 		a.reload()
 		a.closeTabsUnder(func(k string) bool {
 			kp, ks, _, _ := splitKey(k)
@@ -2195,9 +2255,24 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 			hdrs["SOAPAction"] = a.action
 		}
 	}
-	body, contentType, err := a.requestBody(kind, method)
-	if err != nil {
-		return model.SendRequest{}, nil, err
+	body, contentType, filePath := "", "", ""
+	if kind == model.KindHTTP && model.MethodHasBody(method) && a.requestBodyType(kind) == model.BodyBinary {
+		// Leave the read to the sending goroutine: only the path travels here.
+		path := strings.TrimSpace(a.bodyFile)
+		if path == "" {
+			return model.SendRequest{}, nil, fmt.Errorf("请选择要上传的文件")
+		}
+		filePath = path
+		contentType = strings.TrimSpace(a.contentType)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+	} else {
+		var err error
+		body, contentType, err = a.requestBody(kind, method)
+		if err != nil {
+			return model.SendRequest{}, nil, err
+		}
 	}
 	// Only send a Content-Type when the request actually has a body (or is
 	// SOAP); a bodyless GET must not carry the default JSON type.
@@ -2218,6 +2293,7 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 		Body:        body,
 		ContentType: contentType,
 		TimeoutMS:   parseTimeout(a.timeout),
+		FilePath:    filePath,
 	}
 	var proxy *model.ProxySettings
 	if p.Proxy != nil {
@@ -2227,6 +2303,39 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 }
 
 // sendRequest runs the SOAP call off the UI thread.
+// readBinaryBody reads a binary request body, caching the last file read so the
+// request preview does not re-read it on every switch. A change of size or
+// modification time invalidates the cache.
+func (a *app) readBinaryBody(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("无法读取文件：%w", err)
+	}
+	if a.binCachePath == path && a.binCacheSize == info.Size() && a.binCacheMod.Equal(info.ModTime()) {
+		return a.binCacheData, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("无法读取文件：%w", err)
+	}
+	a.binCachePath, a.binCacheSize, a.binCacheMod = path, info.Size(), info.ModTime()
+	a.binCacheData = string(data)
+	return a.binCacheData, nil
+}
+
+// requestBodyType returns the effective body shape of the form, inferring it
+// from the content type and body text when the user did not pick one.
+func (a *app) requestBodyType(kind string) string {
+	if kind == model.KindSOAP {
+		return ""
+	}
+	bt := a.bodyType
+	if bt == "" {
+		bt = model.InferBodyType(a.contentType, a.xmlEd.Buffer.String())
+	}
+	return bt
+}
+
 // requestBody resolves the request body and its content type from the form's
 // body type and method.
 func (a *app) requestBody(kind, method string) (body, contentType string, err error) {
@@ -2237,10 +2346,7 @@ func (a *app) requestBody(kind, method string) (body, contentType string, err er
 		}
 		return a.xmlEd.Buffer.String(), ct, nil
 	}
-	bt := a.bodyType
-	if bt == "" {
-		bt = model.InferBodyType(a.contentType, a.xmlEd.Buffer.String())
-	}
+	bt := a.requestBodyType(kind)
 	// A method without a body (GET/HEAD) or an explicit "No Body" sends nothing
 	// and carries no content type.
 	if bt == model.BodyNone || !model.MethodHasBody(method) {
@@ -2259,15 +2365,15 @@ func (a *app) requestBody(kind, method string) (body, contentType string, err er
 		if strings.TrimSpace(a.bodyFile) == "" {
 			return "", "", fmt.Errorf("请选择要上传的文件")
 		}
-		data, rerr := os.ReadFile(a.bodyFile)
+		data, rerr := a.readBinaryBody(a.bodyFile)
 		if rerr != nil {
-			return "", "", fmt.Errorf("无法读取文件：%w", rerr)
+			return "", "", rerr
 		}
 		ct := strings.TrimSpace(a.contentType)
 		if ct == "" {
 			ct = "application/octet-stream"
 		}
-		return string(data), ct, nil
+		return data, ct, nil
 	default: // text-edited bodies: json / xml / text
 		ct := strings.TrimSpace(a.contentType)
 		if ct == "" {
@@ -2350,7 +2456,7 @@ func (a *app) sendRequest() {
 	a.sendCancel = cancel
 	a.sending = true
 	a.errMsg = ""
-	a.statusMsg = "发送中…"
+	a.setStickyStatus("发送中…")
 	go func() {
 		resp := transport.SendContext(ctx, req, proxy)
 		mygo.RunOnMain(func() {
@@ -2366,22 +2472,22 @@ func (a *app) sendRequest() {
 				switch {
 				case resp.Error == "已取消":
 					a.errMsg = ""
-					a.statusMsg = "已取消"
+					a.setStatus("已取消")
 				case resp.Error != "":
 					a.errMsg = "无法发送请求：" + friendlySendError(resp.Error)
-					a.statusMsg = ""
+					a.setStatus("")
 				default:
-					a.statusMsg = fmt.Sprintf("%d %s · %d ms · %s", resp.Status, resp.StatusText, resp.DurationMS, humanSize(resp.Size))
+					a.setStatus(fmt.Sprintf("%d %s · %d ms · %s", resp.Status, resp.StatusText, resp.DurationMS, humanSize(resp.Size)))
 				}
 				a.syncResponse()
 			} else {
 				switch {
 				case resp.Error == "已取消":
-					a.statusMsg = "后台请求已取消"
+					a.setStatus("后台请求已取消")
 				case resp.Error != "":
 					a.errMsg = "后台请求无法完成：" + friendlySendError(resp.Error)
 				default:
-					a.statusMsg = fmt.Sprintf("后台请求完成：%d %s · %d ms", resp.Status, resp.StatusText, resp.DurationMS)
+					a.setStatus(fmt.Sprintf("后台请求完成：%d %s · %d ms", resp.Status, resp.StatusText, resp.DurationMS))
 				}
 			}
 			a.persistResponse(pid, sid, oid, cid, resp)
@@ -2411,7 +2517,7 @@ func (a *app) cancelSend() {
 		return
 	}
 	a.sendCancel()
-	a.statusMsg = "正在取消…"
+	a.setStickyStatus("正在取消…")
 }
 
 // syncResponse writes the response body into the read-only editor.
@@ -2428,6 +2534,26 @@ func (a *app) syncResponse() {
 	}
 	a.respEd.Buffer.Reset(text)
 	a.respEd.Buffer.SetLanguage(editor.LanguageForText(file, text))
+}
+
+// normalizeTimeout rewrites the timeout input to the value actually used, so
+// typing "60" no longer stays at 60 ms (silently clamped to 1000 by the send).
+func (a *app) normalizeTimeout() {
+	if s := strconv.Itoa(parseTimeout(a.timeout)); a.timeout != s {
+		a.timeout = s
+	}
+}
+
+// stepTimeout nudges the timeout by delta milliseconds, clamped to the range.
+func (a *app) stepTimeout(delta int) {
+	n := parseTimeout(a.timeout) + delta
+	if n < model.MinTimeoutMS {
+		n = model.MinTimeoutMS
+	}
+	if n > model.MaxTimeoutMS {
+		n = model.MaxTimeoutMS
+	}
+	a.timeout = strconv.Itoa(n)
 }
 
 // responseIsJSON reports whether the response body should be treated as JSON:
@@ -2500,6 +2626,39 @@ func (a *app) responseText() string {
 		}
 		return prettyXML(a.resp.Body)
 	}
+}
+
+// saveResponseFile asks where to save the last response body and writes it
+// atomically, so a truncated 16 MB response does not have to be copied by hand.
+func (a *app) saveResponseFile() {
+	if !a.hasResp || a.resp.Error != "" {
+		return
+	}
+	ext := ".txt"
+	switch {
+	case a.responseIsJSON():
+		ext = ".json"
+	case strings.Contains(strings.ToLower(a.resp.Headers["Content-Type"]), "xml"):
+		ext = ".xml"
+	}
+	path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+		Parent: a.win, Title: "保存响应", DefaultPath: "response" + ext,
+		Filters: []mygo.FileFilter{{Name: "所有文件", Extensions: []string{"*"}}},
+	})
+	if err != nil || path == "" {
+		return
+	}
+	if err := a.saveResponseTo(path); err != nil {
+		a.setStatus("无法保存响应：" + err.Error())
+		return
+	}
+	a.setStatus("响应已保存：" + filepath.Base(path))
+}
+
+// saveResponseTo writes the response body to path, through a temp file and a
+// rename so an interrupted write leaves no half file.
+func (a *app) saveResponseTo(path string) error {
+	return fileutil.WriteAtomic(path, []byte(a.resp.Body), 0o644)
 }
 
 // headerLines renders headers in a stable order, as map iteration is random
@@ -2612,7 +2771,7 @@ func (a *app) copyCurl() {
 		return
 	}
 	mygo.Clipboard.WriteText(cmd)
-	a.statusMsg = "curl 已复制"
+	a.setStatus("curl 已复制")
 }
 
 // curlCommand builds the curl command for the current request. A multipart body
@@ -2621,10 +2780,7 @@ func (a *app) copyCurl() {
 func (a *app) curlCommand() (string, error) {
 	kind := a.reqKind
 	method := model.EffectiveMethod(kind, a.method)
-	bt := a.bodyType
-	if kind != model.KindSOAP && bt == "" {
-		bt = model.InferBodyType(a.contentType, a.xmlEd.Buffer.String())
-	}
+	bt := a.requestBodyType(kind)
 	multipart := kind != model.KindSOAP && bt == model.BodyMultipart
 	binary := kind != model.KindSOAP && bt == model.BodyBinary
 	body, contentType := "", ""
@@ -2717,7 +2873,7 @@ func (a *app) createProject(name string) {
 	a.pid, a.sid, a.oid, a.cid = saved.ID, "", "", ""
 	a.reload()
 	a.openProjectPage(saved.ID)
-	a.statusMsg = "已新建项目：" + saved.Name
+	a.setStatus("已新建项目：" + saved.Name)
 }
 
 func (a *app) deleteProject() {
@@ -2732,7 +2888,7 @@ func (a *app) deleteProject() {
 			a.errMsg = "无法删除项目：" + err.Error()
 			return
 		}
-		a.statusMsg = "已删除项目：" + name
+		a.setStatus("已删除项目：" + name)
 		a.reload()
 		a.closeTabsUnder(func(k string) bool {
 			kp, _, _, _ := splitKey(k)
@@ -2760,7 +2916,7 @@ func (a *app) renameProject(name string) {
 		a.errMsg = "无法重命名：" + err.Error()
 		return
 	}
-	a.statusMsg = "项目已重命名"
+	a.setStatus("项目已重命名")
 	a.reload()
 }
 
@@ -2784,7 +2940,7 @@ func (a *app) importSoapUI(path string) {
 		return
 	}
 	a.reload()
-	a.statusMsg = "已导入 SoapUI 项目：" + project.Name
+	a.setStatus("已导入 SoapUI 项目：" + project.Name)
 }
 
 // importOpenAPI parses an OpenAPI 3.x document (JSON or YAML) and adds it as a
@@ -2806,7 +2962,7 @@ func (a *app) importOpenAPI(path string) {
 		return
 	}
 	a.reload()
-	a.statusMsg = fmt.Sprintf("已导入 OpenAPI：%s（%d 个接口）", saved.Name, len(saved.Calls))
+	a.setStatus(fmt.Sprintf("已导入 OpenAPI：%s（%d 个接口）", saved.Name, len(saved.Calls)))
 }
 
 // exportOpenAPI writes the selected native project as an OpenAPI 3.x document
@@ -2843,11 +2999,11 @@ func (a *app) exportOpenAPI(format string) {
 	if err != nil || path == "" {
 		return
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := fileutil.WriteAtomic(path, data, 0o644); err != nil {
 		a.errMsg = "无法写入文件：" + err.Error()
 		return
 	}
-	a.statusMsg = "已导出 OpenAPI：" + filepath.Base(path)
+	a.setStatus("已导出 OpenAPI：" + filepath.Base(path))
 }
 
 // importWSDLFile parses a WSDL file and adds a project.
@@ -2956,7 +3112,7 @@ func (a *app) persistWSDL(res *wsdl.Result, fallbackName, source, projectSource 
 		return
 	}
 	a.reload()
-	a.statusMsg = "已导入 WSDL：" + name
+	a.setStatus("已导入 WSDL：" + name)
 }
 
 // openProjectPage shows pid's project page in the main area: the project's
@@ -3046,7 +3202,7 @@ func (a *app) updateProxy() {
 		a.errMsg = "无法保存代理：" + err.Error()
 		return
 	}
-	a.statusMsg = "代理设置已保存"
+	a.setStatus("代理设置已保存")
 	a.reload()
 }
 
@@ -3067,7 +3223,7 @@ func (a *app) applyProjectHost() {
 		return
 	}
 	a.hostInput = model.NormalizeHost(host)
-	a.statusMsg = "项目 Host 已保存"
+	a.setStatus("项目 Host 已保存")
 	a.reload()
 }
 
@@ -3092,7 +3248,7 @@ func (a *app) doSwitchWorkspace(id string) {
 	a.st, a.info = a.reg.Active()
 	a.clearSelection()
 	a.reload()
-	a.statusMsg = "已切换工作空间：" + info.Name
+	a.setStatus("已切换工作空间：" + info.Name)
 }
 
 func (a *app) createWorkspace(name string) {
@@ -3114,7 +3270,7 @@ func (a *app) doCreateWorkspace(name string) {
 	a.st, a.info = a.reg.Active()
 	a.clearSelection()
 	a.reload()
-	a.statusMsg = "已新建工作空间：" + info.Name
+	a.setStatus("已新建工作空间：" + info.Name)
 }
 
 func (a *app) renameWorkspace(name string) {
@@ -3123,7 +3279,7 @@ func (a *app) renameWorkspace(name string) {
 		return
 	}
 	a.info = a.reg.CurrentInfo()
-	a.statusMsg = "工作空间已重命名"
+	a.setStatus("工作空间已重命名")
 }
 
 func (a *app) deleteWorkspace() {
@@ -3139,7 +3295,7 @@ func (a *app) deleteWorkspace() {
 		a.st, a.info = a.reg.Active()
 		a.clearSelection()
 		a.reload()
-		a.statusMsg = "已删除工作空间"
+		a.setStatus("已删除工作空间")
 	})
 }
 
@@ -3156,11 +3312,11 @@ func (a *app) exportWorkspace(path string) {
 		a.errMsg = "无法导出：" + err.Error()
 		return
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := fileutil.WriteAtomic(path, data, 0o644); err != nil {
 		a.errMsg = "无法写出文件：" + err.Error()
 		return
 	}
-	a.statusMsg = "已导出工作空间：" + filepath.Base(path)
+	a.setStatus("已导出工作空间：" + filepath.Base(path))
 }
 
 // importWorkspaceNamed imports with an explicit workspace name.
@@ -3195,7 +3351,7 @@ func (a *app) doImportWorkspace(path, name string) {
 	a.st, a.info = a.reg.Active()
 	a.clearSelection()
 	a.reload()
-	a.statusMsg = "已导入工作空间：" + name
+	a.setStatus("已导入工作空间：" + name)
 }
 
 // ---- helpers ----

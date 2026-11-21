@@ -1120,11 +1120,17 @@ func TestCurlCommandForFileBodies(t *testing.T) {
 func TestProxyPasswordIsMasked(t *testing.T) {
 	a := newTestApp(t)
 	a.createProject("P")
-	a.projects[0].Proxy = &model.ProxySettings{
+	p := a.projects[0]
+	if err := a.st.UpdateProjectProxy(p.ID, &model.ProxySettings{
 		Mode: "custom", Type: "http", Host: "127.0.0.1", Port: 8080, Password: "s3cret",
+	}); err != nil {
+		t.Fatalf("UpdateProjectProxy: %v", err)
 	}
 	a.reload()
-	a.openProjectPage(a.projects[0].ID)
+	a.openProjectPage(p.ID)
+	if a.proxyModeSel != "自定义代理" || a.proxyPass != "s3cret" {
+		t.Fatalf("proxy form = %q/%q, want the custom settings", a.proxyModeSel, a.proxyPass)
+	}
 
 	tt := ui.NewTester(a.view, 1100, 800)
 	tt.Frame()
@@ -1146,6 +1152,161 @@ func TestWSDLImportShowsProgress(t *testing.T) {
 	}
 	if !tt.HasText("获取中…") {
 		t.Fatal("the import button still reads 获取并导入 while importing")
+	}
+}
+
+// TestStatusMessageExpires checks transient status messages clear themselves
+// while sticky progress messages stay until replaced.
+func TestStatusMessageExpires(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, 900, 600)
+	tt.Frame()
+
+	a.setStatus("临时提示-xyz")
+	tt.Frame()
+	if !tt.HasText("临时提示-xyz") {
+		t.Fatal("a fresh status message is not shown")
+	}
+	a.statusAt = time.Now().Add(-statusTTL - time.Second)
+	tt.Frame()
+	if tt.HasText("临时提示-xyz") {
+		t.Fatal("a transient status message did not expire")
+	}
+
+	a.setStickyStatus("发送中…")
+	a.statusAt = time.Now().Add(-statusTTL - time.Second)
+	tt.Frame()
+	if !tt.HasText("发送中…") {
+		t.Fatal("a sticky status message expired")
+	}
+}
+
+// TestTabSwitchAndClose checks the Ctrl+Tab / Ctrl+W helpers move and close
+// tabs, wrapping at both ends.
+func TestTabSwitchAndClose(t *testing.T) {
+	a, keys := tabTestApp(t, 3)
+	if got := a.activeTabKey(); got != keys[2] {
+		t.Fatalf("setup active = %q, want %q", got, keys[2])
+	}
+	a.switchTab(1)
+	if got := a.activeTabKey(); got != keys[0] {
+		t.Fatalf("switch past the end = %q, want %q", got, keys[0])
+	}
+	a.switchTab(-1)
+	if got := a.activeTabKey(); got != keys[2] {
+		t.Fatalf("switch before the start = %q, want %q", got, keys[2])
+	}
+	a.closeActiveTab()
+	if len(a.tabs) != 2 || a.hasTabKey(keys[2]) {
+		t.Fatalf("after close: tabs=%v", a.tabs)
+	}
+}
+
+// TestShortcutHelpListsTabKeys checks the shortcuts dialog documents the tab
+// switching and closing keys.
+func TestShortcutHelpListsTabKeys(t *testing.T) {
+	var all strings.Builder
+	for _, s := range shortcutHelp {
+		all.WriteString(s.keys + " " + s.desc + "\n")
+	}
+	for _, want := range []string{"Ctrl + Tab", "Ctrl + Shift + Tab", "Ctrl/Cmd + W"} {
+		if !strings.Contains(all.String(), want) {
+			t.Fatalf("shortcut help lacks %q", want)
+		}
+	}
+}
+
+// TestTimeoutNormalizesAndSteps checks a typed timeout is rewritten to the
+// value actually used, and the stepper stays within the allowed range.
+func TestTimeoutNormalizesAndSteps(t *testing.T) {
+	a := newTestApp(t)
+	a.timeout = "60"
+	a.normalizeTimeout()
+	if a.timeout != "1000" {
+		t.Fatalf("timeout 60 normalized to %q, want 1000", a.timeout)
+	}
+	a.timeout = "999999"
+	a.normalizeTimeout()
+	if a.timeout != "600000" {
+		t.Fatalf("timeout 999999 normalized to %q, want 600000", a.timeout)
+	}
+	a.timeout = "5000"
+	a.stepTimeout(1000)
+	if a.timeout != "6000" {
+		t.Fatalf("step up = %q, want 6000", a.timeout)
+	}
+	a.stepTimeout(-10000)
+	if a.timeout != "1000" {
+		t.Fatalf("step down = %q, want 1000", a.timeout)
+	}
+}
+
+// TestSaveResponseToFile checks the response body can be written out as-is.
+func TestSaveResponseToFile(t *testing.T) {
+	a := newTestApp(t)
+	a.resp = model.SendResponse{Status: 200, Body: `{"ok":true}`}
+	path := filepath.Join(t.TempDir(), "response.json")
+	if err := a.saveResponseTo(path); err != nil {
+		t.Fatalf("saveResponseTo: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != `{"ok":true}` {
+		t.Fatalf("saved body = %q", data)
+	}
+}
+
+// TestBinaryBodySentFromFilePath checks the UI thread only records the file
+// path: buildSendRequest must not read the file (it may not even exist yet).
+func TestBinaryBodySentFromFilePath(t *testing.T) {
+	a, _ := tabTestApp(t, 1)
+	a.reqKind = model.KindHTTP
+	a.method = "POST"
+	a.bodyType = model.BodyBinary
+	a.bodyFile = "C:/does/not/exist/upload.bin"
+
+	req, _, err := a.buildSendRequest()
+	if err != nil {
+		t.Fatalf("buildSendRequest read the file on the UI thread: %v", err)
+	}
+	if req.FilePath != a.bodyFile || req.Body != "" {
+		t.Fatalf("request = %+v, want FilePath only", req)
+	}
+}
+
+// TestBinaryBodyCacheInvalidates checks the preview cache is reused while the
+// file is unchanged and refreshed when it changes.
+func TestBinaryBodyCacheInvalidates(t *testing.T) {
+	a := newTestApp(t)
+	path := filepath.Join(t.TempDir(), "body.bin")
+	if err := os.WriteFile(path, []byte("one"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if got, err := a.readBinaryBody(path); err != nil || got != "one" {
+		t.Fatalf("first read = %q, %v", got, err)
+	}
+	if err := os.WriteFile(path, []byte("two-two"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if got, err := a.readBinaryBody(path); err != nil || got != "two-two" {
+		t.Fatalf("second read = %q, %v", got, err)
+	}
+}
+
+// TestResponsePanelOffersSave checks a response can be written to a file from
+// the response panel, including a large truncated one.
+func TestResponsePanelOffersSave(t *testing.T) {
+	a, _ := newNativeCall(t)
+	a.hasResp = true
+	a.resp = model.SendResponse{Status: 200, StatusText: "OK", Body: "hi", Truncated: true}
+	a.syncResponse()
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("保存到文件…") {
+		t.Fatal("the response panel has no save-to-file action")
 	}
 }
 
@@ -2111,8 +2272,9 @@ func TestBodyTypeRequestBodies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("binary build: %v", err)
 	}
-	if req.Body != string([]byte{0, 1, 2, 3}) || req.ContentType != "application/octet-stream" {
-		t.Fatalf("binary = %q ct %q", req.Body, req.ContentType)
+	// The file is read by the sending goroutine, not on the UI thread.
+	if req.Body != "" || req.FilePath != f || req.ContentType != "application/octet-stream" {
+		t.Fatalf("binary = body %q file %q ct %q", req.Body, req.FilePath, req.ContentType)
 	}
 }
 
@@ -2323,6 +2485,9 @@ func TestTabLimitClosesOldestSaved(t *testing.T) {
 	a.openCall(p.ID, "", "", p.Calls[5].ID)
 	if len(a.tabs) != 5 || a.tabs[0] != key(1) || !a.hasTabKey(key(5)) {
 		t.Fatalf("after 6th open: %v", a.tabs)
+	}
+	if !strings.Contains(a.statusMsg, "已自动关闭") {
+		t.Fatalf("auto-close not reported: %q", a.statusMsg)
 	}
 
 	// A dirty oldest tab is skipped, so the next oldest saved one goes.
