@@ -263,7 +263,7 @@ type app struct {
 	sendCancel context.CancelFunc
 
 	// Tabs of open calls, keyed "pid/sid/oid/cid", and their unsaved drafts.
-		tabs   []string
+	tabs   []string
 	active int
 	drafts map[string]*callDraft
 	// maxTabs is the tab-count limit set in the settings dialog.
@@ -305,9 +305,9 @@ type app struct {
 	importProxySel string
 	// importing is set while a WSDL URL import downloads in the background, so
 	// the dialog can show progress and refuse a second start.
-	importing  bool
-	exportOpen bool
-	keepProxy  bool
+	importing      bool
+	exportOpen     bool
+	keepProxy      bool
 	newProjectOpen bool
 	treeModalOpen  bool
 	treeModalKind  int // 1 add service, 2 add operation
@@ -320,12 +320,12 @@ type app struct {
 	confirmAltLabel  string
 	confirmAltAction func()
 	// Bulk edit of the multipart / urlencoded field rows, as text.
-	bulkOpen bool
-	bulkText string
-	wsOpen         bool
-	wsKind         int // 0 create, 1 rename, 2 import
-	wsImportPath   string
-	nameInput      string
+	bulkOpen     bool
+	bulkText     string
+	wsOpen       bool
+	wsKind       int // 0 create, 1 rename, 2 import
+	wsImportPath string
+	nameInput    string
 
 	// Settings dialog: the section shown, the search filter, and the font
 	// preferences (a choice is "系统默认" or a family name).
@@ -359,16 +359,16 @@ type app struct {
 func newApp(reg *workspace.Registry) *app {
 	st, info := reg.Active()
 	a := &app{
-		reg:              reg,
-		st:               st,
-		info:             info,
-		dark:             true,
-		darkTheme:        newDarkTheme(),
-		lightTheme:       newLightTheme(),
-		sideW:            272,
-		splitV:           60,
-		splitH:           62,
-		splitSide:        0,
+		reg:        reg,
+		st:         st,
+		info:       info,
+		dark:       true,
+		darkTheme:  newDarkTheme(),
+		lightTheme: newLightTheme(),
+		sideW:      272,
+		splitV:     60,
+		splitH:     62,
+		splitSide:  0,
 		formValues: formValues{
 			timeout: "60000", method: "POST", reqKind: model.KindHTTP,
 			bodyType: model.BodyNone, auth: authForm{Type: "none", Enabled: true},
@@ -452,6 +452,8 @@ func (a *app) loadUIState() {
 	a.savedUI = a.currentUI()
 }
 
+// saveUIState persists the UI state, through a temp file and a rename so an
+// interrupted write cannot leave a half file behind.
 func (a *app) saveUIState() {
 	st := a.currentUI()
 	if st == a.savedUI {
@@ -461,7 +463,7 @@ func (a *app) saveUIState() {
 	if err != nil {
 		return
 	}
-	if os.WriteFile(a.uiPath, data, 0o644) == nil {
+	if fileutil.WriteAtomic(a.uiPath, data, 0o644) == nil {
 		a.savedUI = st
 	}
 }
@@ -2308,7 +2310,6 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 	return req, proxy, nil
 }
 
-// sendRequest runs the SOAP call off the UI thread.
 // readBinaryBody reads a binary request body, caching the last file read so the
 // request preview does not re-read it on every switch. A change of size or
 // modification time invalidates the cache.
@@ -2445,6 +2446,8 @@ func buildMultipart(fields []bodyField) (body, contentType string, err error) {
 	return b.String(), "multipart/form-data; boundary=" + multipartBoundary, nil
 }
 
+// sendRequest runs the request in a goroutine, so a slow server cannot freeze
+// the window while the request is in flight.
 func (a *app) sendRequest() {
 	if a.sending || a.projectPage {
 		// Nothing to send while the project page is shown.

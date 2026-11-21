@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -1307,6 +1308,29 @@ func TestResponsePanelOffersSave(t *testing.T) {
 	tt.Frame()
 	if !tt.HasText("保存到文件…") {
 		t.Fatal("the response panel has no save-to-file action")
+	}
+}
+
+// TestSaveUIStateWritesAtomically checks the UI state lands on disk in one
+// piece, without a leftover temp file beside it.
+func TestSaveUIStateWritesAtomically(t *testing.T) {
+	a := newTestApp(t)
+	a.dark = false // differs from the saved snapshot, forcing a write
+	a.saveUIState()
+
+	data, err := os.ReadFile(a.uiPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var st uiState
+	if err := json.Unmarshal(data, &st); err != nil {
+		t.Fatalf("ui-state.json is not valid JSON: %v", err)
+	}
+	if st.Dark {
+		t.Fatal("the written state does not hold the change")
+	}
+	if _, err := os.Stat(a.uiPath + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("a temp file survived the atomic write: %v", err)
 	}
 }
 
@@ -2896,4 +2920,3 @@ func TestCloseTabsBulk(t *testing.T) {
 		t.Fatalf("close right of 2 left %v", a3.tabs)
 	}
 }
-
