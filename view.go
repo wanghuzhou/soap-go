@@ -781,6 +781,13 @@ func (a *app) tabStrip(c *ui.Context) {
 							pid, sid, oid, cid := splitKey(key)
 							a.openCall(pid, sid, oid, cid)
 						})
+					// Switching to a tab that scrolled out of the strip must
+					// bring it back into view; done once per switch so the user
+					// can still scroll the strip afterwards.
+					if active && a.revealTab {
+						open = open.ScrollIntoView(ui.ScrollIntoViewOptions{Inline: ui.ScrollNearest})
+						a.revealTab = false
+					}
 					open.Children(func() {
 						ui.Text(c, a.callMethod(key)).FontSize(a.us(8.5)).Bold().TextColor(t.Accent)
 						lc := t.TextMuted

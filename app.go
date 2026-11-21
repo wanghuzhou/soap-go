@@ -274,6 +274,10 @@ type app struct {
 	// tabScroll keeps the horizontal scroll position of the tab strip, so a
 	// wheel over the tabs moves them sideways and a new tab scrolls into view.
 	tabScroll ui.ScrollState
+	// revealTab asks the tab strip to scroll the active tab into view on the
+	// next frame, set whenever the editor switches tabs (a tree click on an
+	// already open request, Ctrl+Tab, and so on).
+	revealTab bool
 	// pendingTabs is the tab state loaded from disk before the projects are
 	// read, restored once they are; pendingTabsSaved tells whether it was set.
 	pendingTabs      []string
@@ -1026,6 +1030,9 @@ func (a *app) loadTab(key string) {
 	if c == nil {
 		return
 	}
+	// The tab strip should bring this tab into view, even when it is an old
+	// tab outside the strip's current scroll window.
+	a.revealTab = true
 	a.reqDescription = c.Description
 	if p := a.findProject(pid); p != nil {
 		a.projHeaders = append([]model.Header(nil), p.Headers...)

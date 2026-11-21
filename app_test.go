@@ -2852,6 +2852,29 @@ func TestNameDialogPrompts(t *testing.T) {
 	}
 }
 
+// TestSwitchingToOffscreenTabRevealsIt checks selecting an already-open tab
+// that scrolled out of the strip from the tree scrolls it back into view.
+func TestSwitchingToOffscreenTabRevealsIt(t *testing.T) {
+	a, keys := tabTestApp(t, 12)
+	tt := ui.NewTester(a.view, 900, 700)
+	tt.Frame()
+
+	// Scroll the strip to its far end, as many open tabs leave it.
+	a.tabScroll.X = 1e9
+	tt.Frame()
+	if a.tabScroll.X < 100 {
+		t.Fatalf("setup did not scroll the strip: X=%v", a.tabScroll.X)
+	}
+
+	pid, sid, oid, cid := splitKey(keys[0])
+	a.selectTree(treeItem{kind: "call", pid: pid, sid: sid, oid: oid, cid: cid})
+	tt.Frame()
+	tt.Frame()
+	if a.tabScroll.X > 60 {
+		t.Fatalf("the first tab was not scrolled into view: X=%v", a.tabScroll.X)
+	}
+}
+
 // TestCloseTabsBulk checks the close-other/left/right operations keep the right
 // tabs and move the selection to a survivor.
 func TestCloseTabsBulk(t *testing.T) {
