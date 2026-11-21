@@ -119,18 +119,22 @@ func (a *app) setAuthType(kind string) {
 	a.showAuthSecret = false
 }
 
-// callDraft is one open tab's editable request form and the values it was last
-// saved with. Keeping a draft per tab means switching tabs keeps unsaved edits,
-// and the tab still knows whether it differs from what is stored.
-type callDraft struct {
-	endpoint, action, timeout     string
-	method, contentType, kind     string
-	bodyType, bodyFile            string
-	query                         []queryRow
-	bodyFields                    []bodyField
-	headers                       []headerRow
-	auth                          authForm
-	body                          string
+// formValues is the editable part of a request form: exactly the fields a tab's
+// draft copies on a switch and the values the dirty check compares.
+type formValues struct {
+	endpoint, action, timeout    string
+	method, contentType, reqKind string
+	bodyType, bodyFile           string
+	queryRows                    []queryRow
+	bodyFields                   []bodyField
+	headers                      []headerRow
+	auth                         authForm
+}
+
+// savedValues is a form as it was last saved. The fields keep their "saved"
+// prefix so they can sit beside the live ones in app and callDraft without a
+// name clash.
+type savedValues struct {
 	savedSnapshot, savedAction    string
 	savedTimeout, savedEndpoint   string
 	savedMethod, savedContentType string
@@ -138,6 +142,16 @@ type callDraft struct {
 	savedBodyFields               []bodyField
 	savedHeaders                  []headerRow
 	savedAuth                     authForm
+}
+
+// callDraft is one open tab's editable request form and the values it was last
+// saved with. Keeping a draft per tab means switching tabs keeps unsaved edits,
+// and the tab still knows whether it differs from what is stored. body is the
+// request body text, which lives in the editor while the tab is active.
+type callDraft struct {
+	formValues
+	savedValues
+	body string
 }
 
 // uiState is the part of the UI kept between runs: the theme and the split
@@ -209,29 +223,17 @@ type app struct {
 	// newGroupParent is the parent a pending 新建目录 dialog will create under.
 	newGroupParent string
 
-	// Current request form.
-	endpoint    string
-	action      string
-	contentType string
-	timeout     string
-	method      string
-	// reqKind is "soap" or "http" for the form being edited; it decides which
-	// request-panel sections apply and whether the method is editable.
-	reqKind string
+	// Current request form: the editable values and the values last saved, which
+	// the dirty check compares. Embedded so the rest of the app keeps writing
+	// a.endpoint, a.savedAction and the like.
+	formValues
+	savedValues
 	// reqDescription is the selected request's notes (carried over from an
 	// OpenAPI import), shown read-only in the 设置 tab.
 	reqDescription string
-	// bodyType is the plain-HTTP body shape (none/json/xml/...); SOAP ignores it.
-	bodyType   string
-	bodyFields []bodyField
-	bodyFile   string
-	// queryRows is the parsed query string of endpoint, edited in the 查询 tab.
-	// querySrc is the endpoint it was parsed from, so an edit in the URL bar is
-	// noticed and re-parsed instead of being overwritten.
-	queryRows []queryRow
-	querySrc  string
-	headers   []headerRow
-	auth      authForm
+	// querySrc is the endpoint the query rows were parsed from, so an edit in
+	// the URL bar is noticed and re-parsed instead of being overwritten.
+	querySrc string
 	// showAuthSecret reveals the auth password/token for as long as the
 	// authentication page stays open.
 	showAuthSecret bool
@@ -319,19 +321,8 @@ type app struct {
 	editorFontChoice string
 	editorFontSize   float64
 
-	// Editor preferences and dirty tracking.
-	maskSecrets      bool
-	savedSnapshot    string
-	savedHeaders     []headerRow
-	savedAuth        authForm
-	savedTimeout     string
-	savedAction      string
-	savedEndpoint    string
-	savedMethod      string
-	savedContentType string
-	savedBodyType    string
-	savedBodyFields  []bodyField
-	savedBodyFile    string
+	// Editor preferences.
+	maskSecrets bool
 
 	// Proxy form.
 	proxyModeSel, proxyTypeSel, proxyHost, proxyUser, proxyPass string
@@ -358,11 +349,11 @@ func newApp(reg *workspace.Registry) *app {
 		splitV:           60,
 		splitH:           62,
 		splitSide:        0,
-		timeout:          "60000",
-		contentType:      "",
-		method:           "POST",
-		reqKind:          model.KindHTTP,
-		bodyType:         model.BodyNone,
+		formValues: formValues{
+			timeout: "60000", method: "POST", reqKind: model.KindHTTP,
+			bodyType: model.BodyNone, auth: authForm{Type: "none", Enabled: true},
+		},
+		savedValues:      savedValues{savedAuth: authForm{Type: "none", Enabled: true}},
 		xmlEd:            newXMLState("", false),
 		respEd:           newXMLState("", true),
 		expanded:         map[string]bool{},
@@ -371,8 +362,6 @@ func newApp(reg *workspace.Registry) *app {
 		proxyTypeSel:     "HTTP",
 		importProxySel:   "直连（默认）",
 		maskSecrets:      true,
-		auth:             authForm{Type: "none", Enabled: true},
-		savedAuth:        authForm{Type: "none", Enabled: true},
 		uiFontChoice:     systemFontLabel,
 		uiFontSize:       uiBaseFontSize(),
 		editorFontChoice: systemFontLabel,
@@ -878,43 +867,42 @@ func (a *app) activeTabKey() string {
 // captureDraft snapshots the live request form for the active tab.
 func (a *app) captureDraft() *callDraft {
 	return &callDraft{
-		endpoint: a.endpoint, action: a.action, timeout: a.timeout,
-		method: a.method, contentType: a.contentType, kind: a.reqKind,
-		bodyType: a.bodyType, bodyFile: a.bodyFile,
-		query:         append([]queryRow(nil), a.queryRows...),
-		bodyFields:    append([]bodyField(nil), a.bodyFields...),
-		headers:       append([]headerRow(nil), a.headers...),
-		auth:          a.auth,
-		body:          a.xmlEd.Buffer.String(),
-		savedSnapshot: a.savedSnapshot, savedAction: a.savedAction,
-		savedTimeout: a.savedTimeout, savedEndpoint: a.savedEndpoint,
-		savedMethod: a.savedMethod, savedContentType: a.savedContentType,
-		savedBodyType: a.savedBodyType, savedBodyFile: a.savedBodyFile,
-		savedBodyFields: append([]bodyField(nil), a.savedBodyFields...),
-		savedHeaders:    append([]headerRow(nil), a.savedHeaders...),
-		savedAuth:       a.savedAuth,
+		formValues: formValues{
+			endpoint: a.endpoint, action: a.action, timeout: a.timeout,
+			method: a.method, contentType: a.contentType, reqKind: a.reqKind,
+			bodyType: a.bodyType, bodyFile: a.bodyFile,
+			queryRows:  append([]queryRow(nil), a.queryRows...),
+			bodyFields: append([]bodyField(nil), a.bodyFields...),
+			headers:    append([]headerRow(nil), a.headers...),
+			auth:       a.auth,
+		},
+		savedValues: savedValues{
+			savedSnapshot: a.savedSnapshot, savedAction: a.savedAction,
+			savedTimeout: a.savedTimeout, savedEndpoint: a.savedEndpoint,
+			savedMethod: a.savedMethod, savedContentType: a.savedContentType,
+			savedBodyType: a.savedBodyType, savedBodyFile: a.savedBodyFile,
+			savedBodyFields: append([]bodyField(nil), a.savedBodyFields...),
+			savedHeaders:    append([]headerRow(nil), a.savedHeaders...),
+			savedAuth:       a.savedAuth,
+		},
+		body: a.xmlEd.Buffer.String(),
 	}
 }
 
 // applyDraft puts a tab's saved form back into the editor.
 func (a *app) applyDraft(d *callDraft) {
-	a.endpoint, a.action, a.timeout = d.endpoint, d.action, d.timeout
-	a.method, a.contentType, a.reqKind = d.method, d.contentType, d.kind
-	a.bodyType, a.bodyFile = d.bodyType, d.bodyFile
-	a.queryRows = append([]queryRow(nil), d.query...)
-	a.bodyFields = append([]bodyField(nil), d.bodyFields...)
+	a.formValues = d.formValues
+	// The draft's slices are shared with it, so copy the ones the editor edits
+	// in place; the rest are values.
+	a.formValues.queryRows = append([]queryRow(nil), d.queryRows...)
+	a.formValues.bodyFields = append([]bodyField(nil), d.bodyFields...)
+	a.formValues.headers = append([]headerRow(nil), d.headers...)
+	a.savedValues = d.savedValues
+	a.savedValues.savedBodyFields = append([]bodyField(nil), d.savedBodyFields...)
+	a.savedValues.savedHeaders = append([]headerRow(nil), d.savedHeaders...)
 	a.querySrc = d.endpoint
-	a.headers = append([]headerRow(nil), d.headers...)
-	a.auth = d.auth
 	a.xmlEd.Buffer.Reset(d.body)
 	a.xmlEd.Buffer.SetLanguage(a.editorLanguage(d.body))
-	a.savedSnapshot, a.savedAction = d.savedSnapshot, d.savedAction
-	a.savedTimeout, a.savedEndpoint = d.savedTimeout, d.savedEndpoint
-	a.savedMethod, a.savedContentType = d.savedMethod, d.savedContentType
-	a.savedBodyType, a.savedBodyFile = d.savedBodyType, d.savedBodyFile
-	a.savedBodyFields = append([]bodyField(nil), d.savedBodyFields...)
-	a.savedHeaders = append([]headerRow(nil), d.savedHeaders...)
-	a.savedAuth = d.savedAuth
 }
 
 // editorLanguage picks the code editor's syntax highlighting for a body based
@@ -1912,39 +1900,35 @@ func (a *app) exportProject(path string) {
 // isDirty reports whether the editor holds changes not yet saved.
 func (a *app) isDirty() bool { return a.currentDirty() }
 
+// formDirty reports whether live differs from the values saved for it. body is
+// the request body: the editor's text for the live form, the draft's copy for a
+// stored tab.
+func formDirty(live formValues, saved savedValues, body string) bool {
+	if body != saved.savedSnapshot ||
+		live.timeout != saved.savedTimeout ||
+		live.action != saved.savedAction ||
+		live.endpoint != saved.savedEndpoint ||
+		live.method != saved.savedMethod ||
+		live.contentType != saved.savedContentType ||
+		live.bodyType != saved.savedBodyType ||
+		live.bodyFile != saved.savedBodyFile {
+		return true
+	}
+	if !slices.Equal(live.bodyFields, saved.savedBodyFields) {
+		return true
+	}
+	if live.auth != saved.savedAuth {
+		return true
+	}
+	return !slices.Equal(live.headers, saved.savedHeaders)
+}
+
 // currentDirty compares the live editor to the active tab's saved values.
 func (a *app) currentDirty() bool {
 	if a.activeTabKey() == "" {
 		return false
 	}
-	if a.xmlEd.Buffer.String() != a.savedSnapshot {
-		return true
-	}
-	if a.timeout != a.savedTimeout {
-		return true
-	}
-	if a.action != a.savedAction {
-		return true
-	}
-	if a.endpoint != a.savedEndpoint {
-		return true
-	}
-	if a.method != a.savedMethod {
-		return true
-	}
-	if a.contentType != a.savedContentType {
-		return true
-	}
-	if a.bodyType != a.savedBodyType || a.bodyFile != a.savedBodyFile {
-		return true
-	}
-	if !slices.Equal(a.bodyFields, a.savedBodyFields) {
-		return true
-	}
-	if a.auth != a.savedAuth {
-		return true
-	}
-	return !slices.Equal(a.headers, a.savedHeaders)
+	return formDirty(a.formValues, a.savedValues, a.xmlEd.Buffer.String())
 }
 
 // draftDirty reports whether a stored tab draft differs from its saved values.
@@ -1952,19 +1936,7 @@ func draftDirty(d *callDraft) bool {
 	if d == nil {
 		return false
 	}
-	if d.body != d.savedSnapshot || d.timeout != d.savedTimeout ||
-		d.action != d.savedAction || d.endpoint != d.savedEndpoint ||
-		d.method != d.savedMethod || d.contentType != d.savedContentType ||
-		d.bodyType != d.savedBodyType || d.bodyFile != d.savedBodyFile {
-		return true
-	}
-	if !slices.Equal(d.bodyFields, d.savedBodyFields) {
-		return true
-	}
-	if d.auth != d.savedAuth {
-		return true
-	}
-	return !slices.Equal(d.headers, d.savedHeaders)
+	return formDirty(d.formValues, d.savedValues, d.body)
 }
 
 // dirtyKey reports whether a tab holds unsaved changes.

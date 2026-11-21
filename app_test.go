@@ -655,6 +655,43 @@ func TestIsDirtyAndSaveClears(t *testing.T) {
 		t.Fatal("saved call is still dirty")
 	}
 }
+
+// TestFormDirtySeesEveryField checks the merged dirty check still notices a
+// change in each editable field, so a field added to formValues cannot be
+// silently left out of the comparison.
+func TestFormDirtySeesEveryField(t *testing.T) {
+	setters := []struct {
+		name string
+		set  func(a *app)
+	}{
+		{"endpoint", func(a *app) { a.endpoint = "http://changed/1" }},
+		{"action", func(a *app) { a.action = "urn:changed" }},
+		{"timeout", func(a *app) { a.timeout = "1234" }},
+		{"method", func(a *app) { a.method = "PUT" }},
+		{"contentType", func(a *app) { a.contentType = "text/plain" }},
+		{"bodyType", func(a *app) { a.bodyType = model.BodyJSON }},
+		{"bodyFile", func(a *app) { a.bodyFile = "C:/tmp/x.bin" }},
+		{"bodyFields", func(a *app) {
+			a.bodyFields = append(a.bodyFields, bodyField{Name: "n", Value: "v"})
+		}},
+		{"headers", func(a *app) {
+			a.headers = append(a.headers, headerRow{Name: "X-Test", Value: "1"})
+		}},
+		{"auth", func(a *app) { a.auth = authForm{Type: "basic", Enabled: true, Username: "u"} }},
+		{"body", func(a *app) { a.xmlEd.Buffer.Reset("changed") }},
+	}
+	for _, tc := range setters {
+		a, _ := tabTestApp(t, 1)
+		if a.isDirty() {
+			t.Fatalf("%s: a fresh tab starts dirty", tc.name)
+		}
+		tc.set(a)
+		if !a.isDirty() {
+			t.Fatalf("%s: the change is not seen as dirty", tc.name)
+		}
+	}
+}
+
 func TestSendContextCancel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(2 * time.Second)
@@ -2086,7 +2123,10 @@ func TestTabLimitClosesOldestSaved(t *testing.T) {
 	}
 
 	// A dirty oldest tab is skipped, so the next oldest saved one goes.
-	a.drafts[a.tabs[0]] = &callDraft{endpoint: "edited", savedEndpoint: "clean"}
+	a.drafts[a.tabs[0]] = &callDraft{
+		formValues:  formValues{endpoint: "edited"},
+		savedValues: savedValues{savedEndpoint: "clean"},
+	}
 	a.openCall(p.ID, "", "", p.Calls[6].ID)
 	if len(a.tabs) != 5 || a.tabs[0] != key(1) || a.hasTabKey(key(2)) {
 		t.Fatalf("dirty skip: %v", a.tabs)
