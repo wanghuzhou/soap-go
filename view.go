@@ -2043,20 +2043,23 @@ func (a *app) settingsContent(c *ui.Context) {
 			ui.Text(c, title).FontSize(a.us(15)).Bold()
 		})
 
-		switch a.settingsSection {
-		case 1:
-			a.editorSettings(c)
-		case 2:
-			a.shortcutsSettings(c)
-		case 3:
-			a.otherSettings(c)
-		case 4:
-			a.aboutSettings(c)
-		default:
-			a.appearanceSettings(c)
-		}
+		// The section may be taller than the window (the shortcuts list is),
+		// so it scrolls; the footer below stays put.
+		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+			switch a.settingsSection {
+			case 1:
+				a.editorSettings(c)
+			case 2:
+				a.shortcutsSettings(c)
+			case 3:
+				a.otherSettings(c)
+			case 4:
+				a.aboutSettings(c)
+			default:
+				a.appearanceSettings(c)
+			}
+		})
 
-		ui.Spacer(c)
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			if a.settingsSection <= 1 && ui.Button(c, "恢复默认").Clicked() {
 				a.resetFontSettings()

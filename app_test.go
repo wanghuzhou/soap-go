@@ -834,6 +834,31 @@ func TestShortcutHelpInSettings(t *testing.T) {
 	}
 }
 
+// TestShortcutSettingsScrolls checks a shortcut list taller than the settings
+// window can be scrolled, rather than being cut off with no way to reach the
+// last rows. A large interface font makes the list overflow the fixed window.
+func TestShortcutSettingsScrolls(t *testing.T) {
+	a := newTestApp(t)
+	a.settingsOpen, a.settingsSection = true, 2
+	a.uiFontSize = 20
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+
+	before, ok := tt.Find("Enter / Space")
+	if !ok {
+		t.Fatal("the last shortcut is not laid out")
+	}
+	tt.Scroll(600, 400, 0, 400)
+	tt.Frame()
+	after, ok := tt.Find("Enter / Space")
+	if !ok {
+		t.Fatal("the last shortcut is not laid out after scrolling")
+	}
+	if after.Y >= before.Y {
+		t.Fatalf("the shortcut list did not scroll: y %v -> %v", before.Y, after.Y)
+	}
+}
+
 // TestSaveAllTabs checks every changed tab is written, including a non-active
 // tab whose edits live in its draft.
 func TestSaveAllTabs(t *testing.T) {
