@@ -2,9 +2,9 @@
 // active. A workspace is a projects.json-format file; settings.json maps
 // display names to files and records the active id.
 //
-// Paths never leave this package: the API exposes ids and names only. A switch
-// loads the target before writing settings.json, so a corrupt file leaves the
-// current state untouched.
+// Paths never leave this package: the registry exposes ids and names only. A
+// switch loads the target before writing settings.json, so a corrupt file leaves
+// the current state untouched.
 package workspace
 
 import (

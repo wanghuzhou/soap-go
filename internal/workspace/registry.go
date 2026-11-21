@@ -208,26 +208,12 @@ func (r *Registry) Rename(id, rawName string) (Info, error) {
 	return Info{ID: id, Name: name}, nil
 }
 
-// Delete removes a workspace and archives its file into data/trash so an
-// accidental click never destroys projects outright.
-//
-// Deleting the active workspace switches to the first other workspace that
-// loads; the last remaining workspace cannot be deleted.
-//
-// The steps are ordered so that a failure leaves everything as it was:
-//
-//	1. copy the file into trash (the original stays put, so the registry keeps a
-//	   workspace whose file still exists);
-//	2. write settings.json;
-//	3. move the active pointer, now that the removal is on disk;
-//	4. delete the original.
-//
-// Doing it the other way round — move the file aside, then write settings — is
-// how a workspace could be lost silently: when the settings write failed, the
-// rollback's error was discarded, so the file stayed in trash while the in-memory
-// store still pointed at it. Every later save then recreated the file at the old
-// path (WriteAtomic uses os.WriteFile) and reported success for a workspace that
-// no longer existed in settings.json and vanished on the next restart.
+// Delete removes a workspace and archives its file into data/trash, so an
+// accidental click never destroys projects. Deleting the active workspace
+// switches to the first other workspace that loads; the last one cannot be
+// deleted. The steps below are ordered so a failure leaves everything as it was:
+// copy the file to trash, write settings.json, move the active pointer, then
+// delete the original.
 func (r *Registry) Delete(id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

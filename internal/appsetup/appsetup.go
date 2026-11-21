@@ -1,6 +1,6 @@
 // Package appsetup resolves the data directory and opens the workspace registry.
-// Both entry points (browser and desktop) share these rules so they always read
-// and write the same files.
+// The rules match the old soap-web layout, so both keep reading and writing the
+// same files.
 package appsetup
 
 import (

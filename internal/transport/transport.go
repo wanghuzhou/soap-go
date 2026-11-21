@@ -1,5 +1,5 @@
 // Package transport performs the actual HTTP/SOAP request and normalises the
-// response for the frontend.
+// response for the UI.
 package transport
 
 import (
@@ -25,9 +25,7 @@ import (
 
 // Send executes an HTTP request described by req, honouring the project's proxy
 // settings, and returns a normalised response. Network-level failures are
-// reported inside model.SendResponse.Error so the frontend can render them
-// uniformly.
-// Send runs req without a cancellation context, as the API layer does.
+// reported inside model.SendResponse.Error so the UI can show them.
 func Send(req model.SendRequest, proxyCfg *model.ProxySettings) model.SendResponse {
 	return SendContext(context.Background(), req, proxyCfg)
 }
@@ -41,8 +39,8 @@ func SendContext(ctx context.Context, req model.SendRequest, proxyCfg *model.Pro
 		out.Error = "代理配置无效: " + err.Error()
 		return out
 	}
-	// Validate the endpoint here too, not only in the API layer: importers and
-	// tests reach Send directly, and a scheme check this late (client.Do) reports
+	// Validate the endpoint here too, not only in the app: importers and tests
+	// reach Send directly, and a scheme check this late (client.Do) reports
 	// itself as a transport failure rather than a bad request.
 	if err := model.ValidateEndpoint(req.URL); err != nil {
 		out.Error = err.Error()
@@ -54,8 +52,8 @@ func SendContext(ctx context.Context, req model.SendRequest, proxyCfg *model.Pro
 		method = http.MethodPost
 	}
 
-	// The API layer clamps the value; this lower-level helper only supplies the
-	// default so direct callers (tests, importers) behave the same way.
+	// The UI clamps the value; this lower-level helper only supplies the default
+	// so direct callers (tests, importers) behave the same way.
 	timeout := time.Duration(req.TimeoutMS) * time.Millisecond
 	if timeout <= 0 {
 		timeout = time.Duration(model.DefaultTimeoutMS) * time.Millisecond
@@ -146,27 +144,13 @@ const maxBodyBytes = 16 << 20 // 16 MB
 
 // applyHeaders copies the request's header map onto dst deterministically.
 //
-// Set alone is not enough. http.Header.Set canonicalises its key, so
-// "content-type" and "Content-Type" land in the same slot, but the map we are
-// given can hold both as separate entries (the frontend builds it as a plain JS
-// object, where the two spellings are distinct keys). Ranging over that map made
-// the winner depend on Go's randomised iteration order: the same request sent 30
-// times produced a 27/3 split between the two values. Sorting the keys makes the
-// outcome fixed for a given input, so what the editor shows is what gets sent.
-//
-// Precedence within a case-insensitive group is by spelling, in this order:
-//
-//	1. the canonical MIME form (textproto.CanonicalMIMEHeaderKey), which is what
-//	   the UI itself emits for Content-Type, SOAPAction, Authorization and the
-//	   other standard headers;
-//	2. the spelling with the more conventional capitalization: any capitalization
-//	   beats all-lowercase, so a mixed-case "SoapAction" beats a bare
-//	   "soapaction". (Go canonicalises SOAPAction to "Soapaction", which no user
-//	   types, so matching the canonical form exactly rarely applies there.)
-//	3. the raw key, only so the order is total.
-//
-// A total order is what matters most: it removes the nondeterminism, and the
-// rules above make the survivor the one a user would expect to win.
+// Set alone is not enough: http.Header.Set canonicalises the key, so two
+// spellings of one name would land in the same slot, but the source map can hold
+// them as separate entries, and ranging over it made the winner depend on Go's
+// randomised iteration order. Sorting the keys makes the outcome fixed for a
+// given input, so what the editor shows is what gets sent. Within a
+// case-insensitive group the canonical MIME spelling wins, then any mixed-case
+// spelling over all-lowercase, then the raw key, so the order is total.
 func applyHeaders(dst http.Header, headers map[string]string) {
 	if len(headers) == 0 {
 		return
@@ -238,13 +222,8 @@ func charsetFromContentType(contentType string) string {
 	return ""
 }
 
-// transports caches one *http.Transport per proxy configuration.
-//
-// Allocating a fresh Transport per request leaked three goroutines every time
-// (readLoop, writeLoop, persistConn) because the previous Transport was never
-// closed and its idle connections were never reaped. Debugging a service means
-// sending many requests, so the leak grew without bound. Transports are now
-// shared and their idle connections are reused.
+// transports caches one *http.Transport per proxy configuration: a fresh one
+// per request leaked its idle connections, so they are shared and reused.
 var transports = struct {
 	mu sync.Mutex
 	m  map[string]*http.Transport
@@ -260,11 +239,9 @@ func buildClient(cfg *model.ProxySettings, timeout time.Duration) (*http.Client,
 	return &http.Client{Transport: tr, Timeout: timeout}, nil
 }
 
-// NewClient returns an HTTP client that honours cfg's proxy settings.
-//
-// It is exported for importers that need the same proxy behaviour as the SOAP
-// sender (remote WSDL fetching), so a project's proxy configuration applies to
-// every outbound request, not only /api/send.
+// NewClient returns an HTTP client that honours cfg's proxy settings. It is
+// exported so remote WSDL fetching uses the same proxy configuration as SOAP
+// sends.
 func NewClient(cfg *model.ProxySettings, timeout time.Duration) (*http.Client, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err

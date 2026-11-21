@@ -48,7 +48,7 @@ func (a *app) view(c *ui.Context) {
 	// rest of the UI instead of the desktop's own menus.
 	c.SetMenuPresentation(ui.PopoverMenus)
 	a.syncEditorFont()
-	// Editor shortcuts, as the browser app's: send and save.
+	// Editor shortcuts: send and save.
 	c.OnWindowShortcut(ui.Ctrl, ui.KeyEnter, func() { a.sendRequest() })
 	c.OnWindowShortcut(ui.Ctrl, ui.KeyS, func() { a.saveCall() })
 	c.OnWindowShortcut(ui.Super, ui.KeyEnter, func() { a.sendRequest() })
@@ -501,11 +501,8 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 }
 
 // treeContextMenu is the right-click menu of a tree row: the create/rename/
-// delete actions of that node, where the node is.
-//
-// Merely opening the menu must not move the selection: a right-click that only
-// looks at another node used to make Ctrl+S save the editor's content into that
-// node, overwriting it. Each action selects its own target first instead.
+// delete actions of that node. Opening the menu must not move the selection:
+// each action selects its own target first.
 func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 	if a.renamingID != "" {
 		a.cancelInlineRename()
@@ -541,8 +538,7 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			a.openProjectPage(it.pid)
 		}
 		if m.Item("代理设置…").Chosen() {
-			// The proxy settings now live on the project page; this entry just
-			// takes the user there instead of opening its old dialog.
+			// The proxy settings live on the project page.
 			a.openProjectPage(it.pid)
 			a.setStatus("代理设置已移到项目页面下方")
 		}
@@ -846,9 +842,7 @@ func (a *app) emptyWorkbenchPanel(c *ui.Context) {
 	})
 }
 
-// projectPagePanel is the selected project's overview: its counts, the project
-// host that relative request paths are joined to, and the project proxy
-// settings, which used to live in a dialog of their own.
+// projectPagePanel is the selected project's overview: counts, host and proxy.
 func (a *app) projectPagePanel(c *ui.Context) {
 	t := c.Theme()
 	p := a.selectedProject()
@@ -998,9 +992,8 @@ func (a *app) projectProxyCard(c *ui.Context) {
 	})
 }
 
-// projectExportCard holds the project-level exports, which used to sit in the
-// tree's right-click menu and the sidebar's "更多" menu. A native project
-// exports OpenAPI; a SoapUI or WSDL project exports SoapUI XML.
+// projectExportCard holds the project-level exports: OpenAPI for a native
+// project, SoapUI XML for a SoapUI or WSDL one.
 func (a *app) projectExportCard(c *ui.Context, p *model.Project) {
 	t := c.Theme()
 	desc := "把本项目导出为 OpenAPI 3.x 文档，支持 JSON 与 YAML 两种格式。"
@@ -1842,9 +1835,8 @@ func (a *app) exportModal(c *ui.Context) {
 	})
 }
 
-// nameModal is the shared "type a name" dialog: a title, one labelled text
-// input and a commit button, closing on cancel. The project, workspace and
-// service/operation/folder prompts used to spell this out three times.
+// nameModal is the shared "type a name" dialog: a title, one labelled input and
+// a commit button, closing on cancel.
 func (a *app) nameModal(c *ui.Context, open *bool, title, label, placeholder, closeLabel, commit string, onCommit func(name string)) {
 	t := c.Theme()
 	ui.Modal(c, open, func() {
@@ -2408,11 +2400,9 @@ func (a *app) copyIcon(c *ui.Context, copied string, text func() string) ui.Elem
 	})
 }
 
-// editorWithCopy puts an editor in a container whose copy button sits in its
-// top-right corner and shows only while the pointer is over the region, as a
-// Markdown code block's copy control does. The button stays built and
-// reachable for assistive technology; at rest it is transparent and lets the
-// press fall through to the editor.
+// editorWithCopy puts an editor in a container with a copy button at its
+// top-right, shown while the pointer is over the region and reachable to
+// assistive technology.
 func (a *app) editorWithCopy(c *ui.Context, ed *editor.State, copied string, text func() string) {
 	box := ui.Column(c).Grow(1).FillWidth()
 	hovered := box.Hovered()
@@ -2433,7 +2423,7 @@ func (a *app) statusPill(c *ui.Context, s string, col ui.Color) {
 }
 
 // isSensitiveName reports whether a header carries credentials and is masked
-// by default, as the browser app does.
+// by default.
 func isSensitiveName(name string) bool {
 	lower := strings.ToLower(strings.TrimSpace(name))
 	if lower == "" {

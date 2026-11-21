@@ -155,8 +155,8 @@ type callDraft struct {
 	body string
 }
 
-// uiState is the part of the UI kept between runs: the theme and the split
-// layout, like the browser app's localStorage.
+// uiState is the part of the UI kept between runs: the theme, split layout and
+// open tabs, persisted beside the workspace.
 type uiState struct {
 	Dark      bool    `json:"dark"`
 	SplitSide int     `json:"splitSide"`
@@ -2185,9 +2185,8 @@ func (a *app) clearSelection() {
 	a.drafts = map[string]*callDraft{}
 }
 
-// persistResponse stores a sent response with its sample, so reopening it
-// shows the last response without sending the request again. It runs after
-// every send, replacing the old manual save button.
+// persistResponse stores a sent response with its sample, so reopening it shows
+// the last response without sending again.
 func (a *app) persistResponse(pid, sid, oid, cid string, resp model.SendResponse) {
 	if resp.Error != "" {
 		return
@@ -2543,8 +2542,7 @@ func (a *app) syncResponse() {
 	a.respEd.Buffer.SetLanguage(editor.LanguageForText(file, text))
 }
 
-// normalizeTimeout rewrites the timeout input to the value actually used, so
-// typing "60" no longer stays at 60 ms (silently clamped to 1000 by the send).
+// normalizeTimeout rewrites the timeout input to the value actually used.
 func (a *app) normalizeTimeout() {
 	if s := strconv.Itoa(parseTimeout(a.timeout)); a.timeout != s {
 		a.timeout = s
@@ -3085,7 +3083,7 @@ func (a *app) importProxy() *model.ProxySettings {
 }
 
 // persistWSDL saves a parsed WSDL as a project with one service and one
-// generated sample per operation, as the browser app does.
+// generated sample per operation.
 func (a *app) persistWSDL(res *wsdl.Result, fallbackName, source, projectSource string) {
 	name := res.Name
 	if name == "" {
@@ -3150,8 +3148,7 @@ func (a *app) loadProjectForms() {
 	a.loadProxyForm(p)
 }
 
-// loadProxyForm fills the proxy form from p without opening a dialog; the form
-// now lives on the project page.
+// loadProxyForm fills the proxy form from p.
 func (a *app) loadProxyForm(p *model.Project) {
 	a.proxyModeSel, a.proxyTypeSel = "系统代理", "HTTP"
 	a.proxyHost, a.proxyPort, a.proxyUser, a.proxyPass = "", "", "", ""

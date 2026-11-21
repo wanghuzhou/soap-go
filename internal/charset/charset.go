@@ -1,7 +1,7 @@
 // Package charset decodes legacy single-byte / multi-byte encodings that are
 // still common in domestic (especially SOAP) services: GBK, GB18030, GB2312 and
-// Big5. Without this, a GBK response body is handed to the frontend as raw
-// bytes interpreted as UTF-8 and every Chinese character renders as mojibake.
+// Big5. Without this, a GBK response body is handed to the UI as raw bytes
+// interpreted as UTF-8 and every Chinese character renders as mojibake.
 //
 // The package is deliberately dependency-light: only golang.org/x/text is used.
 package charset

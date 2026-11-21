@@ -190,7 +190,7 @@ func TestToolbarButtonClicks(t *testing.T) {
 }
 
 // TestInlineRenameCommits checks the inline rename commits through the same
-// store path as the old dialogs, for both a request sample and a project.
+// store path, for both a request sample and a project.
 func TestInlineRenameCommits(t *testing.T) {
 	a := newTestApp(t)
 	a.createProject("P")
@@ -2694,7 +2694,7 @@ func TestMenusDrawnInWindow(t *testing.T) {
 }
 
 // TestProjectPageShowsCounts checks clicking a project opens its page, with the
-// folder and request counts and the proxy form that used to be a dialog.
+// folder and request counts and the project proxy form.
 func TestProjectPageShowsCounts(t *testing.T) {
 	a := newTestApp(t)
 	a.createProject("演示项目")

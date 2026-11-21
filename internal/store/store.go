@@ -908,16 +908,9 @@ func EnsureIDs(p *model.Project) {
 }
 
 // EnsureIDsIn is EnsureIDs using a caller-supplied claimer, so ids stay unique
-// across several projects of the same workspace.
-//
-// Uniqueness is not cosmetic: every lookup (indexOfProject, locateService,
-// locateOperation and the call loops) takes the first match on an id, so a
-// second node sharing one is unreachable — Get returns the first, UpdateCall
-// writes the first, and deleting the first makes the second reappear on the next
-// render. A hand-written or exported workspace file is the easy way to end up
-// with duplicates, since nothing in the JSON format prevents them. A collision is
-// reissued rather than rejected so an import still succeeds; only the second and
-// later occurrences change.
+// across several projects of the same workspace. Uniqueness matters because
+// every lookup takes the first match on an id; a collision is reissued rather
+// than rejected so an import still succeeds.
 func EnsureIDsIn(p *model.Project, claim IDClaimer) {
 	p.ID = claim(p.ID)
 	for i := range p.Groups {

@@ -452,8 +452,8 @@ const (
 )
 
 // ClampTimeout returns ms bounded to [MinTimeoutMS, MaxTimeoutMS], falling back
-// to DefaultTimeoutMS when unset. The API layer and transport share this so the
-// bounds cannot drift apart.
+// to DefaultTimeoutMS when unset. The app and transport share this so the bounds
+// cannot drift apart.
 func ClampTimeout(ms int) int {
 	if ms <= 0 {
 		return DefaultTimeoutMS
@@ -529,15 +529,9 @@ type TestStep struct {
 }
 
 // ValidateEndpoint reports whether a request URL is one this tool may call: an
-// absolute http or https URL with a host.
-//
-// Without this check the scheme was only rejected deep inside client.Do, which
-// produced a confusing "unsupported protocol scheme" error after the request had
-// already been built — and, more importantly, left /api/send accepting arbitrary
-// schemes. The service listens on loopback by default, but -addr can expose it on
-// a network, where an unauthenticated endpoint that fetches any URL is an
-// unwanted request proxy. Remote WSDL fetching (wsdlfetch) already enforced
-// exactly these rules; this is the same boundary for sending.
+// absolute http or https URL with a host. Without the check the scheme is only
+// rejected deep inside client.Do, as a confusing "unsupported protocol scheme"
+// error after the request is already built; wsdlfetch enforces the same rules.
 func ValidateEndpoint(rawURL string) error {
 	u, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
@@ -630,7 +624,7 @@ func JoinProjectURL(host, endpoint string) string {
 	return h + e
 }
 
-// SendRequest is the payload the frontend posts to execute an HTTP/SOAP call.
+// SendRequest describes one HTTP/SOAP request for transport.Send.
 type SendRequest struct {
 	ProjectID   string            `json:"projectId"` // used to resolve proxy settings
 	URL         string            `json:"url"`
@@ -645,7 +639,7 @@ type SendRequest struct {
 	FilePath string `json:"filePath,omitempty"`
 }
 
-// SendResponse is what we return to the frontend after a call.
+// SendResponse is what transport.Send returns.
 type SendResponse struct {
 	Status     int               `json:"status"`
 	StatusText string            `json:"statusText"`

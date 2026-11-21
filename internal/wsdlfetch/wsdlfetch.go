@@ -1,12 +1,10 @@
 // Package wsdlfetch downloads a WSDL document from a remote URL so it can be
 // imported without saving the file locally first.
 //
-// Fetching a URL supplied by the user is a trust boundary: the request runs on
-// the machine hosting soap-web and can therefore reach hosts that the browser
-// cannot (that is the point for intranet services). This package keeps the
-// operation predictable: only http/https, a bounded response size, a bounded
-// timeout, and an early content check so an HTML login/error page produces a
-// clear message instead of an obscure XML parse error.
+// A URL supplied by the user is a trust boundary, so the fetch stays
+// predictable: only http/https, a bounded response size and timeout, and an
+// early content check so an HTML login or error page gives a clear message
+// instead of an obscure XML parse error.
 package wsdlfetch
 
 import (

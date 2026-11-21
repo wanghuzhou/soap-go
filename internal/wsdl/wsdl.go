@@ -259,7 +259,7 @@ func Parse(data []byte) (*Result, error) {
 	return res, nil
 }
 
-// Result is the parsed WSDL output returned to the API layer.
+// Result is the parsed WSDL output returned to the caller.
 type Result struct {
 	Name       string            `json:"name"`
 	TargetNS   string            `json:"targetNamespace"`

@@ -39,11 +39,10 @@ func (rs *recordServer) headers() []http.Header {
 // TestHeaderCaseVariantsResolveDeterministically is the regression test for the
 // nondeterministic header precedence.
 //
-// The frontend builds the header map as a plain JS object, where "content-type"
-// and "Content-Type" are different keys, so both reach the server. http.Header.Set
-// canonicalises the name, putting both in one slot, and ranging over the map made
-// the winner depend on Go's randomised iteration order: the same request sent 30
-// times produced 27/3 splits between the two values. It must now be fixed.
+// The header map can hold both spellings of one name as separate entries, so
+// both reach the server. http.Header.Set canonicalises the name, putting both in
+// one slot, and ranging over the map made the winner depend on Go's randomised
+// iteration order. It must now be fixed.
 func TestHeaderCaseVariantsResolveDeterministically(t *testing.T) {
 	srv := newRecordServer(t)
 
@@ -134,7 +133,7 @@ func TestDistinctHeadersAllReachTheServer(t *testing.T) {
 	}
 }
 
-// TestNonHTTPEndpointsRejected is the regression test for /api/send accepting any
+// TestNonHTTPEndpointsRejected is the regression test for Send accepting any
 // scheme: the error used to surface from client.Do as an opaque
 // "unsupported protocol scheme" after the request was already built.
 func TestNonHTTPEndpointsRejected(t *testing.T) {
