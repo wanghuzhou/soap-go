@@ -1703,17 +1703,19 @@ func (a *app) importModal(c *ui.Context) {
 					ui.TextInput(c, &a.importURL).Placeholder("http://127.0.0.1:8080/services/ws/api?wsdl").Grow(1)
 					ui.Text(c, "代理").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 					ui.Select(c, &a.importProxySel, []string{"直连（默认）", "系统代理", "当前项目代理"})
+					if a.importing {
+						ui.Text(c, "正在下载并解析 WSDL，请稍候…").
+							FontSize(a.us(10.5)).TextColor(t.TextMuted)
+					}
 				})
 				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 					if ui.Button(c, "返回").Clicked() {
 						a.importKind = 0
 					}
-					if ui.PrimaryButton(c, "获取并导入").Clicked() {
-						a.errMsg = ""
+					if a.importing {
+						ui.PrimaryButton(c, "获取中…")
+					} else if ui.PrimaryButton(c, "获取并导入").Clicked() {
 						a.importWSDLURL(a.importURL)
-						if a.errMsg == "" {
-							a.importOpen = false
-						}
 					}
 				})
 			} else {

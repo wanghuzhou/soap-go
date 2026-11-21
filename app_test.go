@@ -1008,6 +1008,33 @@ func TestWorkspaceActionsWarnAboutEveryDirtyTab(t *testing.T) {
 	}
 }
 
+// TestImportProxyChoice checks the WSDL URL dialog resolves its proxy choice
+// on the UI thread, and an empty URL is rejected before any fetch starts.
+func TestImportProxyChoice(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.projects[0].Proxy = &model.ProxySettings{
+		Mode: "custom", Type: "http", Host: "10.0.0.5", Port: 8080,
+	}
+	a.importProxySel = "当前项目代理"
+	if got := a.importProxy(); got == nil || got.Host != "10.0.0.5" || got.Port != 8080 {
+		t.Fatalf("current project proxy = %+v", got)
+	}
+	a.importProxySel = "系统代理"
+	if got := a.importProxy(); got.Mode != "system" {
+		t.Fatalf("system proxy = %+v", got)
+	}
+	a.importProxySel = "直连（默认）"
+	if got := a.importProxy(); got.Mode != "direct" {
+		t.Fatalf("direct proxy = %+v", got)
+	}
+
+	a.importWSDLURL("   ")
+	if a.errMsg == "" || a.importing {
+		t.Fatalf("empty URL: errMsg = %q importing = %v", a.errMsg, a.importing)
+	}
+}
+
 // TestKeyboardAccessibleWidgets checks the custom clickable rows are in the
 // accessibility tree as focusable controls with names, so keyboard and screen
 // reader users can reach the tabs, tree rows and close button.

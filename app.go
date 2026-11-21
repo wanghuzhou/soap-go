@@ -291,8 +291,11 @@ type app struct {
 	importKind     int // 0 chooser, 1 soapUI, 2 WSDL file, 3 WSDL URL
 	importURL      string
 	importProxySel string
-	exportOpen     bool
-	keepProxy      bool
+	// importing is set while a WSDL URL import downloads in the background, so
+	// the dialog can show progress and refuse a second start.
+	importing  bool
+	exportOpen bool
+	keepProxy  bool
 	newProjectOpen bool
 	treeModalOpen  bool
 	treeModalKind  int // 1 add service, 2 add operation
@@ -2806,28 +2809,59 @@ func (a *app) importWSDLFile(path string) {
 	a.persistWSDL(res, name, path, "wsdl")
 }
 
-// importWSDLURL downloads and parses a WSDL.
+// importWSDLURL downloads and parses a WSDL in the background, so a slow server
+// cannot freeze the window while the import dialog waits.
 func (a *app) importWSDLURL(rawURL string) {
-	proxy := &model.ProxySettings{Mode: "direct"}
+	url := strings.TrimSpace(rawURL)
+	if url == "" {
+		a.errMsg = "请填写 WSDL URL"
+		return
+	}
+	if a.importing {
+		return
+	}
+	// Resolve the proxy on the UI thread; the fetch only reads this copy.
+	proxy := a.importProxy()
+	a.importing = true
+	a.errMsg = ""
+	go func() {
+		fetched, err := wsdlfetch.Fetch(url, proxy)
+		var res *wsdl.Result
+		if err == nil {
+			res, err = wsdl.Parse(fetched.Data)
+			if err != nil {
+				err = fmt.Errorf("无法解析 WSDL：%w", err)
+			}
+		} else {
+			err = fmt.Errorf("无法获取 WSDL：%w", err)
+		}
+		mygo.RunOnMain(func() {
+			a.importing = false
+			if err != nil {
+				a.errMsg = err.Error()
+			} else {
+				a.persistWSDL(res, fetched.Name, fetched.FinalURL, "wsdl-url")
+				a.importOpen = false
+			}
+			if a.win != nil {
+				a.win.Invalidate()
+			}
+		})
+	}()
+}
+
+// importProxy resolves the proxy choice of the import dialog.
+func (a *app) importProxy() *model.ProxySettings {
 	switch a.importProxySel {
 	case "系统代理":
-		proxy = &model.ProxySettings{Mode: "system"}
+		return &model.ProxySettings{Mode: "system"}
 	case "当前项目代理":
 		if p := a.selectedProject(); p != nil && p.Proxy != nil {
-			proxy = p.Proxy
+			cp := *p.Proxy
+			return &cp
 		}
 	}
-	fetched, err := wsdlfetch.Fetch(strings.TrimSpace(rawURL), proxy)
-	if err != nil {
-		a.errMsg = "无法获取 WSDL：" + err.Error()
-		return
-	}
-	res, err := wsdl.Parse(fetched.Data)
-	if err != nil {
-		a.errMsg = "无法解析 WSDL：" + err.Error()
-		return
-	}
-	a.persistWSDL(res, fetched.Name, fetched.FinalURL, "wsdl-url")
+	return &model.ProxySettings{Mode: "direct"}
 }
 
 // persistWSDL saves a parsed WSDL as a project with one service and one
