@@ -1982,6 +1982,22 @@ func (a *app) hasUnsavedTabs() bool {
 	return false
 }
 
+// unsavedTabsNote names how many open tabs would lose edits if the workspace
+// changes, or "" when every tab is saved. The workspace dialogs use it so edits
+// to a tab other than the active one are never lost without a warning.
+func (a *app) unsavedTabsNote(verb string) string {
+	n := 0
+	for _, key := range a.tabs {
+		if a.dirtyKey(key) {
+			n++
+		}
+	}
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("有 %d 个标签有未保存的修改，%s会丢失这些修改。", n, verb)
+}
+
 // askQuit confirms quitting when a tab holds unsaved edits, offering to save
 // every changed tab first.
 func (a *app) askQuit() {
@@ -2966,8 +2982,8 @@ func (a *app) applyProjectHost() {
 // ---- workspace management ----
 
 func (a *app) switchWorkspace(id string) {
-	if a.isDirty() {
-		a.askConfirm("当前请求有未保存的修改，切换工作空间会丢失这些修改。确定继续？", "切换", func() {
+	if note := a.unsavedTabsNote("切换工作空间"); note != "" {
+		a.askConfirm(note+"确定继续？", "切换", func() {
 			a.doSwitchWorkspace(id)
 		})
 		return
@@ -2988,8 +3004,8 @@ func (a *app) doSwitchWorkspace(id string) {
 }
 
 func (a *app) createWorkspace(name string) {
-	if a.isDirty() {
-		a.askConfirm("当前请求有未保存的修改，新建工作空间会切换并丢失这些修改。确定继续？", "继续", func() {
+	if note := a.unsavedTabsNote("新建工作空间"); note != "" {
+		a.askConfirm(note+"确定继续？", "继续", func() {
 			a.doCreateWorkspace(name)
 		})
 		return
@@ -3020,8 +3036,8 @@ func (a *app) renameWorkspace(name string) {
 
 func (a *app) deleteWorkspace() {
 	text := "确定删除当前工作空间「" + a.info.Name + "」？\n工作空间文件会先备份到 trash。"
-	if a.isDirty() {
-		text += "\n当前请求的未保存修改也会丢失。"
+	if note := a.unsavedTabsNote("删除工作空间"); note != "" {
+		text += "\n" + note
 	}
 	a.askConfirm(text, "删除", func() {
 		if err := a.reg.Delete(a.info.ID); err != nil {
@@ -3057,8 +3073,8 @@ func (a *app) exportWorkspace(path string) {
 
 // importWorkspaceNamed imports with an explicit workspace name.
 func (a *app) importWorkspaceNamed(path, name string) {
-	if a.isDirty() {
-		a.askConfirm("当前请求有未保存的修改，导入工作空间会切换并丢失这些修改。确定继续？", "导入", func() {
+	if note := a.unsavedTabsNote("导入工作空间"); note != "" {
+		a.askConfirm(note+"确定继续？", "导入", func() {
 			a.doImportWorkspace(path, name)
 		})
 		return

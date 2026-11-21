@@ -975,6 +975,39 @@ func TestHasUnsavedTabs(t *testing.T) {
 	}
 }
 
+// TestWorkspaceActionsWarnAboutEveryDirtyTab checks the workspace dialogs count
+// unsaved edits in tabs other than the active one, which their old isDirty
+// check missed.
+func TestWorkspaceActionsWarnAboutEveryDirtyTab(t *testing.T) {
+	cases := []struct {
+		name string
+		run  func(a *app)
+	}{
+		{"switch", func(a *app) { a.switchWorkspace("missing") }},
+		{"create", func(a *app) { a.createWorkspace("W") }},
+		{"import", func(a *app) { a.importWorkspaceNamed("x.json", "W") }},
+		{"delete", func(a *app) { a.deleteWorkspace() }},
+	}
+	for _, tc := range cases {
+		a, keys := tabTestApp(t, 2)
+		// Edit the last (active) tab, then switch to the clean first tab, so the
+		// dirty tab is only a stored draft.
+		a.endpoint = "http://changed/last"
+		pid, sid, oid, cid := splitKey(keys[0])
+		a.openCall(pid, sid, oid, cid)
+		if a.isDirty() {
+			t.Fatalf("%s: setup left the active tab dirty", tc.name)
+		}
+		tc.run(a)
+		if !a.confirmOpen {
+			t.Fatalf("%s: no confirmation for another tab's unsaved edits", tc.name)
+		}
+		if !strings.Contains(a.confirmText, "1 个标签") {
+			t.Fatalf("%s: confirmation %q does not name the dirty tab", tc.name, a.confirmText)
+		}
+	}
+}
+
 // TestKeyboardAccessibleWidgets checks the custom clickable rows are in the
 // accessibility tree as focusable controls with names, so keyboard and screen
 // reader users can reach the tabs, tree rows and close button.
