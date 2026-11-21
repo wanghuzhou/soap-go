@@ -1164,7 +1164,8 @@ func TestFontSettingsApply(t *testing.T) {
 }
 
 // TestTopBarMenus checks the file menu is gone, the "more" menu beside "+"
-// holds import and SoapUI export, and the workspace menu holds workspace export.
+// holds only import now that project exports moved to the project page, and the
+// workspace menu still holds workspace export.
 func TestTopBarMenus(t *testing.T) {
 	a := newTestApp(t)
 	a.createProject("P")
@@ -1181,17 +1182,18 @@ func TestTopBarMenus(t *testing.T) {
 	}
 	tt.Frame()
 	items := strings.Join(tt.Menu(), ",")
-	// A native (plain HTTP) project must not offer the SoapUI export.
 	if !strings.Contains(items, "导入…") {
 		t.Fatalf("more menu = %v", tt.Menu())
 	}
-	if strings.Contains(items, "导出 SoapUI XML…") {
-		t.Fatalf("native project must not offer SoapUI export: %v", tt.Menu())
+	for _, gone := range []string{"导出 SoapUI XML…", "导出 OpenAPI"} {
+		if strings.Contains(items, gone) {
+			t.Fatalf("more menu still offers %q: %v", gone, tt.Menu())
+		}
 	}
 	tt.CloseMenu()
 	tt.Frame()
 
-	// A SoapUI-sourced project does offer the export.
+	// A SoapUI-sourced project also keeps its exports off the more menu.
 	a.createProject("S")
 	a.reload()
 	a.projects[1].Source = "soapui"
@@ -1201,8 +1203,8 @@ func TestTopBarMenus(t *testing.T) {
 		t.Fatalf("click 更多: %v", err)
 	}
 	tt.Frame()
-	if !strings.Contains(strings.Join(tt.Menu(), ","), "导出 SoapUI XML…") {
-		t.Fatalf("soap project more menu = %v", tt.Menu())
+	if items := strings.Join(tt.Menu(), ","); strings.Contains(items, "导出") {
+		t.Fatalf("soap project more menu still offers an export: %v", tt.Menu())
 	}
 	tt.CloseMenu()
 	tt.Frame()
@@ -1213,6 +1215,33 @@ func TestTopBarMenus(t *testing.T) {
 	tt.Frame()
 	if !strings.Contains(strings.Join(tt.Menu(), ","), "导出工作空间…") {
 		t.Fatalf("workspace menu = %v", tt.Menu())
+	}
+}
+
+// TestProjectPageExports checks the project-level exports live on the project
+// page, offering only what the project's source supports.
+func TestProjectPageExports(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("原生")
+	a.reload()
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("导出 OpenAPI (JSON)…") || !tt.HasText("导出 OpenAPI (YAML)…") {
+		t.Fatal("native project page lacks the OpenAPI exports")
+	}
+	if tt.HasText("导出 SoapUI XML…") {
+		t.Fatal("native project page must not offer the SoapUI export")
+	}
+
+	// A SoapUI project offers the SoapUI export and no OpenAPI one.
+	a.projects[0].Source = "soapui"
+	a.openProjectPage(a.projects[0].ID)
+	tt.Frame()
+	if !tt.HasText("导出 SoapUI XML…") {
+		t.Fatal("soapui project page lacks the SoapUI export")
+	}
+	if tt.HasText("导出 OpenAPI (JSON)…") {
+		t.Fatal("soapui project page must not offer the OpenAPI export")
 	}
 }
 

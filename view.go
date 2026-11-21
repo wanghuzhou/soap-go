@@ -215,21 +215,6 @@ func (a *app) sidebar(c *ui.Context) {
 				if m.Item("导入…").Chosen() {
 					a.importOpen, a.importKind = true, 0
 				}
-				if p := a.selectedProject(); p != nil {
-					if p.CanExportSoapUI() {
-						if m.Item("导出 SoapUI XML…").Chosen() {
-							a.saveProjectXML()
-						}
-					}
-					if p.CanExportOpenAPI() {
-						if m.Item("导出 OpenAPI (JSON)…").Chosen() {
-							a.exportOpenAPI("json")
-						}
-						if m.Item("导出 OpenAPI (YAML)…").Chosen() {
-							a.exportOpenAPI("yaml")
-						}
-					}
-				}
 			})
 		})
 		ui.Row(c).Padding(0, 12, 8, 12).Gap(6).AlignItems(ui.Center).Children(func() {
@@ -551,22 +536,6 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 			// takes the user there instead of opening its old dialog.
 			a.openProjectPage(it.pid)
 			a.statusMsg = "代理设置已移到项目页面下方"
-		}
-		if proj != nil && proj.CanExportSoapUI() {
-			if m.Item("导出 SoapUI XML…").Chosen() {
-				pick()
-				a.saveProjectXML()
-			}
-		}
-		if proj != nil && proj.CanExportOpenAPI() {
-			if m.Item("导出 OpenAPI (JSON)…").Chosen() {
-				pick()
-				a.exportOpenAPI("json")
-			}
-			if m.Item("导出 OpenAPI (YAML)…").Chosen() {
-				pick()
-				a.exportOpenAPI("yaml")
-			}
 		}
 		m.Separator()
 		if m.Item("删除项目").Danger().Chosen() {
@@ -906,6 +875,9 @@ func (a *app) projectPagePanel(c *ui.Context) {
 			})
 			a.projectHostCard(c, p)
 			a.projectProxyCard(c)
+			if p.CanExportSoapUI() || p.CanExportOpenAPI() {
+				a.projectExportCard(c, p)
+			}
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Column(c).Gap(2).Children(func() {
 					ui.Text(c, "删除项目").FontSize(a.us(12.5)).Bold()
@@ -1005,6 +977,39 @@ func (a *app) projectProxyCard(c *ui.Context) {
 				if ui.PrimaryButton(c, "保存代理设置").Clicked() {
 					a.updateProxy()
 				}
+			})
+		})
+	})
+}
+
+// projectExportCard holds the project-level exports, which used to sit in the
+// tree's right-click menu and the sidebar's "更多" menu. A native project
+// exports OpenAPI; a SoapUI or WSDL project exports SoapUI XML.
+func (a *app) projectExportCard(c *ui.Context, p *model.Project) {
+	t := c.Theme()
+	desc := "把本项目导出为 OpenAPI 3.x 文档，支持 JSON 与 YAML 两种格式。"
+	if p.CanExportSoapUI() {
+		desc = "把本项目导出为 SoapUI XML，可在 SoapUI 中导入。"
+	}
+	ui.Column(c).Gap(8).Children(func() {
+		ui.Text(c, "导出").FontSize(a.us(12.5)).Bold()
+		ui.Text(c, desc).FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
+		a.settingsCard(c, func() {
+			ui.Row(c).Padding(11, 14).Gap(8).AlignItems(ui.Center).Children(func() {
+				if p.CanExportSoapUI() {
+					if ui.Button(c, "导出 SoapUI XML…").Clicked() {
+						a.saveProjectXML()
+					}
+				}
+				if p.CanExportOpenAPI() {
+					if ui.Button(c, "导出 OpenAPI (JSON)…").Clicked() {
+						a.exportOpenAPI("json")
+					}
+					if ui.Button(c, "导出 OpenAPI (YAML)…").Clicked() {
+						a.exportOpenAPI("yaml")
+					}
+				}
+				ui.Spacer(c)
 			})
 		})
 	})
