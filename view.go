@@ -291,8 +291,11 @@ func sourceLabel(source string) string {
 
 func (a *app) treeItems() []treeItem {
 	var out []treeItem
+	// While searching, every node counts as expanded so a match inside a
+	// collapsed folder or service is still generated, or it could never show.
+	searching := strings.TrimSpace(a.search) != ""
 	for _, p := range a.projects {
-		pe := a.expandedAt(p.ID, true)
+		pe := a.expandedAt(p.ID, true) || searching
 		hasKids := len(p.Groups) > 0 || len(p.Calls) > 0 || len(p.Services) > 0
 		out = append(out, treeItem{kind: "project", pid: p.ID, label: p.Name, badge: sourceLabel(p.Source), hasChildren: hasKids, expanded: pe})
 		if !pe {
@@ -305,13 +308,13 @@ func (a *app) treeItems() []treeItem {
 			}
 		}
 		for _, s := range p.Services {
-			se := a.expandedAt(s.ID, true)
+			se := a.expandedAt(s.ID, true) || searching
 			out = append(out, treeItem{kind: "service", pid: p.ID, sid: s.ID, label: s.Name, depth: 1, hasChildren: len(s.Operations) > 0, expanded: se})
 			if !se {
 				continue
 			}
 			for _, o := range s.Operations {
-				oe := a.expandedAt(o.ID, true)
+				oe := a.expandedAt(o.ID, true) || searching
 				out = append(out, treeItem{
 					kind: "operation", pid: p.ID, sid: s.ID, oid: o.ID, label: o.Name,
 					badge: fmt.Sprintf("%d 请求", len(o.Calls)), depth: 2,
@@ -349,11 +352,12 @@ func callTreeItem(pid, sid, oid string, cl model.Call, depth int) treeItem {
 // appendGroupRows renders the groups directly under parentID, recursing into
 // each group's subfolders and requests. A group is expanded by default.
 func (a *app) appendGroupRows(out *[]treeItem, p model.Project, parentID string, depth int) {
+	searching := strings.TrimSpace(a.search) != ""
 	for _, g := range p.Groups {
 		if g.ParentID != parentID {
 			continue
 		}
-		ge := a.expandedAt(g.ID, true)
+		ge := a.expandedAt(g.ID, true) || searching
 		*out = append(*out, treeItem{
 			kind: "group", pid: p.ID, gid: g.ID, label: g.Name, depth: depth,
 			hasChildren: a.groupHasChildren(p, g.ID), expanded: ge,
@@ -966,7 +970,7 @@ func (a *app) projectProxyCard(c *ui.Context) {
 						})
 						ui.Column(c).Grow(1).Gap(4).Children(func() {
 							ui.Text(c, "密码").FontSize(a.us(10.5)).TextColor(t.TextMuted)
-							ui.TextInput(c, &a.proxyPass).Placeholder("可留空")
+							ui.TextInput(c, &a.proxyPass).Placeholder("可留空").Password()
 						})
 					})
 				})

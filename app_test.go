@@ -941,6 +941,33 @@ func TestTreeSearchEmptyState(t *testing.T) {
 	}
 }
 
+// TestTreeSearchFindsInsideCollapsedFolder checks a search still reaches a
+// request under a folder the user has collapsed.
+func TestTreeSearchFindsInsideCollapsedFolder(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	p := a.projects[0]
+	g, err := a.st.AddGroup(p.ID, "折叠目录", "")
+	if err != nil {
+		t.Fatalf("AddGroup: %v", err)
+	}
+	if _, err := a.st.AddProjectCall(p.ID, g.ID, model.Call{
+		Title: "隐藏接口", Kind: model.KindHTTP, Method: "GET", BodyType: model.BodyNone,
+	}); err != nil {
+		t.Fatalf("AddProjectCall: %v", err)
+	}
+	a.reload()
+	a.expanded[p.ID] = true
+	a.expanded[g.ID] = false
+	a.search = "隐藏接口"
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("隐藏接口") {
+		t.Fatal("search did not reveal a request inside a collapsed folder")
+	}
+}
+
 // TestFriendlySendError checks transport errors become actionable Chinese
 // messages while unknown errors pass through unchanged.
 func TestFriendlySendError(t *testing.T) {
@@ -1032,6 +1059,59 @@ func TestImportProxyChoice(t *testing.T) {
 	a.importWSDLURL("   ")
 	if a.errMsg == "" || a.importing {
 		t.Fatalf("empty URL: errMsg = %q importing = %v", a.errMsg, a.importing)
+	}
+}
+
+// TestHeaderLinesPrintsEveryValue checks a repeated response header (stored as
+// newline-joined values) is shown as one line per value.
+func TestHeaderLinesPrintsEveryValue(t *testing.T) {
+	got := headerLines(map[string]string{"Set-Cookie": "a=1\nb=2"})
+	want := "Set-Cookie: a=1\nSet-Cookie: b=2\n"
+	if got != want {
+		t.Fatalf("headerLines = %q, want %q", got, want)
+	}
+}
+
+// TestCurlCommandForFileBodies checks a multipart body becomes -F fields and a
+// binary body points curl at the file instead of inlining its bytes.
+func TestCurlCommandForFileBodies(t *testing.T) {
+	a, _ := tabTestApp(t, 1)
+	a.reqKind = model.KindHTTP
+	a.method = "POST"
+	a.bodyType = model.BodyBinary
+	a.bodyFile = "C:/tmp/report.pdf"
+	a.contentType = "application/pdf"
+
+	cmd, err := a.curlCommand()
+	if err != nil {
+		t.Fatalf("binary curl: %v", err)
+	}
+	if !strings.Contains(cmd, "--data-binary '@C:/tmp/report.pdf'") {
+		t.Fatalf("binary curl does not point at the file:\n%s", cmd)
+	}
+	if strings.Contains(cmd, "Content-Type: application/pdf") == false {
+		t.Fatalf("binary curl lost its content type:\n%s", cmd)
+	}
+
+	a.bodyFile = ""
+	if _, err := a.curlCommand(); err == nil {
+		t.Fatal("binary curl without a file should fail")
+	}
+
+	a.bodyType = model.BodyMultipart
+	a.bodyFields = []bodyField{
+		{Name: "note", Value: "hi"},
+		{Name: "doc", Type: "file", Value: "C:/tmp/a.png"},
+	}
+	cmd, err = a.curlCommand()
+	if err != nil {
+		t.Fatalf("multipart curl: %v", err)
+	}
+	if !strings.Contains(cmd, "-F 'note=hi'") || !strings.Contains(cmd, "-F 'doc=@C:/tmp/a.png'") {
+		t.Fatalf("multipart curl lacks its -F fields:\n%s", cmd)
+	}
+	if strings.Contains(cmd, "boundary") {
+		t.Fatalf("multipart curl embeds a boundary body:\n%s", cmd)
 	}
 }
 

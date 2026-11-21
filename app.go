@@ -2512,7 +2512,11 @@ func headerLines(headers map[string]string) string {
 	sort.Strings(keys)
 	var b strings.Builder
 	for _, k := range keys {
-		b.WriteString(k + ": " + headers[k] + "\n")
+		// Repeated headers are stored with their values joined by newlines, so
+		// print each value as its own header line.
+		for _, v := range strings.Split(headers[k], "\n") {
+			b.WriteString(k + ": " + v + "\n")
+		}
 	}
 	return b.String()
 }
@@ -2602,12 +2606,35 @@ func (a *app) minifyBody() {
 
 // copyCurl puts an equivalent curl command on the clipboard.
 func (a *app) copyCurl() {
+	cmd, err := a.curlCommand()
+	if err != nil {
+		a.errMsg = "无法生成 curl：" + err.Error()
+		return
+	}
+	mygo.Clipboard.WriteText(cmd)
+	a.statusMsg = "curl 已复制"
+}
+
+// curlCommand builds the curl command for the current request. A multipart body
+// becomes -F fields and a binary body --data-binary @path, so file bytes are
+// never pasted into the command; other bodies go through requestBody as before.
+func (a *app) curlCommand() (string, error) {
 	kind := a.reqKind
 	method := model.EffectiveMethod(kind, a.method)
-	body, contentType, err := a.requestBody(kind, method)
-	if err != nil {
-		body = a.xmlEd.Buffer.String()
-		contentType = strings.TrimSpace(a.contentType)
+	bt := a.bodyType
+	if kind != model.KindSOAP && bt == "" {
+		bt = model.InferBodyType(a.contentType, a.xmlEd.Buffer.String())
+	}
+	multipart := kind != model.KindSOAP && bt == model.BodyMultipart
+	binary := kind != model.KindSOAP && bt == model.BodyBinary
+	body, contentType := "", ""
+	if !multipart && !binary {
+		var err error
+		body, contentType, err = a.requestBody(kind, method)
+		if err != nil {
+			body = a.xmlEd.Buffer.String()
+			contentType = strings.TrimSpace(a.contentType)
+		}
 	}
 	authHeader := a.auth.modelAuth().Authorization()
 	// Copy the address the request actually goes to, so a relative endpoint
@@ -2635,14 +2662,44 @@ func (a *app) copyCurl() {
 	if authHeader != "" {
 		b.WriteString(" \\\n  -H " + shellQuote("Authorization: "+authHeader))
 	}
+	if binary {
+		// curl reads the file itself; the command stays short and pasteable.
+		path := strings.TrimSpace(a.bodyFile)
+		if path == "" {
+			return "", fmt.Errorf("请选择要上传的文件")
+		}
+		if contentType == "" {
+			contentType = strings.TrimSpace(a.contentType)
+		}
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		b.WriteString(" \\\n  --data-binary " + shellQuote("@"+path))
+	}
 	if contentType != "" {
 		b.WriteString(" \\\n  -H " + shellQuote("Content-Type: "+contentType))
 	}
-	if strings.TrimSpace(body) != "" {
+	switch {
+	case multipart:
+		for _, f := range a.bodyFields {
+			name := strings.TrimSpace(f.Name)
+			if name == "" {
+				continue
+			}
+			if f.Type == "file" {
+				path := strings.TrimSpace(f.Value)
+				if path == "" {
+					return "", fmt.Errorf("字段「%s」未选择文件", f.Name)
+				}
+				b.WriteString(" \\\n  -F " + shellQuote(name+"=@"+path))
+			} else {
+				b.WriteString(" \\\n  -F " + shellQuote(name+"="+f.Value))
+			}
+		}
+	case !binary && strings.TrimSpace(body) != "":
 		b.WriteString(" \\\n  --data-binary " + shellQuote(body))
 	}
-	mygo.Clipboard.WriteText(b.String())
-	a.statusMsg = "curl 已复制"
+	return b.String(), nil
 }
 
 // ---- project & workspace management ----

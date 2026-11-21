@@ -103,7 +103,9 @@ func SendContext(ctx context.Context, req model.SendRequest, proxyCfg *model.Pro
 	out.StatusText = http.StatusText(resp.StatusCode)
 	for k, vals := range resp.Header {
 		if len(vals) > 0 {
-			out.Headers[k] = vals[0]
+			// A header may repeat (Set-Cookie above all): keep every value, one
+			// per line, instead of silently dropping all but the first.
+			out.Headers[k] = strings.Join(vals, "\n")
 		}
 	}
 
