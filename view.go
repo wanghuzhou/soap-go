@@ -1453,8 +1453,6 @@ func (a *app) headersPanel(c *ui.Context) {
 	})
 }
 
-// authPanel is the 认证 section: the auth type, an enable switch, and the
-// fields of the picked scheme, after Yaak's request auth panel.
 // queryPanel is the 查询 tab of an HTTP request. Its rows are parsed from the
 // endpoint URL and written back to it, so the URL stays the single source of
 // truth and both directions stay in sync.
@@ -1503,6 +1501,8 @@ func (a *app) queryPanel(c *ui.Context) {
 	}
 }
 
+// authPanel is the 认证 section: the auth type, an enable switch, and the
+// fields of the picked scheme, after Yaak's request auth panel.
 func (a *app) authPanel(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).Padding(14, 14, 10).Gap(12).Children(func() {

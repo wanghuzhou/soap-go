@@ -596,23 +596,33 @@ func (s *Store) DuplicateCall(projectID, serviceID, opID, callID string) (model.
 			return nil, ErrNotFound
 		}
 		op := &list[pi].Services[si].Operations[oi]
-		for _, c := range op.Calls {
-			if c.ID != callID {
-				continue
-			}
-			c.ID = NewID()
-			c.Title = copyTitle(c.Title, op.Calls)
-			c.Headers = append([]model.Header(nil), c.Headers...)
-			c.BodyFields = append([]model.BodyField(nil), c.BodyFields...)
-			c.Auth = c.Auth.Clone()
-			c.Response = cloneSavedResponse(c.Response)
-			op.Calls = append(op.Calls, c)
-			out = c
-			return list, nil
+		var copied bool
+		out, op.Calls, copied = duplicateCall(op.Calls, callID)
+		if !copied {
+			return nil, ErrNotFound
 		}
-		return nil, ErrNotFound
+		return list, nil
 	})
 	return out, err
+}
+
+// duplicateCall appends a copy of the call with callID to calls, under a fresh
+// id and a "(副本)" title, sharing nothing mutable with the original. copied is
+// false when no call has that id.
+func duplicateCall(calls []model.Call, callID string) (out model.Call, grown []model.Call, copied bool) {
+	for _, c := range calls {
+		if c.ID != callID {
+			continue
+		}
+		c.ID = NewID()
+		c.Title = copyTitle(c.Title, calls)
+		c.Headers = append([]model.Header(nil), c.Headers...)
+		c.BodyFields = append([]model.BodyField(nil), c.BodyFields...)
+		c.Auth = c.Auth.Clone()
+		c.Response = cloneSavedResponse(c.Response)
+		return c, append(calls, c), true
+	}
+	return model.Call{}, calls, false
 }
 
 // copyTitle returns "<title> (副本)" or, when that is taken, the first free
@@ -852,21 +862,12 @@ func (s *Store) DuplicateProjectCall(projectID, callID string) (model.Call, erro
 		if i < 0 {
 			return nil, ErrNotFound
 		}
-		for _, c := range list[i].Calls {
-			if c.ID != callID {
-				continue
-			}
-			c.ID = NewID()
-			c.Title = copyTitle(c.Title, list[i].Calls)
-			c.Headers = append([]model.Header(nil), c.Headers...)
-			c.BodyFields = append([]model.BodyField(nil), c.BodyFields...)
-			c.Auth = c.Auth.Clone()
-			c.Response = cloneSavedResponse(c.Response)
-			list[i].Calls = append(list[i].Calls, c)
-			out = c
-			return list, nil
+		var copied bool
+		out, list[i].Calls, copied = duplicateCall(list[i].Calls, callID)
+		if !copied {
+			return nil, ErrNotFound
 		}
-		return nil, ErrNotFound
+		return list, nil
 	})
 	return out, err
 }

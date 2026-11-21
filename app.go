@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1937,13 +1938,13 @@ func (a *app) currentDirty() bool {
 	if a.bodyType != a.savedBodyType || a.bodyFile != a.savedBodyFile {
 		return true
 	}
-	if bodyFieldsDirty(a.bodyFields, a.savedBodyFields) {
+	if !slices.Equal(a.bodyFields, a.savedBodyFields) {
 		return true
 	}
 	if a.auth != a.savedAuth {
 		return true
 	}
-	return headersDirty(a.headers, a.savedHeaders)
+	return !slices.Equal(a.headers, a.savedHeaders)
 }
 
 // draftDirty reports whether a stored tab draft differs from its saved values.
@@ -1957,38 +1958,13 @@ func draftDirty(d *callDraft) bool {
 		d.bodyType != d.savedBodyType || d.bodyFile != d.savedBodyFile {
 		return true
 	}
-	if bodyFieldsDirty(d.bodyFields, d.savedBodyFields) {
+	if !slices.Equal(d.bodyFields, d.savedBodyFields) {
 		return true
 	}
 	if d.auth != d.savedAuth {
 		return true
 	}
-	return headersDirty(d.headers, d.savedHeaders)
-}
-
-// bodyFieldsDirty compares two editable body-field lists.
-func bodyFieldsDirty(live, saved []bodyField) bool {
-	if len(live) != len(saved) {
-		return true
-	}
-	for i := range live {
-		if live[i] != saved[i] {
-			return true
-		}
-	}
-	return false
-}
-
-func headersDirty(live, saved []headerRow) bool {
-	if len(live) != len(saved) {
-		return true
-	}
-	for i := range live {
-		if live[i] != saved[i] {
-			return true
-		}
-	}
-	return false
+	return !slices.Equal(d.headers, d.savedHeaders)
 }
 
 // dirtyKey reports whether a tab holds unsaved changes.
