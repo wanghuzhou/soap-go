@@ -1115,6 +1115,40 @@ func TestCurlCommandForFileBodies(t *testing.T) {
 	}
 }
 
+// TestProxyPasswordIsMasked checks the project page never shows the proxy
+// password in clear text.
+func TestProxyPasswordIsMasked(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.projects[0].Proxy = &model.ProxySettings{
+		Mode: "custom", Type: "http", Host: "127.0.0.1", Port: 8080, Password: "s3cret",
+	}
+	a.reload()
+	a.openProjectPage(a.projects[0].ID)
+
+	tt := ui.NewTester(a.view, 1100, 800)
+	tt.Frame()
+	if tt.HasText("s3cret") {
+		t.Fatal("the proxy password is shown in clear text")
+	}
+}
+
+// TestWSDLImportShowsProgress checks the URL import dialog shows progress while
+// the background fetch runs and cannot be started twice.
+func TestWSDLImportShowsProgress(t *testing.T) {
+	a := newTestApp(t)
+	a.importOpen, a.importKind, a.importing = true, 3, true
+
+	tt := ui.NewTester(a.view, 900, 700)
+	tt.Frame()
+	if !tt.HasText("正在下载并解析 WSDL，请稍候…") {
+		t.Fatal("no progress hint while importing")
+	}
+	if !tt.HasText("获取中…") {
+		t.Fatal("the import button still reads 获取并导入 while importing")
+	}
+}
+
 // TestKeyboardAccessibleWidgets checks the custom clickable rows are in the
 // accessibility tree as focusable controls with names, so keyboard and screen
 // reader users can reach the tabs, tree rows and close button.

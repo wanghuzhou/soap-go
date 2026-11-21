@@ -1713,11 +1713,11 @@ func (a *app) importModal(c *ui.Context) {
 					}
 				})
 				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-					if ui.Button(c, "返回").Clicked() {
+					if ui.Button(c, "返回").Disabled(a.importing).Clicked() {
 						a.importKind = 0
 					}
 					if a.importing {
-						ui.PrimaryButton(c, "获取中…")
+						ui.PrimaryButton(c, "获取中…").Disabled(true)
 					} else if ui.PrimaryButton(c, "获取并导入").Clicked() {
 						a.importWSDLURL(a.importURL)
 					}
