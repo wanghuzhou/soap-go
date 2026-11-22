@@ -8,7 +8,6 @@ package soapuiproj
 import (
 	"encoding/xml"
 	"errors"
-	"html"
 	"strings"
 
 	"soapgo/internal/charset"
@@ -181,7 +180,7 @@ func Parse(data []byte) (*model.Project, error) {
 					Title:    strings.TrimSpace(call.Name),
 					Endpoint: strings.TrimSpace(firstNonEmpty(req.Endpoint, call.Endpoint)),
 					Action:   firstNonEmpty(req.Action, op.Action),
-					Request:  unescapeXMLText(req.bodyText()),
+					Request:  strings.TrimSpace(req.bodyText()),
 				}
 				if c.Title == "" {
 					c.Title = op.Name
@@ -214,7 +213,7 @@ func Parse(data []byte) (*model.Project, error) {
 				step := model.TestStep{Name: st.Name, Type: st.Type}
 				step.Endpoint = strings.TrimSpace(st.Config.Request.Endpoint)
 				step.Action = st.Config.Request.Action
-				step.Request = unescapeXMLText(st.Config.Request.bodyText())
+				step.Request = strings.TrimSpace(st.Config.Request.bodyText())
 				tc.Steps = append(tc.Steps, step)
 			}
 			ts.TestCases = append(ts.TestCases, tc)
@@ -223,12 +222,6 @@ func Parse(data []byte) (*model.Project, error) {
 	}
 
 	return proj, nil
-}
-
-// unescapeXMLText converts escaped entities (SoapUI stores request bodies with
-// &lt; &amp; etc.) back to real XML. It is idempotent for already-unescaped text.
-func unescapeXMLText(s string) string {
-	return strings.TrimSpace(html.UnescapeString(s))
 }
 
 // firstNonEmpty returns the first non-blank string among its arguments.

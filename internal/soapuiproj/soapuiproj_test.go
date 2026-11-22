@@ -76,6 +76,29 @@ func TestRejectsNonSoapUI(t *testing.T) {
 	}
 }
 
+// TestParseKeepsLiteralEntities checks the request body is not unescaped a
+// second time: a body may legitimately contain entity-looking text (a SOAP
+// payload that sends escaped XML), and the XML decoder already decoded once.
+func TestParseKeepsLiteralEntities(t *testing.T) {
+	const doc = `<con:soapui-project xmlns:con="http://eviware.com/soapui/config" name="P">
+  <con:interface name="S">
+    <con:operation name="Op">
+      <con:call name="C">
+        <con:request><![CDATA[<x>&lt;ok&gt;</x>]]></con:request>
+      </con:call>
+    </con:operation>
+  </con:interface>
+</con:soapui-project>`
+	p, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	got := p.Services[0].Operations[0].Calls[0].Request
+	if got != `<x>&lt;ok&gt;</x>` {
+		t.Fatalf("request body = %q, want the literal entity text preserved", got)
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (func() bool {
 		for i := 0; i+len(sub) <= len(s); i++ {
