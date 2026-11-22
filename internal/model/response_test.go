@@ -36,3 +36,15 @@ func TestValidateProjectResponses(t *testing.T) {
 		t.Error("oversized project response should be rejected")
 	}
 }
+
+// TestValidateProjectResponsesCoversNativeCalls checks a plain HTTP project's
+// own calls are validated too, not only SOAP operation samples.
+func TestValidateProjectResponsesCoversNativeCalls(t *testing.T) {
+	project := Project{Calls: []Call{{
+		Title:    "big",
+		Response: &SavedResponse{Body: strings.Repeat("x", MaxSavedResponseBytes+1)},
+	}}}
+	if err := ValidateProjectResponses(project); err == nil {
+		t.Error("oversized native call response should be rejected")
+	}
+}

@@ -427,6 +427,11 @@ func ValidateSavedResponse(r *SavedResponse) error {
 // ValidateProjectResponses checks every saved response in a project, so a
 // hand-written workspace JSON cannot bypass the size limit.
 func ValidateProjectResponses(p Project) error {
+	for _, c := range p.Calls {
+		if err := ValidateSavedResponse(c.Response); err != nil {
+			return fmt.Errorf("请求「%s」: %w", c.Title, err)
+		}
+	}
 	for _, svc := range p.Services {
 		for _, op := range svc.Operations {
 			for _, c := range op.Calls {
