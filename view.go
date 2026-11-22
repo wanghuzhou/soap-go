@@ -1626,7 +1626,18 @@ func (a *app) responsePanel(c *ui.Context) {
 		ui.Divider(c)
 		ui.Row(c).Shrink(0).Padding(6, 14).Gap(12).AlignItems(ui.Center).Children(func() {
 			if a.hasResp && a.resp.Error != "" {
-				ui.Text(c, "无法发送请求："+a.resp.Error).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
+				if a.resp.Status > 0 {
+					// The response was received but reading its body failed:
+					// keep the status and let the tabs show headers/partial body.
+					col := t.Success
+					if a.resp.Status >= 400 {
+						col = t.Danger
+					}
+					a.statusPill(c, fmt.Sprintf("%d %s", a.resp.Status, a.resp.StatusText), col)
+					ui.Text(c, "读取响应失败："+a.resp.Error).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
+				} else {
+					ui.Text(c, "无法发送请求："+a.resp.Error).FontSize(a.us(10.5)).TextColor(t.Danger).SingleLine()
+				}
 			} else if a.hasResp && a.resp.Error == "" {
 				col := t.Success
 				if a.resp.Status >= 400 {

@@ -2646,7 +2646,7 @@ func (a *app) responseText() string {
 	if !a.hasResp {
 		return ""
 	}
-	if a.resp.Error != "" {
+	if a.resp.Error != "" && a.resp.Status == 0 {
 		return a.resp.Error
 	}
 	switch a.respTab {
@@ -2667,7 +2667,7 @@ func (a *app) responseText() string {
 // saveResponseFile asks where to save the last response body and writes it
 // atomically, so a truncated 16 MB response does not have to be copied by hand.
 func (a *app) saveResponseFile() {
-	if !a.hasResp || a.resp.Error != "" {
+	if !a.hasResp || (a.resp.Error != "" && a.resp.Status == 0) {
 		return
 	}
 	ext := ".txt"

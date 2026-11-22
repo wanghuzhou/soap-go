@@ -3031,6 +3031,26 @@ func TestCloseTabsBulk(t *testing.T) {
 	}
 }
 
+// TestReadErrorKeepsResponseInspectable checks a partial response with an error
+// still exposes its headers and body rather than only the error text.
+func TestReadErrorKeepsResponseInspectable(t *testing.T) {
+	a := newTestApp(t)
+	a.hasResp = true
+	a.resp = model.SendResponse{
+		Status: 200, StatusText: "OK",
+		Headers: map[string]string{"Content-Type": "text/plain"},
+		Body:    "partial", Error: "读取响应失败: unexpected EOF",
+	}
+	a.respTab = 3
+	if got := a.responseText(); !strings.Contains(got, "Content-Type: text/plain") {
+		t.Fatalf("headers tab = %q, want the response headers", got)
+	}
+	a.respTab = 1
+	if got := a.responseText(); got != "partial" {
+		t.Fatalf("raw tab = %q, want the partial body", got)
+	}
+}
+
 // TestBackgroundWritesUseCapturedStore checks a send or WSDL import that
 // finishes after a workspace switch lands in the store it started in.
 func TestBackgroundWritesUseCapturedStore(t *testing.T) {

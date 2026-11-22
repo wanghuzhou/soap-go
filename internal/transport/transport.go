@@ -119,21 +119,24 @@ func SendContext(ctx context.Context, req model.SendRequest, proxyCfg *model.Pro
 		}
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
+	truncated := len(body) > maxBodyBytes
+	if truncated {
+		body = body[:maxBodyBytes]
+	}
 	out.DurationMS = time.Since(start).Milliseconds()
 	if err != nil {
 		// Keep whatever arrived so a truncated response is still inspectable.
 		out.Body = decodeBody(body, resp.Header.Get("Content-Type"))
 		out.Size = len(body)
+		out.Truncated = truncated
 		out.Error = "读取响应失败: " + err.Error()
 		return out
 	}
 
 	out.Body = decodeBody(body, resp.Header.Get("Content-Type"))
 	out.Size = len(body)
-	if len(body) >= maxBodyBytes {
-		out.Truncated = true
-	}
+	out.Truncated = truncated
 	return out
 }
 
