@@ -1,6 +1,6 @@
 # soap-go
 
-SOAP / WSDL 接口调试桌面工具，用 **Go + MyGo 原生 UI**（纯 Go 绘制，无 WebView）
+SOAP / WSDL / OpenAPI 接口调试桌面工具，用 **Go + MyGo 原生 UI**（纯 Go 绘制，无 WebView）
 
 ![主界面](docs/screenshots/example1.png)
 
@@ -10,8 +10,8 @@ SOAP / WSDL 接口调试桌面工具，用 **Go + MyGo 原生 UI**（纯 Go 绘�
 - **请求编辑**：普通 HTTP 请求可选方法（GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS）、URL 与「查询」页签双向同步；Body 类型可选 No Body / JSON / XML / GraphQL / Other / Url Encoded / Multi-Part / Binary File，按类型提供文本编辑器（JSON/XML 高亮）、表单字段或文件选择；SOAP 请求固定 POST，含 SOAPAction、Content-Type、XML 格式化；超时、请求头（项目默认 + 样例覆盖 + 敏感头遮蔽）
 - **发送请求**：真实 HTTP / SOAP 请求，支持代理（系统 / 直连 / 自定义 HTTP·SOCKS5）、超时、响应截断；GET/HEAD 不发送请求体
 - **响应查看**：格式化 / 原始 / 请求 / Headers 四个视图，状态码、耗时、大小；悬停显示复制图标，发送成功后自动保存最近响应
-- **导入**：SoapUI 项目（.xml）、WSDL 文件、WSDL URL（可选代理）；SOAP 请求只能通过这些导入产生
-- **导出**：工作空间 JSON（可选保留代理）；SoapUI 项目可导出为 SoapUI XML（普通 HTTP 项目不支持导出）
+- **导入**：SoapUI 项目（.xml）、WSDL 文件、WSDL URL（可选代理）、OpenAPI 3.x 文档（.json / .yaml / .yml，按 tag 生成目录、按 operation 生成请求）；SOAP 请求只能由 SoapUI / WSDL 导入产生
+- **导出**：工作空间 JSON（可选保留代理）；普通 HTTP 项目可导出为 OpenAPI 3.x（JSON 或 YAML）；SoapUI 项目可导出为 SoapUI XML（两类项目不支持对方的导出格式）
 - **认证**：Basic（用户名/密码）与 Bearer（令牌 + 可改 Prefix），可启用/禁用，密码与令牌默认遮蔽
 - **管理**：工作空间切换/新建/重命名/删除/导入/导出；项目、目录、请求的增删改，以及导入项目下的服务/操作，均在树节点右键菜单
 - **其它**：上下/左右分屏、深色/浅色主题、主题色（8 种可选）、界面与编辑器字体设置（字体和字号分别可调）、主题与分栏布局持久化、请求可取消
@@ -74,13 +74,14 @@ main.go        入口：数据目录、日志、窗口、退出时保存布局
 app.go         应用状态与操作（加载/保存/发送/导入/CRUD/工作空间/持久化）
 view.go        原生 UI：工作台、请求 Tab、分区、弹窗、右键菜单
 theme.go       深色 / 浅色主题
-internal/      从 soap-web 移植的业务包
+internal/      业务包
   model        数据模型
   store        项目持久化与 CRUD
   workspace    多工作空间注册表
   wsdl         WSDL 解析
   wsdlfetch    远程 WSDL 抓取
   soapuiproj   SoapUI 项目导入 / 导出
+  openapi      OpenAPI 3.x 导入 / 导出（普通 HTTP 项目）
   transport    HTTP/SOAP 发送（支持 context 取消、代理、字符集）
   charset      字符集解码
   fileutil     原子写文件
@@ -101,4 +102,5 @@ internal/      从 soap-web 移植的业务包
 - 界面由 MyGo 的原生 UI 工具包绘制，不依赖 WebView
 - 项目树节点的操作（新建项目/目录/请求、导入项目的服务/操作/请求，以及重命名、复制、删除）都在**右键菜单**里。
 - 新建项目是普通 HTTP 项目：可在项目或目录下直接创建请求；SOAP 请求只能由 SoapUI / WSDL 导入产生；普通 HTTP 项目不支持导出 SoapUI XML。
+- 普通 HTTP 项目可以从 OpenAPI 3.x 文档导入，也可以导出为 OpenAPI 3.x（JSON / YAML）；导入时会保留 paths、path/query/header 参数、请求体与响应示例，未识别的 OpenAPI 关键字会被忽略。
 - 已知差异：原 web 版的树键盘导航未实现；提示采用底部状态栏而非浮层 Toast。
