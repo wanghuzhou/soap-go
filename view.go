@@ -1739,6 +1739,10 @@ func (a *app) importModal(c *ui.Context) {
 						ui.Text(c, "正在下载并解析 WSDL，请稍候…").
 							FontSize(a.us(10.5)).TextColor(t.TextMuted)
 					}
+					if a.importErr != "" {
+						ui.Text(c, "⚠ "+a.importErr).FontSize(a.us(10.5)).
+							TextColor(t.Danger).Wrap()
+					}
 				})
 				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 					if ui.Button(c, "返回").Disabled(a.importing).Clicked() {
@@ -1782,7 +1786,9 @@ func (a *app) importModal(c *ui.Context) {
 						}
 					})
 				a.importOption(c, "↗", "从 URL 导入 WSDL",
-					"抓取远程 WSDL，生成新的项目。", func() { a.importKind = 3 })
+					"抓取远程 WSDL，生成新的项目。", func() {
+						a.importKind, a.importErr = 3, ""
+					})
 				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 					if ui.Button(c, "取消").Clicked() {
 						a.importOpen = false

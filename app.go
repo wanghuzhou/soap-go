@@ -311,6 +311,7 @@ type app struct {
 	// importing is set while a WSDL URL import downloads in the background, so
 	// the dialog can show progress and refuse a second start.
 	importing      bool
+	importErr      string
 	exportOpen     bool
 	keepProxy      bool
 	newProjectOpen bool
@@ -3138,6 +3139,7 @@ func (a *app) importWSDLURL(rawURL string) {
 	// Resolve the proxy on the UI thread; the fetch only reads this copy.
 	proxy := a.importProxy()
 	a.importing = true
+	a.importErr = ""
 	a.errMsg = ""
 	// The import belongs to the workspace it started in: switching while the
 	// download runs must not move the new project to the newly active store.
@@ -3157,8 +3159,10 @@ func (a *app) importWSDLURL(rawURL string) {
 			a.importing = false
 			if err != nil {
 				a.errMsg = err.Error()
+				a.importErr = err.Error()
 			} else {
 				a.persistWSDL(st, res, fetched.Name, fetched.FinalURL, "wsdl-url")
+				a.importErr = ""
 				a.importOpen = false
 			}
 			if a.win != nil {

@@ -3031,6 +3031,19 @@ func TestCloseTabsBulk(t *testing.T) {
 	}
 }
 
+// TestWSDLImportErrorShownInDialog checks the import dialog renders the failure
+// itself, rather than leaving it in the banner behind the modal.
+func TestWSDLImportErrorShownInDialog(t *testing.T) {
+	a := newTestApp(t)
+	a.importOpen, a.importKind = true, 3
+	a.importErr = "无法获取 WSDL：connection refused"
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("无法获取 WSDL") {
+		t.Fatal("the import dialog does not show the failure reason")
+	}
+}
+
 // TestSentPreviewIsSnapshotAndMasked checks the 请求 tab returns the request
 // captured at send time, with sensitive header values masked.
 func TestSentPreviewIsSnapshotAndMasked(t *testing.T) {
