@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -2257,6 +2259,44 @@ func TestMultipartFileField(t *testing.T) {
 	}
 	if _, _, err := buildMultipart([]bodyField{{Name: "doc", Type: "file"}}); err == nil {
 		t.Fatal("a file field without a path should fail")
+	}
+}
+
+// TestMultipartFieldValueWithBoundary checks a value that contains a
+// boundary-looking line stays one part, because the boundary is random.
+func TestMultipartFieldValueWithBoundary(t *testing.T) {
+	tricky := "before\r\n------soapgoFormBoundary7MA4YWxkTrZu0gW\r\n" +
+		"Content-Disposition: form-data; name=\"evil\"\r\n\r\nafter"
+	body, ct, err := buildMultipart([]bodyField{{Name: "a", Value: tricky}})
+	if err != nil {
+		t.Fatalf("buildMultipart: %v", err)
+	}
+	_, params, err := mime.ParseMediaType(ct)
+	if err != nil {
+		t.Fatalf("ParseMediaType: %v", err)
+	}
+	r := multipart.NewReader(strings.NewReader(body), params["boundary"])
+	parts := 0
+	var got string
+	for {
+		part, perr := r.NextPart()
+		if perr != nil {
+			break
+		}
+		parts++
+		var b strings.Builder
+		if _, cerr := io.Copy(&b, part); cerr != nil {
+			t.Fatalf("read part: %v", cerr)
+		}
+		if part.FormName() == "a" {
+			got = b.String()
+		}
+	}
+	if parts != 1 {
+		t.Fatalf("body split into %d parts, want 1", parts)
+	}
+	if got != tricky {
+		t.Fatalf("field value = %q, want it unchanged", got)
 	}
 }
 

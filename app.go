@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"mime/multipart"
+	"net/textproto"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -2414,21 +2416,16 @@ func encodeForm(fields []bodyField) string {
 	return strings.Join(parts, "&")
 }
 
-// multipartBoundary is fixed per request; a single request is assembled at a
-// time, so a constant cannot collide with an in-flight one.
-const multipartBoundary = "----soapgoFormBoundary7MA4YWxkTrZu0gW"
-
 // buildMultipart renders name/value pairs as a multipart/form-data body and the
-// matching Content-Type (including the boundary). A field of type "file" reads
-// its file from disk and adds the filename and a guessed content type.
+// matching Content-Type. A random boundary per request keeps a field value that
+// happens to contain a boundary-looking line from splitting the body.
 func buildMultipart(fields []bodyField) (body, contentType string, err error) {
-	var b strings.Builder
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
 	for _, f := range fields {
 		if f.Name == "" {
 			continue
 		}
-		b.WriteString("--" + multipartBoundary + "\r\n")
-		name := strings.ReplaceAll(f.Name, `"`, `\"`)
 		if f.Type == "file" {
 			path := strings.TrimSpace(f.Value)
 			if path == "" {
@@ -2443,18 +2440,36 @@ func buildMultipart(fields []bodyField) (body, contentType string, err error) {
 			if ct == "" {
 				ct = "application/octet-stream"
 			}
-			b.WriteString(`Content-Disposition: form-data; name="` + name + `"; filename="` +
-				strings.ReplaceAll(filename, `"`, `\"`) + `"` + "\r\n")
-			b.WriteString("Content-Type: " + ct + "\r\n\r\n")
-			b.Write(data)
-			b.WriteString("\r\n")
+			h := make(textproto.MIMEHeader)
+			h.Set("Content-Disposition", `form-data; name="`+quoteMultipart(f.Name)+
+				`"; filename="`+quoteMultipart(filename)+`"`)
+			h.Set("Content-Type", ct)
+			part, werr := w.CreatePart(h)
+			if werr != nil {
+				return "", "", werr
+			}
+			if _, werr := part.Write(data); werr != nil {
+				return "", "", werr
+			}
 			continue
 		}
-		b.WriteString(`Content-Disposition: form-data; name="` + name + `"` + "\r\n\r\n")
-		b.WriteString(f.Value + "\r\n")
+		part, werr := w.CreateFormField(f.Name)
+		if werr != nil {
+			return "", "", werr
+		}
+		if _, werr := io.WriteString(part, f.Value); werr != nil {
+			return "", "", werr
+		}
 	}
-	b.WriteString("--" + multipartBoundary + "--\r\n")
-	return b.String(), "multipart/form-data; boundary=" + multipartBoundary, nil
+	if err := w.Close(); err != nil {
+		return "", "", err
+	}
+	return buf.String(), w.FormDataContentType(), nil
+}
+
+// quoteMultipart escapes a multipart header parameter the way the stdlib does.
+func quoteMultipart(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s)
 }
 
 // sendRequest runs the request in a goroutine, so a slow server cannot freeze
