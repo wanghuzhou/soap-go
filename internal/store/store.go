@@ -223,6 +223,7 @@ func cloneCall(c model.Call) model.Call {
 	if c.BodyFields != nil {
 		out.BodyFields = append([]model.BodyField(nil), c.BodyFields...)
 	}
+	out.Auth = c.Auth.Clone()
 	out.Response = cloneSavedResponse(c.Response)
 	return out
 }

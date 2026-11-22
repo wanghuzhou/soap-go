@@ -247,3 +247,32 @@ func storedHeaders(t *testing.T, s *Store, projectID string) []model.Header {
 	}
 	return got.Services[0].Operations[0].Calls[0].Headers
 }
+
+// TestDeepCopyCoversAuth checks a native call's Auth is copied too: mutating the
+// listing must not change the token the store holds.
+func TestDeepCopyCoversAuth(t *testing.T) {
+	s, err := New(filepath.Join(t.TempDir(), "p.json"))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	p, err := s.AddProject(model.Project{Name: "P", Source: "native"})
+	if err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	if _, err := s.AddProjectCall(p.ID, "", model.Call{
+		Title: "C",
+		Auth:  &model.AuthSettings{Type: "bearer", Enabled: true, Token: "orig"},
+	}); err != nil {
+		t.Fatalf("AddProjectCall: %v", err)
+	}
+
+	list := s.List()
+	list[0].Calls[0].Auth.Token = "mutated"
+	got, err := s.Get(p.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Calls[0].Auth == nil || got.Calls[0].Auth.Token != "orig" {
+		t.Fatal("the store's Auth token changed through the List result")
+	}
+}
