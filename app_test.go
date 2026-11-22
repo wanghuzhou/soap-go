@@ -3031,6 +3031,34 @@ func TestCloseTabsBulk(t *testing.T) {
 	}
 }
 
+// TestSentPreviewIsSnapshotAndMasked checks the 请求 tab returns the request
+// captured at send time, with sensitive header values masked.
+func TestSentPreviewIsSnapshotAndMasked(t *testing.T) {
+	a := newTestApp(t)
+	a.maskSecrets = true
+	req := model.SendRequest{
+		Method: "GET", URL: "http://api.test/x?q=1",
+		Headers: map[string]string{"Authorization": "Bearer secret", "Accept": "*/*"},
+	}
+	text := a.sentPreviewText(req)
+	if !strings.Contains(text, "GET http://api.test/x?q=1 HTTP/1.1") {
+		t.Fatalf("preview = %q", text)
+	}
+	if strings.Contains(text, "secret") || !strings.Contains(text, "Authorization: ••••••") {
+		t.Fatalf("sensitive header not masked: %q", text)
+	}
+
+	a.tabs = []string{"k"}
+	a.active = 0
+	a.hasResp = true
+	a.respTab = 2
+	a.sentPreviews["k"] = "SENT-SNAPSHOT"
+	a.endpoint = "http://changed/after-send"
+	if got := a.responseText(); got != "SENT-SNAPSHOT" {
+		t.Fatalf("请求 tab = %q, want the send-time snapshot", got)
+	}
+}
+
 // TestReadFileLimited checks a file above the limit is refused before reading.
 func TestReadFileLimited(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "big.txt")

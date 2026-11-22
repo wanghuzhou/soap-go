@@ -268,6 +268,9 @@ type app struct {
 	tabs   []string
 	active int
 	drafts map[string]*callDraft
+	// sentPreviews holds the exact request text sent for each tab, so the
+	// 请求 tab shows what was sent rather than whatever the form holds later.
+	sentPreviews map[string]string
 	// maxTabs is the tab-count limit set in the settings dialog.
 	maxTabs int
 	// maxTabsText is the manual input for that limit, kept as text so a
@@ -380,6 +383,7 @@ func newApp(reg *workspace.Registry) *app {
 		respEd:           newXMLState("", true),
 		expanded:         map[string]bool{},
 		drafts:           map[string]*callDraft{},
+		sentPreviews:     map[string]string{},
 		proxyModeSel:     "系统代理",
 		proxyTypeSel:     "HTTP",
 		importProxySel:   "直连（默认）",
@@ -2512,6 +2516,11 @@ func (a *app) sendRequest() {
 	// workspace while the request is in flight.
 	pid, sid, oid, cid := a.pid, a.sid, a.oid, a.cid
 	st := a.st
+	key := a.activeTabKey()
+	if key == "" {
+		key = callKey(pid, sid, oid, cid)
+	}
+	a.sentPreviews[key] = a.sentPreviewText(req)
 	ctx, cancel := context.WithCancel(context.Background())
 	a.sendCancel = cancel
 	a.sending = true
@@ -2676,6 +2685,11 @@ func (a *app) responseText() string {
 	case 1: // 原始
 		return a.resp.Body
 	case 2: // 请求
+		if key := a.activeTabKey(); key != "" {
+			if sent, ok := a.sentPreviews[key]; ok && sent != "" {
+				return sent
+			}
+		}
 		return requestPreview(a)
 	case 3: // Headers
 		return headerLines(a.resp.Headers)
@@ -2736,6 +2750,35 @@ func headerLines(headers map[string]string) string {
 			b.WriteString(k + ": " + v + "\n")
 		}
 	}
+	return b.String()
+}
+
+// sentPreviewText renders exactly what was handed to the transport, masking
+// sensitive header values when the user asked for that.
+func (a *app) sentPreviewText(req model.SendRequest) string {
+	hdrs := make(map[string]string, len(req.Headers))
+	for k, v := range req.Headers {
+		if a.maskSecrets && isSensitiveName(k) {
+			v = "••••••"
+		}
+		hdrs[k] = v
+	}
+	if req.ContentType != "" && hdrs["Content-Type"] == "" {
+		hdrs["Content-Type"] = req.ContentType
+	}
+	method := req.Method
+	if method == "" {
+		method = "POST"
+	}
+	body := req.Body
+	if req.FilePath != "" {
+		body = "<文件：" + req.FilePath + ">"
+	}
+	var b strings.Builder
+	b.WriteString(method + " " + req.URL + " HTTP/1.1\n")
+	b.WriteString(headerLines(hdrs))
+	b.WriteString("\n")
+	b.WriteString(body)
 	return b.String()
 }
 
