@@ -3031,6 +3031,24 @@ func TestCloseTabsBulk(t *testing.T) {
 	}
 }
 
+// TestReadFileLimited checks a file above the limit is refused before reading.
+func TestReadFileLimited(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "big.txt")
+	if err := os.WriteFile(path, []byte(strings.Repeat("x", 32)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readFileLimited(path, 10); err == nil {
+		t.Fatal("a file above the limit was read")
+	}
+	data, err := readFileLimited(path, 64)
+	if err != nil {
+		t.Fatalf("readFileLimited: %v", err)
+	}
+	if len(data) != 32 {
+		t.Fatalf("read %d bytes, want 32", len(data))
+	}
+}
+
 // TestReadErrorKeepsResponseInspectable checks a partial response with an error
 // still exposes its headers and body rather than only the error text.
 func TestReadErrorKeepsResponseInspectable(t *testing.T) {

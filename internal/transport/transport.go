@@ -5,6 +5,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -62,6 +63,10 @@ func SendContext(ctx context.Context, req model.SendRequest, proxyCfg *model.Pro
 	// A file body is read here, inside the caller's sending goroutine, so a
 	// large binary upload never blocks the UI while it is read.
 	if req.FilePath != "" {
+		if info, statErr := os.Stat(req.FilePath); statErr == nil && info.Size() > maxRequestBodyBytes {
+			out.Error = fmt.Sprintf("上传文件超过 %d MB 上限", maxRequestBodyBytes>>20)
+			return out
+		}
 		data, err := os.ReadFile(req.FilePath)
 		if err != nil {
 			out.Error = "无法读取文件：" + err.Error()
@@ -144,6 +149,9 @@ func SendContext(ctx context.Context, req model.SendRequest, proxyCfg *model.Pro
 // small; an unbounded io.ReadAll on a runaway endpoint would allocate gigabytes
 // and then be copied again into a string for JSON encoding.
 const maxBodyBytes = 16 << 20 // 16 MB
+
+// maxRequestBodyBytes caps a file body read into memory before sending.
+const maxRequestBodyBytes = 256 << 20 // 256 MB
 
 // applyHeaders copies the request's header map onto dst deterministically.
 //

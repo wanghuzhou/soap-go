@@ -2331,6 +2331,9 @@ func (a *app) readBinaryBody(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("无法读取文件：%w", err)
 	}
+	if info.Size() > maxUploadBytes {
+		return "", fmt.Errorf("文件超过 %d MB 上限", maxUploadBytes>>20)
+	}
 	if a.binCachePath == path && a.binCacheSize == info.Size() && a.binCacheMod.Equal(info.ModTime()) {
 		return a.binCacheData, nil
 	}
@@ -2416,6 +2419,26 @@ func encodeForm(fields []bodyField) string {
 	return strings.Join(parts, "&")
 }
 
+// Limits for files read into memory: imported definitions are small, uploads
+// can be larger but still must not exhaust memory.
+const (
+	maxImportBytes = 64 << 20
+	maxUploadBytes = 256 << 20
+)
+
+// readFileLimited reads path after checking its size, so a huge file fails with
+// a clear message instead of allocating until the process struggles.
+func readFileLimited(path string, limit int64) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > limit {
+		return nil, fmt.Errorf("文件超过 %d MB 上限", limit>>20)
+	}
+	return os.ReadFile(path)
+}
+
 // buildMultipart renders name/value pairs as a multipart/form-data body and the
 // matching Content-Type. A random boundary per request keeps a field value that
 // happens to contain a boundary-looking line from splitting the body.
@@ -2431,7 +2454,7 @@ func buildMultipart(fields []bodyField) (body, contentType string, err error) {
 			if path == "" {
 				return "", "", fmt.Errorf("字段「%s」未选择文件", f.Name)
 			}
-			data, rerr := os.ReadFile(path)
+			data, rerr := readFileLimited(path, maxUploadBytes)
 			if rerr != nil {
 				return "", "", fmt.Errorf("无法读取文件 %s：%w", filepath.Base(path), rerr)
 			}
@@ -2958,7 +2981,7 @@ func (a *app) renameProject(name string) {
 
 // importSoapUI parses a SoapUI project file and adds it.
 func (a *app) importSoapUI(path string) {
-	data, err := os.ReadFile(path)
+	data, err := readFileLimited(path, maxImportBytes)
 	if err != nil {
 		a.errMsg = "无法读取文件：" + err.Error()
 		return
@@ -2982,7 +3005,7 @@ func (a *app) importSoapUI(path string) {
 // importOpenAPI parses an OpenAPI 3.x document (JSON or YAML) and adds it as a
 // native project: one folder per tag, one request per operation.
 func (a *app) importOpenAPI(path string) {
-	data, err := os.ReadFile(path)
+	data, err := readFileLimited(path, maxImportBytes)
 	if err != nil {
 		a.errMsg = "无法读取文件：" + err.Error()
 		return
@@ -3044,7 +3067,7 @@ func (a *app) exportOpenAPI(format string) {
 
 // importWSDLFile parses a WSDL file and adds a project.
 func (a *app) importWSDLFile(path string) {
-	data, err := os.ReadFile(path)
+	data, err := readFileLimited(path, maxImportBytes)
 	if err != nil {
 		a.errMsg = "无法读取文件：" + err.Error()
 		return
@@ -3373,7 +3396,7 @@ func (a *app) importWorkspaceNamed(path, name string) {
 }
 
 func (a *app) doImportWorkspace(path, name string) {
-	data, err := os.ReadFile(path)
+	data, err := readFileLimited(path, maxImportBytes)
 	if err != nil {
 		a.errMsg = "无法读取文件：" + err.Error()
 		return
