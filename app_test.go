@@ -3031,6 +3031,27 @@ func TestCloseTabsBulk(t *testing.T) {
 	}
 }
 
+// TestSwitchingTabHidesRevealedSecret checks the eye toggle resets when another
+// request is opened, so its credentials are not shown in clear text.
+func TestSwitchingTabHidesRevealedSecret(t *testing.T) {
+	a, keys := tabTestApp(t, 2)
+	a.showAuthSecret = true
+	a.loadTab(keys[0])
+	if a.showAuthSecret {
+		t.Fatal("switching requests kept the previous request's revealed secret")
+	}
+}
+
+// TestSendRejectsHeaderWithNewline checks request headers are validated before
+// they reach net/http, with an error that names the offending header.
+func TestSendRejectsHeaderWithNewline(t *testing.T) {
+	a, _ := newNativeCall(t)
+	a.headers = []headerRow{{Name: "X-Test", Value: "a\nb"}}
+	if _, _, err := a.buildSendRequest(); err == nil || !strings.Contains(err.Error(), "换行") {
+		t.Fatalf("buildSendRequest error = %v, want a header newline error", err)
+	}
+}
+
 // TestWSDLImportErrorShownInDialog checks the import dialog renders the failure
 // itself, rather than leaving it in the banner behind the modal.
 func TestWSDLImportErrorShownInDialog(t *testing.T) {

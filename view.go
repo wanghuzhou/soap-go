@@ -1213,45 +1213,46 @@ func (a *app) binaryBodyPanel(c *ui.Context) {
 // formBodyPanel edits urlencoded / multipart name-value pairs.
 func (a *app) formBodyPanel(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Grow(1).Gap(8).Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "字段").FontSize(a.us(11.5)).Bold()
-			ui.Spacer(c)
-			if a.plainButton(c, "＋ 添加字段") {
-				a.bodyFields = append(a.bodyFields, bodyField{})
+	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Column(c).Gap(8).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "字段").FontSize(a.us(11.5)).Bold()
+				ui.Spacer(c)
+				if a.plainButton(c, "＋ 添加字段") {
+					a.bodyFields = append(a.bodyFields, bodyField{})
+				}
+			})
+			ui.Divider(c)
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "字段名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
+				ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
+				ui.Text(c, "").Width(26)
+				ui.Text(c, "").Width(24)
+			})
+			if a.bodyType == model.BodyMultipart {
+				ui.Text(c, "字段类型为 file 时，发送会读取所选文件作为该部分内容。").
+					FontSize(a.us(10)).TextColor(t.TextMuted).Wrap()
+			}
+			for i := range a.bodyFields {
+				i := i
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200).Label("字段名")
+					if a.bodyType == model.BodyMultipart && fieldIsFile(a.bodyFields[i].Type) {
+						a.fileFieldButton(c, i)
+					} else {
+						ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1).Label("字段值")
+					}
+					a.iconMenuBtn(c, iconMore, "更多", func(m *ui.Menu) {
+						a.bodyFieldMenu(i, m)
+					})
+					a.closeIconButton(c, 24, "删除该字段", func() {
+						if i >= 0 && i < len(a.bodyFields) {
+							a.bodyFields = append(a.bodyFields[:i], a.bodyFields[i+1:]...)
+						}
+					})
+				})
 			}
 		})
-		ui.Divider(c)
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "字段名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
-			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
-			ui.Text(c, "").Width(26)
-			ui.Text(c, "").Width(24)
-		})
-		if a.bodyType == model.BodyMultipart {
-			ui.Text(c, "字段类型为 file 时，发送会读取所选文件作为该部分内容。").
-				FontSize(a.us(10)).TextColor(t.TextMuted).Wrap()
-		}
-		for i := range a.bodyFields {
-			i := i
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.TextInput(c, &a.bodyFields[i].Name).Placeholder("字段名").Width(200).Label("字段名")
-				if a.bodyType == model.BodyMultipart && fieldIsFile(a.bodyFields[i].Type) {
-					a.fileFieldButton(c, i)
-				} else {
-					ui.TextInput(c, &a.bodyFields[i].Value).Placeholder("值").Grow(1).Label("字段值")
-				}
-				a.iconMenuBtn(c, iconMore, "更多", func(m *ui.Menu) {
-					a.bodyFieldMenu(i, m)
-				})
-				a.closeIconButton(c, 24, "删除该字段", func() {
-					if i >= 0 && i < len(a.bodyFields) {
-						a.bodyFields = append(a.bodyFields[:i], a.bodyFields[i+1:]...)
-					}
-				})
-			})
-		}
-		ui.Spacer(c)
 	})
 }
 
@@ -1369,98 +1370,99 @@ func (a *app) bodyTypeMenu(m *ui.Menu) {
 
 func (a *app) headersPanel(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Grow(1).Padding(14, 14, 10).Gap(8).Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "请求头").FontSize(a.us(11.5)).Bold()
-			ui.Spacer(c)
-			ui.Checkbox(c, &a.maskSecrets, "遮蔽敏感头")
-			if a.plainButton(c, "＋ 添加请求头") {
-				a.headers = append(a.headers, headerRow{})
+	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Column(c).Padding(14, 14, 10).Gap(8).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "请求头").FontSize(a.us(11.5)).Bold()
+				ui.Spacer(c)
+				ui.Checkbox(c, &a.maskSecrets, "遮蔽敏感头")
+				if a.plainButton(c, "＋ 添加请求头") {
+					a.headers = append(a.headers, headerRow{})
+				}
+			})
+			if a.reqKind == model.KindSOAP {
+				ui.Text(c, "SOAPAction 与 Content-Type 默认存在；项目默认头会叠加，样例头可覆盖同名项。").
+					FontSize(10.5).TextColor(t.TextMuted)
+			} else {
+				ui.Text(c, "项目默认头会叠加，样例头可覆盖同名项。").
+					FontSize(10.5).TextColor(t.TextMuted)
 			}
-		})
-		if a.reqKind == model.KindSOAP {
-			ui.Text(c, "SOAPAction 与 Content-Type 默认存在；项目默认头会叠加，样例头可覆盖同名项。").
-				FontSize(10.5).TextColor(t.TextMuted)
-		} else {
-			ui.Text(c, "项目默认头会叠加，样例头可覆盖同名项。").
-				FontSize(10.5).TextColor(t.TextMuted)
-		}
-		ui.Divider(c)
+			ui.Divider(c)
 
-		if a.reqKind == model.KindSOAP {
-			// Default SOAP headers.
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "SOAPAction").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
-				ui.TextInput(c, &a.action).Placeholder("http://tempuri.org/Op").Grow(1)
-				ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
-			})
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
-				ui.Select(c, &a.contentType, []string{
-					"text/xml; charset=utf-8",
-					"application/soap+xml; charset=utf-8",
-				}).Grow(1)
-				ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
-			})
-		} else {
-			switch {
-			case a.bodyType == model.BodyNone:
-				ui.Text(c, "该请求不发送请求体，也不设置 Content-Type。").
-					FontSize(a.us(10.5)).TextColor(t.TextMuted)
-			case model.BodyTypeHasFields(a.bodyType):
+			if a.reqKind == model.KindSOAP {
+				// Default SOAP headers.
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, "SOAPAction").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
+					ui.TextInput(c, &a.action).Placeholder("http://tempuri.org/Op").Grow(1)
+					ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
+				})
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
-					ui.Text(c, model.BodyTypeContentType(a.bodyType)).FontSize(a.us(11)).TextColor(t.TextMuted).Grow(1)
+					ui.Select(c, &a.contentType, []string{
+						"text/xml; charset=utf-8",
+						"application/soap+xml; charset=utf-8",
+					}).Grow(1)
+					ui.Text(c, "默认").FontSize(a.us(9)).TextColor(t.Accent).Shrink(0)
 				})
-			default:
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
-					ph := model.BodyTypeContentType(a.bodyType)
-					if ph == "" {
-						ph = "application/json"
-					}
-					ui.TextInput(c, &a.contentType).Placeholder(ph).Grow(1).Label("Content-Type")
-				})
-			}
-		}
-
-		if len(a.projHeaders) > 0 {
-			ui.Text(c, "项目默认头").FontSize(a.us(10.5)).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
-			for _, h := range a.projHeaders {
-				h := h
-				value := h.Value
-				if a.maskSecrets && isSensitiveName(h.Name) {
-					value = "••••••（已遮蔽）"
+			} else {
+				switch {
+				case a.bodyType == model.BodyNone:
+					ui.Text(c, "该请求不发送请求体，也不设置 Content-Type。").
+						FontSize(a.us(10.5)).TextColor(t.TextMuted)
+				case model.BodyTypeHasFields(a.bodyType):
+					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
+						ui.Text(c, model.BodyTypeContentType(a.bodyType)).FontSize(a.us(11)).TextColor(t.TextMuted).Grow(1)
+					})
+				default:
+					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, "Content-Type").FontSize(a.us(10.5)).TextColor(t.TextMuted).Width(110)
+						ph := model.BodyTypeContentType(a.bodyType)
+						if ph == "" {
+							ph = "application/json"
+						}
+						ui.TextInput(c, &a.contentType).Placeholder(ph).Grow(1).Label("Content-Type")
+					})
 				}
-				ui.Row(c).Gap(8).Children(func() {
-					ui.Text(c, h.Name+": "+value).FontSize(a.us(11)).TextColor(t.TextMuted)
-				})
 			}
-		}
 
-		ui.Text(c, "样例头").FontSize(a.us(10.5)).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "名称").FontSize(a.us(10)).TextColor(t.TextMuted).Width(190)
-			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
-			ui.Text(c, "").Width(24)
-		})
-		for i := range a.headers {
-			i := i
+			if len(a.projHeaders) > 0 {
+				ui.Text(c, "项目默认头").FontSize(a.us(10.5)).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
+				for _, h := range a.projHeaders {
+					h := h
+					value := h.Value
+					if a.maskSecrets && isSensitiveName(h.Name) {
+						value = "••••••（已遮蔽）"
+					}
+					ui.Row(c).Gap(8).Children(func() {
+						ui.Text(c, h.Name+": "+value).FontSize(a.us(11)).TextColor(t.TextMuted)
+					})
+				}
+			}
+
+			ui.Text(c, "样例头").FontSize(a.us(10.5)).TextColor(t.TextMuted).Padding(4, 0, 0, 0)
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.TextInput(c, &a.headers[i].Name).Placeholder("Header-Name").Width(190).Label("请求头名称")
-				if a.maskSecrets && isSensitiveName(a.headers[i].Name) {
-					ui.Text(c, "••••••（已遮蔽）").FontSize(a.us(11)).TextColor(t.TextMuted).Grow(1)
-				} else {
-					ui.TextInput(c, &a.headers[i].Value).Placeholder("值").Grow(1).Label("请求头值")
-				}
-				a.closeIconButton(c, 24, "删除该请求头", func() {
-					if i >= 0 && i < len(a.headers) {
-						a.headers = append(a.headers[:i], a.headers[i+1:]...)
-					}
-				})
+				ui.Text(c, "名称").FontSize(a.us(10)).TextColor(t.TextMuted).Width(190)
+				ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
+				ui.Text(c, "").Width(24)
 			})
-		}
-		ui.Spacer(c)
+			for i := range a.headers {
+				i := i
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.TextInput(c, &a.headers[i].Name).Placeholder("Header-Name").Width(190).Label("请求头名称")
+					if a.maskSecrets && isSensitiveName(a.headers[i].Name) {
+						ui.Text(c, "••••••（已遮蔽）").FontSize(a.us(11)).TextColor(t.TextMuted).Grow(1)
+					} else {
+						ui.TextInput(c, &a.headers[i].Value).Placeholder("值").Grow(1).Label("请求头值")
+					}
+					a.closeIconButton(c, 24, "删除该请求头", func() {
+						if i >= 0 && i < len(a.headers) {
+							a.headers = append(a.headers[:i], a.headers[i+1:]...)
+						}
+					})
+				})
+			}
+		})
 	})
 }
 
@@ -1473,35 +1475,36 @@ func (a *app) queryPanel(c *ui.Context) {
 		a.queryRows = parseQueryRows(a.endpoint)
 		a.querySrc = a.endpoint
 	}
-	ui.Column(c).Grow(1).Padding(14, 14, 10).Gap(8).Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "查询参数").FontSize(a.us(11.5)).Bold()
-			ui.Spacer(c)
-			if a.plainButton(c, "＋ 添加参数") {
-				a.queryRows = append(a.queryRows, queryRow{})
+	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Column(c).Padding(14, 14, 10).Gap(8).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "查询参数").FontSize(a.us(11.5)).Bold()
+				ui.Spacer(c)
+				if a.plainButton(c, "＋ 添加参数") {
+					a.queryRows = append(a.queryRows, queryRow{})
+				}
+			})
+			ui.Text(c, "查询参数与上方 URL 查询串双向同步。").
+				FontSize(a.us(10.5)).TextColor(t.TextMuted)
+			ui.Divider(c)
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "参数名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
+				ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
+				ui.Text(c, "").Width(24)
+			})
+			for i := range a.queryRows {
+				i := i
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.TextInput(c, &a.queryRows[i].Key).Placeholder("参数名").Width(200).Label("参数名")
+					ui.TextInput(c, &a.queryRows[i].Value).Placeholder("值").Grow(1).Label("参数值")
+					a.closeIconButton(c, 24, "删除该参数", func() {
+						if i >= 0 && i < len(a.queryRows) {
+							a.queryRows = append(a.queryRows[:i], a.queryRows[i+1:]...)
+						}
+					})
+				})
 			}
 		})
-		ui.Text(c, "查询参数与上方 URL 查询串双向同步。").
-			FontSize(a.us(10.5)).TextColor(t.TextMuted)
-		ui.Divider(c)
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "参数名").FontSize(a.us(10)).TextColor(t.TextMuted).Width(200)
-			ui.Text(c, "值").FontSize(a.us(10)).TextColor(t.TextMuted).Grow(1)
-			ui.Text(c, "").Width(24)
-		})
-		for i := range a.queryRows {
-			i := i
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.TextInput(c, &a.queryRows[i].Key).Placeholder("参数名").Width(200).Label("参数名")
-				ui.TextInput(c, &a.queryRows[i].Value).Placeholder("值").Grow(1).Label("参数值")
-				a.closeIconButton(c, 24, "删除该参数", func() {
-					if i >= 0 && i < len(a.queryRows) {
-						a.queryRows = append(a.queryRows[:i], a.queryRows[i+1:]...)
-					}
-				})
-			})
-		}
-		ui.Spacer(c)
 	})
 	// Only rewrite the URL when the rows themselves changed; an untouched URL
 	// (even one spelled with %20) must not be canonicalised on load.

@@ -1035,6 +1035,9 @@ func (a *app) isXMLRequest() bool {
 func (a *app) loadTab(key string) {
 	pid, sid, oid, cid := splitKey(key)
 	a.pid, a.sid, a.oid, a.cid = pid, sid, oid, cid
+	// A revealed secret belongs to the request it was revealed on; switching
+	// samples must not show the next request's credentials in clear text.
+	a.showAuthSecret = false
 	_, _, _, c := a.locate()
 	if c == nil {
 		return
@@ -2309,6 +2312,13 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 	// which the panel's hint tells the user.
 	if h := a.auth.modelAuth().Authorization(); h != "" {
 		hdrs["Authorization"] = h
+	}
+	headerList := make([]model.Header, 0, len(hdrs))
+	for k, v := range hdrs {
+		headerList = append(headerList, model.Header{Name: k, Value: v})
+	}
+	if err := model.ValidateHeaders(headerList); err != nil {
+		return model.SendRequest{}, nil, fmt.Errorf("请求头无效：%w", err)
 	}
 
 	req := model.SendRequest{
