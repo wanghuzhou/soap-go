@@ -286,3 +286,15 @@ func TestMarshalYAMLShape(t *testing.T) {
 		t.Fatalf("yaml keys are not OpenAPI-style:\n%s", data)
 	}
 }
+
+// TestBuildRefusesDuplicateMethodPath checks two requests that map to the same
+// OpenAPI operation make the export fail instead of silently dropping one.
+func TestBuildRefusesDuplicateMethodPath(t *testing.T) {
+	p := model.Project{Name: "P", Source: "native", Calls: []model.Call{
+		{Title: "A", Method: "GET", Endpoint: "http://a.test/x"},
+		{Title: "B", Method: "GET", Endpoint: "http://b.test/x"},
+	}}
+	if _, err := Build(p); err == nil {
+		t.Fatal("Build accepted two GET /x requests; one would be silently dropped")
+	}
+}

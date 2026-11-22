@@ -40,6 +40,9 @@ func Build(p model.Project) (*Document, error) {
 		servers = append(servers, Server{URL: host})
 	}
 	tagSeen := map[string]bool{}
+	// OpenAPI keys operations by path and method alone, so two requests map to
+	// one operation. Refuse the export instead of silently dropping one.
+	exported := map[string]string{}
 	for _, call := range p.Calls {
 		if strings.TrimSpace(call.Endpoint) == "" {
 			continue
@@ -48,6 +51,13 @@ func Build(p model.Project) (*Document, error) {
 		if err != nil {
 			return nil, fmt.Errorf("请求「%s」的地址无效：%w", call.Title, err)
 		}
+		method := model.EffectiveMethod(model.KindHTTP, call.Method)
+		key := method + " " + path
+		if prev, ok := exported[key]; ok {
+			return nil, fmt.Errorf("请求「%s」与「%s」都对应 %s %s，OpenAPI 无法表示同一路径的重复方法",
+				prev, call.Title, method, path)
+		}
+		exported[key] = call.Title
 		if base != "" && !seenServer[base] {
 			seenServer[base] = true
 			servers = append(servers, Server{URL: base})
@@ -62,7 +72,7 @@ func Build(p model.Project) (*Document, error) {
 			tagSeen[tag] = true
 			doc.Tags = append(doc.Tags, Tag{Name: tag})
 		}
-		item.setMethod(model.EffectiveMethod(model.KindHTTP, call.Method), operationFromCall(call, path, rawQuery, tag))
+		item.setMethod(method, operationFromCall(call, path, rawQuery, tag))
 	}
 	if len(doc.Paths) == 0 {
 		return nil, errors.New("项目里没有带地址的请求，无法导出")
