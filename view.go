@@ -1054,24 +1054,24 @@ func (a *app) urlBar(c *ui.Context) {
 				}
 			}).BorderWidth(0)
 		}
-		if showHost {
-			// The host reads as a prefix of the address field, so the user sees
-			// what the relative path will be joined to. It has no background of
-			// its own and shows no tooltip, to sit quietly on the page.
-			ui.Row(c).Grow(1).Gap(0).AlignItems(ui.Center).Children(func() {
-				ui.Row(c).Shrink(0).Height(32).Padding(0, 8).AlignItems(ui.Center).
-					Children(func() {
-						// The same font and size as the address input's text, so
-						// the host reads as part of the address rather than a
-						// smaller caption.
-						ui.Text(c, host).TextColor(t.TextMuted).
-							SingleLine().MaxWidth(260)
-					})
-				input()
+		// The host reads as a prefix of the address field, with no background or
+		// tooltip of its own, so the user sees what the relative path joins to.
+		// Its element stays in the tree even when empty, so typing "http://"
+		// (which hides the host) does not shift the input and lose its focus.
+		ui.Row(c).Grow(1).Gap(0).AlignItems(ui.Center).Children(func() {
+			prefix := ui.Row(c).Shrink(0).Height(32).AlignItems(ui.Center)
+			text := ""
+			if showHost {
+				// The same font and size as the address input's text, so the
+				// host reads as part of the address rather than a caption.
+				prefix = prefix.Padding(0, 8)
+				text = host
+			}
+			prefix.Children(func() {
+				ui.Text(c, text).TextColor(t.TextMuted).SingleLine().MaxWidth(260)
 			})
-		} else {
 			input()
-		}
+		})
 		if a.sending {
 			if ui.PrimaryButton(c, "取消  ■").Clicked() {
 				a.cancelSend()

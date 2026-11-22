@@ -2826,6 +2826,49 @@ func TestProjectHostPrefixInUrlBar(t *testing.T) {
 	}
 }
 
+// TestEndpointInputKeepsFocusWhenHostHides checks that typing a full address,
+// which hides the host prefix in front of the field, keeps the input focused
+// so the rest of the address can be typed.
+func TestEndpointInputKeepsFocusWhenHostHides(t *testing.T) {
+	a, _ := tabTestApp(t, 1)
+	p := a.projects[0]
+	if err := a.st.UpdateProjectHost(p.ID, "http://localhost/projectA"); err != nil {
+		t.Fatalf("UpdateProjectHost: %v", err)
+	}
+	a.reload()
+	p = a.projects[0]
+	a.openCall(p.ID, "", "", p.Calls[0].ID)
+	a.endpoint = ""
+
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+
+	info, ok := tt.AccessByRole(ui.RoleTextField, "请求地址")
+	if !ok {
+		t.Fatal("the request address field is missing")
+	}
+	tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	tt.Frame()
+	if info, ok = tt.AccessByRole(ui.RoleTextField, "请求地址"); !ok || !info.Focused {
+		t.Fatal("the request address field did not take focus")
+	}
+
+	// Typing the scheme makes the endpoint absolute, which hides the host
+	// prefix; the field must keep the focus through that relayout.
+	tt.Type("http://l")
+	tt.Frame()
+	info, ok = tt.AccessByRole(ui.RoleTextField, "请求地址")
+	if !ok {
+		t.Fatal("the request address field disappeared")
+	}
+	if !info.Focused {
+		t.Fatal("the request address field lost focus when the host prefix hid")
+	}
+	if a.endpoint != "http://l" {
+		t.Fatalf("endpoint = %q, want the typed address", a.endpoint)
+	}
+}
+
 // TestSendJoinsProjectHost checks the request built for sending appends a
 // relative endpoint to the project host, and leaves a full address alone.
 func TestSendJoinsProjectHost(t *testing.T) {
