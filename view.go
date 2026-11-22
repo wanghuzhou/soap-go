@@ -54,7 +54,9 @@ func (a *app) view(c *ui.Context) {
 	c.OnWindowShortcut(ui.Super, ui.KeyEnter, func() { a.sendRequest() })
 	c.OnWindowShortcut(ui.Super, ui.KeyS, func() { a.saveCall() })
 	c.OnWindowShortcut(ui.Ctrl|ui.Shift, ui.KeyF, func() { a.formatBody() })
+	c.OnWindowShortcut(ui.Super|ui.Shift, ui.KeyF, func() { a.formatBody() })
 	c.OnWindowShortcut(ui.Ctrl, ui.KeyK, func() { a.searchRef.SelectAll() })
+	c.OnWindowShortcut(ui.Super, ui.KeyK, func() { a.searchRef.SelectAll() })
 	// Tab switching and closing, as most editors have them.
 	c.OnWindowShortcut(ui.Ctrl, ui.KeyTab, func() { a.switchTab(1) })
 	c.OnWindowShortcut(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.switchTab(-1) })

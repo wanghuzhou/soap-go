@@ -3031,6 +3031,24 @@ func TestCloseTabsBulk(t *testing.T) {
 	}
 }
 
+// TestMygoVersionMatchesAppVersion keeps the settings About version and the
+// packaging metadata from drifting apart.
+func TestMygoVersionMatchesAppVersion(t *testing.T) {
+	data, err := os.ReadFile("mygo.json")
+	if err != nil {
+		t.Fatalf("read mygo.json: %v", err)
+	}
+	var meta struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parse mygo.json: %v", err)
+	}
+	if want := strings.TrimPrefix(appVersion, "v"); meta.Version != want {
+		t.Fatalf("mygo.json version = %q, appVersion = %q", meta.Version, appVersion)
+	}
+}
+
 // TestSwitchingTabHidesRevealedSecret checks the eye toggle resets when another
 // request is opened, so its credentials are not shown in clear text.
 func TestSwitchingTabHidesRevealedSecret(t *testing.T) {
