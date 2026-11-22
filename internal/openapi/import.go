@@ -237,7 +237,16 @@ func fieldsFromSchema(doc *Document, schema *Schema) []model.BodyField {
 	sort.Strings(names)
 	out := make([]model.BodyField, 0, len(names))
 	for _, name := range names {
-		out = append(out, model.BodyField{Name: name, Value: exampleString(nil, schema.Properties[name])})
+		prop := resolve(doc, schema.Properties[name])
+		field := model.BodyField{Name: name}
+		if prop != nil && strings.EqualFold(prop.Format, "binary") {
+			// A binary part is a file upload, not a text field; export writes
+			// format: binary for file fields too, so this keeps round trips.
+			field.Type = "file"
+		} else {
+			field.Value = exampleString(nil, prop)
+		}
+		out = append(out, field)
 	}
 	return out
 }

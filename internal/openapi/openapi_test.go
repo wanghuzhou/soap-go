@@ -298,3 +298,42 @@ func TestBuildRefusesDuplicateMethodPath(t *testing.T) {
 		t.Fatal("Build accepted two GET /x requests; one would be silently dropped")
 	}
 }
+
+// TestParseMultipartBinaryBecomesFileField checks format: binary imports as a
+// file field, matching what export writes for a file part.
+func TestParseMultipartBinaryBecomesFileField(t *testing.T) {
+	const doc = `openapi: 3.0.1
+info: {title: P, version: "1"}
+paths:
+  /u:
+    post:
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: {type: string, format: binary}
+                note: {type: string}
+      responses:
+        "200": {description: ok}
+`
+	p, err := Parse([]byte(doc), "x.yaml")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	fields := p.Calls[0].BodyFields
+	if len(fields) != 2 {
+		t.Fatalf("fields = %d, want 2", len(fields))
+	}
+	byName := map[string]model.BodyField{}
+	for _, f := range fields {
+		byName[f.Name] = f
+	}
+	if byName["file"].Type != "file" {
+		t.Fatalf("file field type = %q, want file", byName["file"].Type)
+	}
+	if byName["note"].Type != "" {
+		t.Fatalf("note field type = %q, want text", byName["note"].Type)
+	}
+}
