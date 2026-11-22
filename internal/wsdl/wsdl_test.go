@@ -108,3 +108,30 @@ func TestNestedComplexType(t *testing.T) {
 		}
 	}
 }
+
+// TestEnumerationValueIsEscaped checks an inline enum value with XML-special
+// characters is escaped, not written raw into the generated template.
+func TestEnumerationValueIsEscaped(t *testing.T) {
+	schemas := []schemaElem{{
+		TargetNS:    "urn:t",
+		ElementForm: "qualified",
+		Elements: []xsElement{{
+			Name: "Root",
+			Complex: &xsComplexType{Sequence: &xsGroup{Elements: []xsElement{{
+				Name: "E",
+				Simple: &xsSimpleType{Restriction: xsRestriction{
+					Base:         "xs:string",
+					Enumerations: []xsEnum{{Value: "A&B"}},
+				}},
+			}}}},
+		}},
+	}}
+	idx := newSchemaIndex(schemas)
+	out, _ := idx.buildRequest("Root", "urn:t")
+	if strings.Contains(out, ">A&B<") {
+		t.Fatalf("enumeration written unescaped:\n%s", out)
+	}
+	if !strings.Contains(out, "A&amp;B") {
+		t.Fatalf("escaped enumeration missing:\n%s", out)
+	}
+}

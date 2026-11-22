@@ -183,7 +183,7 @@ type templateWriter struct {
 func (idx *schemaIndex) writeRoot(w *templateWriter, el xsElement, qname, prefix, targetNS string, qualified bool, depth int) {
 	nsDecl := ""
 	if prefix != "" && targetNS != "" {
-		nsDecl = fmt.Sprintf(` xmlns:%s="%s"`, prefix, targetNS)
+		nsDecl = fmt.Sprintf(` xmlns:%s="%s"`, prefix, escapeXMLText(targetNS))
 	}
 	idx.writeElement(w, el, qname, nsDecl, prefix, qualified, depth)
 }
@@ -208,7 +208,7 @@ func (idx *schemaIndex) writeElement(w *templateWriter, el xsElement, name, nsDe
 		}
 	}
 	if ct == nil {
-		w.b.WriteString(fmt.Sprintf("%s<%s%s>%s</%s>\n", indent, name, nsDecl, sampleValue(typeName, el.Simple), name))
+		w.b.WriteString(fmt.Sprintf("%s<%s%s>%s</%s>\n", indent, name, nsDecl, escapeXMLText(sampleValue(typeName, el.Simple)), name))
 		return
 	}
 
@@ -334,6 +334,14 @@ func flattenGroup(g *xsGroup) []xsElement {
 		}
 	}
 	return out
+}
+
+// escapeXMLText escapes a generated value for use in element text or an
+// attribute, so an enum like "A&B" cannot make the template invalid XML.
+func escapeXMLText(s string) string {
+	var b strings.Builder
+	_ = xml.EscapeText(&b, []byte(s))
+	return b.String()
 }
 
 // sampleValue produces a placeholder value for an atomic type.
