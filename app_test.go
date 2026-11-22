@@ -19,8 +19,10 @@ import (
 
 	"soapgo/internal/model"
 	"soapgo/internal/soapuiproj"
+	"soapgo/internal/store"
 	"soapgo/internal/transport"
 	"soapgo/internal/workspace"
+	"soapgo/internal/wsdl"
 )
 
 // newTestApp builds an app on a fresh, empty workspace in a temp directory.
@@ -2986,5 +2988,45 @@ func TestCloseTabsBulk(t *testing.T) {
 	a3.closeTabsOnSide(keys3[2], 1)
 	if len(a3.tabs) != 3 || a3.tabs[0] != keys3[0] || a3.tabs[2] != keys3[2] {
 		t.Fatalf("close right of 2 left %v", a3.tabs)
+	}
+}
+
+// TestBackgroundWritesUseCapturedStore checks a send or WSDL import that
+// finishes after a workspace switch lands in the store it started in.
+func TestBackgroundWritesUseCapturedStore(t *testing.T) {
+	a := newTestApp(t)
+	st2, err := store.New(filepath.Join(t.TempDir(), "p.json"))
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	p, err := st2.AddProject(model.Project{Name: "P", Source: "native"})
+	if err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	c, err := st2.AddProjectCall(p.ID, "", model.Call{Title: "C", Method: "GET", Endpoint: "/x"})
+	if err != nil {
+		t.Fatalf("AddProjectCall: %v", err)
+	}
+
+	a.persistResponseTo(st2, p.ID, "", "", c.ID, model.SendResponse{
+		Status: 200, StatusText: "OK", Body: "ok", Headers: map[string]string{"X": "1"},
+	})
+	list := st2.List()
+	if len(list) != 1 || len(list[0].Calls) != 1 || list[0].Calls[0].Response == nil ||
+		list[0].Calls[0].Response.Status != 200 {
+		t.Fatal("the response did not land in the store the send was started in")
+	}
+	if len(a.projects) != 0 {
+		t.Fatal("a background write to another store reloaded the active workspace")
+	}
+
+	a.persistWSDL(st2, &wsdl.Result{Name: "W", Operations: []model.Operation{{Name: "Op"}}},
+		"fallback", "src", "wsdl")
+	list = st2.List()
+	if len(list) != 2 || list[1].Name != "W" {
+		t.Fatal("the WSDL project did not land in the store the import started in")
+	}
+	if len(a.projects) != 0 {
+		t.Fatal("a background WSDL import reloaded the active workspace")
 	}
 }

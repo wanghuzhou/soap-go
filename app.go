@@ -2190,6 +2190,13 @@ func (a *app) clearSelection() {
 // persistResponse stores a sent response with its sample, so reopening it shows
 // the last response without sending again.
 func (a *app) persistResponse(pid, sid, oid, cid string, resp model.SendResponse) {
+	a.persistResponseTo(a.st, pid, sid, oid, cid, resp)
+}
+
+// persistResponseTo saves a response in st, the store the send started in. A
+// workspace switch while the request is in flight must not move the result into
+// the newly active store.
+func (a *app) persistResponseTo(st *store.Store, pid, sid, oid, cid string, resp model.SendResponse) {
 	if resp.Error != "" {
 		return
 	}
@@ -2202,20 +2209,24 @@ func (a *app) persistResponse(pid, sid, oid, cid string, resp model.SendResponse
 		Size:       resp.Size,
 		Truncated:  resp.Truncated,
 	}
-	if err := a.storeSaveResponse(pid, sid, oid, cid, saved); err != nil {
-		a.errMsg = "无法保存响应：" + err.Error()
+	if err := storeSaveResponse(st, pid, sid, oid, cid, saved); err != nil {
+		if st == a.st {
+			a.errMsg = "无法保存响应：" + err.Error()
+		}
 		return
 	}
-	a.reload()
+	if st == a.st {
+		a.reload()
+	}
 }
 
 // storeSaveResponse routes a saved response to the right store method: an
 // operation sample (sid set) or a native project request (sid empty).
-func (a *app) storeSaveResponse(pid, sid, oid, cid string, saved *model.SavedResponse) error {
+func storeSaveResponse(st *store.Store, pid, sid, oid, cid string, saved *model.SavedResponse) error {
 	if sid != "" {
-		return a.st.UpdateCallResponse(pid, sid, oid, cid, saved)
+		return st.UpdateCallResponse(pid, sid, oid, cid, saved)
 	}
-	return a.st.UpdateProjectCallResponse(pid, cid, saved)
+	return st.UpdateProjectCallResponse(pid, cid, saved)
 }
 
 // buildSendRequest assembles the payload the transport sends: project headers,
@@ -2458,9 +2469,11 @@ func (a *app) sendRequest() {
 		a.errMsg = err.Error()
 		return
 	}
-	// Remember which sample this send belongs to: the auto-save must land on
-	// it even if the user opens another sample while the request is in flight.
+	// Remember which sample and which store this send belongs to: the auto-save
+	// must land on them even if the user opens another sample or switches
+	// workspace while the request is in flight.
 	pid, sid, oid, cid := a.pid, a.sid, a.oid, a.cid
+	st := a.st
 	ctx, cancel := context.WithCancel(context.Background())
 	a.sendCancel = cancel
 	a.sending = true
@@ -2499,7 +2512,7 @@ func (a *app) sendRequest() {
 					a.setStatus(fmt.Sprintf("后台请求完成：%d %s · %d ms", resp.Status, resp.StatusText, resp.DurationMS))
 				}
 			}
-			a.persistResponse(pid, sid, oid, cid, resp)
+			a.persistResponseTo(st, pid, sid, oid, cid, resp)
 			if a.win != nil {
 				a.win.Invalidate()
 			}
@@ -3027,7 +3040,7 @@ func (a *app) importWSDLFile(path string) {
 		return
 	}
 	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	a.persistWSDL(res, name, path, "wsdl")
+	a.persistWSDL(a.st, res, name, path, "wsdl")
 }
 
 // importWSDLURL downloads and parses a WSDL in the background, so a slow server
@@ -3045,6 +3058,9 @@ func (a *app) importWSDLURL(rawURL string) {
 	proxy := a.importProxy()
 	a.importing = true
 	a.errMsg = ""
+	// The import belongs to the workspace it started in: switching while the
+	// download runs must not move the new project to the newly active store.
+	st := a.st
 	go func() {
 		fetched, err := wsdlfetch.Fetch(url, proxy)
 		var res *wsdl.Result
@@ -3061,7 +3077,7 @@ func (a *app) importWSDLURL(rawURL string) {
 			if err != nil {
 				a.errMsg = err.Error()
 			} else {
-				a.persistWSDL(res, fetched.Name, fetched.FinalURL, "wsdl-url")
+				a.persistWSDL(st, res, fetched.Name, fetched.FinalURL, "wsdl-url")
 				a.importOpen = false
 			}
 			if a.win != nil {
@@ -3085,9 +3101,9 @@ func (a *app) importProxy() *model.ProxySettings {
 	return &model.ProxySettings{Mode: "direct"}
 }
 
-// persistWSDL saves a parsed WSDL as a project with one service and one
-// generated sample per operation.
-func (a *app) persistWSDL(res *wsdl.Result, fallbackName, source, projectSource string) {
+// persistWSDL saves a parsed WSDL as a project in st, the store the import
+// started in, with one service and one generated sample per operation.
+func (a *app) persistWSDL(st *store.Store, res *wsdl.Result, fallbackName, source, projectSource string) {
 	name := res.Name
 	if name == "" {
 		name = fallbackName
@@ -3115,12 +3131,16 @@ func (a *app) persistWSDL(res *wsdl.Result, fallbackName, source, projectSource 
 			Operations: res.Operations,
 		}},
 	}
-	if _, err := a.st.AddProject(project); err != nil {
+	if _, err := st.AddProject(project); err != nil {
 		a.errMsg = "无法保存 WSDL 项目：" + err.Error()
 		return
 	}
-	a.reload()
-	a.setStatus("已导入 WSDL：" + name)
+	if st == a.st {
+		a.reload()
+		a.setStatus("已导入 WSDL：" + name)
+	} else {
+		a.setStatus("WSDL 已导入到原工作空间：" + name)
+	}
 }
 
 // openProjectPage shows pid's project page in the main area: the project's
