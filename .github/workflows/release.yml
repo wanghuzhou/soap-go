@@ -90,7 +90,7 @@ jobs:
           STAGE="dist/${NAME}"
           mkdir -p "${STAGE}"
 
-          LDFLAGS='-s -w -X github.com/egoist/mygo.production=1'
+          LDFLAGS="-s -w -X github.com/egoist/mygo.production=1 -X main.appVersion=${TAG}"
           if [ "$GOOS" = "windows" ]; then
             LDFLAGS="$LDFLAGS -H windowsgui"
           fi

@@ -23,6 +23,7 @@ import (
 	"soapgo/internal/soapuiproj"
 	"soapgo/internal/store"
 	"soapgo/internal/transport"
+	"soapgo/internal/updatecheck"
 	"soapgo/internal/workspace"
 	"soapgo/internal/wsdl"
 )
@@ -2558,6 +2559,50 @@ func TestImportOpenAPICreatesNativeProject(t *testing.T) {
 	}
 }
 
+// TestImportHTTPFileCreatesNativeProject checks a .http import lands as a native
+// project with one request per "###" block, comments and response handlers
+// dropped, and variable placeholders resolved.
+func TestImportHTTPFileCreatesNativeProject(t *testing.T) {
+	a := newTestApp(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.http")
+	src := "# 顶部注释\n" +
+		"@host = http://127.0.0.1:8099\n\n" +
+		"### 新增科室\n" +
+		"POST {{host}}/rpc/ahSuperviseBase/orgDeptAdd\n" +
+		"Content-Type: application/json\n\n" +
+		"{\"deptName\": \"内科\"}\n\n" +
+		"> {%\n    client.test(\"ok\", function () {});\n%}\n"
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	a.importHTTPFile(path)
+	if a.errMsg != "" {
+		t.Fatalf("import error: %s", a.errMsg)
+	}
+	if len(a.projects) != 1 {
+		t.Fatalf("projects = %d", len(a.projects))
+	}
+	p := a.projects[0]
+	if p.Source != "native" || p.Name != "demo" {
+		t.Fatalf("project = %q/%q", p.Name, p.Source)
+	}
+	if len(p.Calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(p.Calls))
+	}
+	call := p.Calls[0]
+	if call.Title != "新增科室" || call.BodyType != model.BodyJSON {
+		t.Fatalf("call = %q body=%q", call.Title, call.BodyType)
+	}
+	a.openCall(p.ID, "", "", call.ID)
+	if a.endpoint != "http://127.0.0.1:8099/rpc/ahSuperviseBase/orgDeptAdd" {
+		t.Fatalf("endpoint = %q", a.endpoint)
+	}
+	if strings.Contains(a.xmlEd.Buffer.String(), "client.test") {
+		t.Fatalf("response handler leaked into the body: %q", a.xmlEd.Buffer.String())
+	}
+}
+
 // TestTabLimitClosesOldestSaved checks the limit closes the earliest opened
 // saved tab and never a dirty one, and never the tab just opened.
 func TestTabLimitClosesOldestSaved(t *testing.T) {
@@ -3094,6 +3139,18 @@ func TestWSDLImportErrorShownInDialog(t *testing.T) {
 	}
 }
 
+// TestImportDialogListsHTTPOption checks the import dialog offers the .http
+// entry alongside the other formats.
+func TestImportDialogListsHTTPOption(t *testing.T) {
+	a := newTestApp(t)
+	a.importOpen = true
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("导入 .http 文件") {
+		t.Fatal("the import dialog does not offer the .http option")
+	}
+}
+
 // TestSentPreviewIsSnapshotAndMasked checks the 请求 tab returns the request
 // captured at send time, with sensitive header values masked.
 func TestSentPreviewIsSnapshotAndMasked(t *testing.T) {
@@ -3197,5 +3254,126 @@ func TestBackgroundWritesUseCapturedStore(t *testing.T) {
 	}
 	if len(a.projects) != 0 {
 		t.Fatal("a background WSDL import reloaded the active workspace")
+	}
+}
+
+// TestApplyUpdateResultManual shows a manual check with a newer release opens
+// the dialog and records the version.
+func TestApplyUpdateResultManual(t *testing.T) {
+	a := newTestApp(t)
+	a.applyUpdateResult(&updatecheck.Manifest{Version: "v999.0.0", Notes: "说明", Page: "https://x"}, nil, true)
+	if !a.updateChecked || !a.updateResult.HasUpdate || !a.updateOpen {
+		t.Fatalf("manual update not surfaced: %+v open=%v", a.updateResult, a.updateOpen)
+	}
+	if a.updateResult.Latest != "v999.0.0" {
+		t.Fatalf("latest = %q", a.updateResult.Latest)
+	}
+	if a.lastUpdateAt.IsZero() {
+		t.Fatal("lastUpdateAt was not recorded")
+	}
+	if got := a.updateStatusText(); !strings.Contains(got, "发现新版本") {
+		t.Fatalf("status = %q", got)
+	}
+}
+
+// TestApplyUpdateResultUpToDate checks a manual check that finds nothing newer
+// reports "already latest" and does not open the dialog.
+func TestApplyUpdateResultUpToDate(t *testing.T) {
+	a := newTestApp(t)
+	a.applyUpdateResult(&updatecheck.Manifest{Version: appVersion}, nil, true)
+	if a.updateOpen {
+		t.Fatal("dialog opened for an up-to-date check")
+	}
+	if !a.updateChecked || a.updateResult.HasUpdate {
+		t.Fatalf("state = checked:%v hasUpdate:%v", a.updateChecked, a.updateResult.HasUpdate)
+	}
+	if got := a.updateStatusText(); !strings.Contains(got, "已是最新版本") {
+		t.Fatalf("status = %q", got)
+	}
+}
+
+// TestApplyUpdateResultAutoDoesNotModal checks the automatic check records a new
+// version without forcing the modal open.
+func TestApplyUpdateResultAutoDoesNotModal(t *testing.T) {
+	a := newTestApp(t)
+	a.applyUpdateResult(&updatecheck.Manifest{Version: "v999.0.0"}, nil, false)
+	if a.updateOpen {
+		t.Fatal("the startup check opened the dialog unbidden")
+	}
+	if !a.updateResult.HasUpdate {
+		t.Fatal("startup check did not record the new version")
+	}
+	if !strings.Contains(a.statusMsg, "发现新版本") {
+		t.Fatalf("status message = %q", a.statusMsg)
+	}
+}
+
+// TestApplyUpdateResultError checks a failed manual check keeps the error.
+func TestApplyUpdateResultError(t *testing.T) {
+	a := newTestApp(t)
+	a.applyUpdateResult(nil, fmt.Errorf("network down"), true)
+	if a.updateErr == "" || !strings.Contains(a.errMsg, "检查更新失败") {
+		t.Fatalf("error not surfaced: updateErr=%q errMsg=%q", a.updateErr, a.errMsg)
+	}
+	if a.updateChecking {
+		t.Fatal("updateChecking left on after a failed check")
+	}
+}
+
+// TestMaybeAutoCheckThrottled checks a check within the throttle window is
+// skipped (and therefore does not flip updateChecking on).
+func TestMaybeAutoCheckThrottled(t *testing.T) {
+	a := newTestApp(t)
+	a.autoCheck = true
+	a.lastUpdateAt = time.Now()
+	a.maybeAutoCheckUpdates()
+	if a.updateChecking {
+		t.Fatal("a throttled startup check still started")
+	}
+
+	b := newTestApp(t)
+	b.autoCheck = false
+	b.maybeAutoCheckUpdates()
+	if b.updateChecking {
+		t.Fatal("the startup check started while disabled")
+	}
+}
+
+// TestSettingsShowsUpdateControls checks the About and 其他 sections render the
+// update controls.
+func TestSettingsShowsUpdateControls(t *testing.T) {
+	a := newTestApp(t)
+	a.settingsOpen = true
+
+	a.settingsSection = 4
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("检查更新") {
+		t.Fatal("the About section has no 检查更新 button")
+	}
+
+	a = newTestApp(t)
+	a.settingsOpen = true
+	a.settingsSection = 3
+	tt = ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("自动检查更新") || !tt.HasText("更新源") {
+		t.Fatal("the 其他 section has no update preference rows")
+	}
+}
+
+// TestUpdateModalRenders checks the new-version dialog shows the version and the
+// release notes.
+func TestUpdateModalRenders(t *testing.T) {
+	a := newTestApp(t)
+	a.updateOpen = true
+	a.updateResult = updatecheck.Result{
+		Current: "v0.6.0", Latest: "v0.7.0", HasUpdate: true,
+		Notes: "修复若干问题", Page: "https://example.test/release",
+	}
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	if !tt.HasText("发现新版本") || !tt.HasText("修复若干问题") || !tt.HasText("前往下载") {
+		t.Fatal("the update dialog is missing its version, notes or download button")
 	}
 }

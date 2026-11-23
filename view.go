@@ -86,6 +86,7 @@ func (a *app) view(c *ui.Context) {
 		a.confirmModal(c)
 		a.bulkEditModal(c)
 		a.settingsModal(c)
+		a.updateModal(c)
 	})
 	a.maybeSaveUIState()
 }
@@ -240,7 +241,7 @@ func (a *app) sidebar(c *ui.Context) {
 			if len(items) == 0 {
 				ui.Column(c).Padding(16).Gap(6).Children(func() {
 					ui.Text(c, "还没有项目").FontSize(a.us(12.5)).Bold()
-					ui.Text(c, "用「更多」菜单导入 SoapUI 项目或 WSDL。").FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
+					ui.Text(c, "用「更多」菜单导入 SoapUI、OpenAPI、WSDL 或 .http 文件。").FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
 				})
 				return
 			}
@@ -833,7 +834,7 @@ func (a *app) emptyWorkbenchPanel(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).Center().Justify(ui.Center).Gap(10).Children(func() {
 		ui.Text(c, "开始使用 soap-go").FontSize(a.us(16)).Bold().TextColor(t.Text)
-		ui.Text(c, "新建项目，或导入 SoapUI / WSDL 定义；"+
+		ui.Text(c, "新建项目，或导入 SoapUI / OpenAPI / WSDL / .http 定义；"+
 			"打开请求后，这里会显示请求与响应。").
 			FontSize(a.us(11.5)).TextColor(t.TextMuted).Wrap()
 		ui.Row(c).Gap(8).Children(func() {
@@ -1781,6 +1782,16 @@ func (a *app) importModal(c *ui.Context) {
 							a.importOpen = false
 						}
 					})
+				a.importOption(c, "⇢", "导入 .http 文件",
+					"从 JetBrains HTTP Client 的 .http / .rest 导入，按 ### 分出请求。", func() {
+						if path, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+							Parent: a.win, Title: "选择 .http 文件",
+							Filters: []mygo.FileFilter{{Name: "HTTP 请求文件", Extensions: []string{"http", "rest"}}},
+						}); err == nil && len(path) > 0 {
+							a.importHTTPFile(path[0])
+							a.importOpen = false
+						}
+					})
 				a.importOption(c, "ƒ", "解析 WSDL 文件",
 					"从本地 .wsdl / .xml 生成接口与请求模板。", func() {
 						if path, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
@@ -2181,6 +2192,15 @@ func (a *app) otherSettings(c *ui.Context) {
 				}
 			})
 		})
+		ui.Divider(c)
+		a.settingsRow(c, "自动检查更新", func() {
+			ui.Checkbox(c, &a.autoCheck, "启动时检查新版本")
+		})
+		ui.Divider(c)
+		a.settingsRow(c, "更新源", func() {
+			ui.TextInput(c, &a.updateSource).Placeholder("留空使用 GitHub Releases").
+				Grow(1).Label("更新源")
+		})
 	})
 	a.enforceTabLimit("")
 	if v, err := strconv.Atoi(strings.TrimSpace(a.maxTabsText)); err != nil || v < minTabLimit || v > maxTabLimit {
@@ -2190,9 +2210,12 @@ func (a *app) otherSettings(c *ui.Context) {
 		ui.Text(c, "超过上限时，自动关闭最早打开且已保存的标签页；有未保存修改的标签页不会被关闭。").
 			FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
 	}
+	ui.Text(c, "更新源填一个 latest.json 地址可指向内网镜像；留空则读取 GitHub Releases。").
+		FontSize(a.us(10.5)).TextColor(t.TextMuted).Wrap()
 }
 
-// aboutSettings is the "关于" section: the app's name, version and purpose.
+// aboutSettings is the "关于" section: the app's name, version, purpose and the
+// manual update check.
 func (a *app) aboutSettings(c *ui.Context) {
 	t := c.Theme()
 	a.settingsCard(c, func() {
@@ -2201,7 +2224,36 @@ func (a *app) aboutSettings(c *ui.Context) {
 		})
 		ui.Divider(c)
 		a.settingsRow(c, "版本", func() {
-			ui.Text(c, appVersion).FontSize(a.us(12.5)).TextColor(t.Text)
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, appVersion).FontSize(a.us(12.5)).TextColor(t.Text)
+				if a.updateChecking {
+					ui.Button(c, "检查中…").Disabled(true)
+				} else if ui.Button(c, "检查更新").Clicked() {
+					a.checkForUpdates(true)
+				}
+			})
+		})
+		ui.Divider(c)
+		a.settingsRow(c, "更新", func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				status := a.updateStatusText()
+				if status == "" {
+					status = "尚未检查"
+				}
+				color := t.TextMuted
+				switch {
+				case a.updateErr != "":
+					color = t.Danger
+				case a.updateChecked && a.updateResult.HasUpdate:
+					color = t.Accent
+				}
+				ui.Text(c, status).FontSize(a.us(11.5)).TextColor(color).Wrap()
+				if a.updateChecked && a.updateResult.HasUpdate {
+					if ui.Button(c, "查看").Clicked() {
+						a.updateOpen = true
+					}
+				}
+			})
 		})
 		ui.Divider(c)
 		a.settingsRow(c, "说明", func() {
@@ -2508,4 +2560,49 @@ func kindColor(t *ui.Theme, kind string) ui.Color {
 	default:
 		return t.TextMuted
 	}
+}
+
+// updateModal shows the new version's notes and a download link. P0 never
+// downloads or installs anything: it opens the release page in the browser.
+func (a *app) updateModal(c *ui.Context) {
+	t := c.Theme()
+	ui.Modal(c, &a.updateOpen, func() {
+		ui.Column(c).Width(520).Gap(14).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "发现新版本").FontSize(a.us(17)).Bold()
+				ui.Spacer(c)
+				a.closeIconButton(c, 24, "关闭更新", func() { a.updateOpen = false })
+			})
+			ui.Text(c, fmt.Sprintf("当前版本 %s，最新版本 %s。", a.updateResult.Current, a.updateResult.Latest)).
+				FontSize(a.us(11.5)).TextColor(t.TextMuted)
+			if notes := strings.TrimSpace(a.updateResult.Notes); notes != "" {
+				// Size the notes box to its content so a short changelog does not
+				// leave a large empty block, but cap it so a long one scrolls.
+				lines := strings.Count(notes, "\n") + 1
+				h := float32(lines)*20 + 10
+				if h < 48 {
+					h = 48
+				}
+				if h > 220 {
+					h = 220
+				}
+				ui.Scroll(c).Height(h).Children(func() {
+					ui.Text(c, notes).FontSize(a.us(11)).TextColor(t.Text).Wrap()
+				})
+			}
+			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+				if ui.Button(c, "稍后").Clicked() {
+					a.updateOpen = false
+				}
+				if a.updateResult.Page != "" {
+					if ui.PrimaryButton(c, "前往下载").Clicked() {
+						if err := mygo.Shell.OpenExternal(a.updateResult.Page); err != nil {
+							a.errMsg = "无法打开下载页：" + err.Error()
+						}
+						a.updateOpen = false
+					}
+				}
+			})
+		})
+	})
 }

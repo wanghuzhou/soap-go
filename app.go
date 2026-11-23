@@ -25,11 +25,13 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 
 	"soapgo/internal/fileutil"
+	"soapgo/internal/httpfile"
 	"soapgo/internal/model"
 	"soapgo/internal/openapi"
 	"soapgo/internal/soapuiproj"
 	"soapgo/internal/store"
 	"soapgo/internal/transport"
+	"soapgo/internal/updatecheck"
 	"soapgo/internal/workspace"
 	"soapgo/internal/wsdl"
 	"soapgo/internal/wsdlfetch"
@@ -182,6 +184,13 @@ type uiState struct {
 	// MaxTabs is the tab-count limit; 0 in a file written before the setting
 	// existed means the default applies.
 	MaxTabs int `json:"maxTabs,omitempty"`
+	// Update preferences. NoAutoUpdateCheck keeps the startup check off; naming
+	// it negatively means a file written before the setting existed (absent =
+	// false) still checks, so existing users get the new behaviour.
+	NoAutoUpdateCheck bool   `json:"noAutoUpdateCheck,omitempty"`
+	UpdateSource      string `json:"updateSource,omitempty"`
+	// LastUpdateCheck is when the last automatic check ran, in Unix seconds.
+	LastUpdateCheck int64 `json:"lastUpdateCheck,omitempty"`
 }
 
 // The tab-count limit: opening a tab past it closes the earliest opened one
@@ -343,6 +352,19 @@ type app struct {
 	editorFontChoice string
 	editorFontSize   float64
 
+	// Update check. autoCheck controls the startup check, updateSource is an
+	// optional latest.json URL (empty means GitHub Releases) and lastUpdateAt
+	// throttles automatic checks. The rest drives the About panel and the
+	// new-version modal.
+	autoCheck      bool
+	updateSource   string
+	lastUpdateAt   time.Time
+	updateChecking bool
+	updateErr      string
+	updateChecked  bool
+	updateResult   updatecheck.Result
+	updateOpen     bool
+
 	// Editor preferences.
 	maskSecrets bool
 
@@ -395,6 +417,7 @@ func newApp(reg *workspace.Registry) *app {
 		editorFontSize:   13,
 		maxTabs:          defaultTabLimit,
 		maxTabsText:      strconv.Itoa(defaultTabLimit),
+		autoCheck:        true,
 	}
 	a.uiPath = filepath.Join(reg.DataDir(), "ui-state.json")
 	a.loadUIState()
@@ -406,6 +429,10 @@ func newApp(reg *workspace.Registry) *app {
 }
 
 func (a *app) currentUI() uiState {
+	var last int64
+	if !a.lastUpdateAt.IsZero() {
+		last = a.lastUpdateAt.Unix()
+	}
 	return uiState{
 		Dark: a.dark, SplitSide: a.splitSide, SideW: a.sideW, SplitV: a.splitV, SplitH: a.splitH,
 		UIFont: a.uiFontChoice, UIFontSize: a.uiFontSize,
@@ -415,6 +442,10 @@ func (a *app) currentUI() uiState {
 		ActiveTab: a.active,
 		TabsSaved: true,
 		MaxTabs:   a.maxTabs,
+
+		NoAutoUpdateCheck: !a.autoCheck,
+		UpdateSource:      a.updateSource,
+		LastUpdateCheck:   last,
 	}
 }
 
@@ -447,6 +478,11 @@ func (a *app) loadUIState() {
 				a.maxTabs = st.MaxTabs
 			}
 			a.maxTabsText = strconv.Itoa(a.maxTabs)
+			a.autoCheck = !st.NoAutoUpdateCheck
+			a.updateSource = strings.TrimSpace(st.UpdateSource)
+			if st.LastUpdateCheck > 0 {
+				a.lastUpdateAt = time.Unix(st.LastUpdateCheck, 0)
+			}
 			a.pendingTabsSaved = st.TabsSaved
 			a.pendingActive = st.ActiveTab
 			for _, k := range strings.Split(st.Tabs, "\n") {
@@ -562,8 +598,10 @@ func (a *app) resetFontSettings() {
 const systemFontLabel = "系统默认"
 
 // appVersion is the release version shown in the settings dialog's About
-// section.
-const appVersion = "v0.6.0"
+// section and compared against by the update check. It is a variable so the
+// release build can set it from the git tag through
+// `-ldflags "-X main.appVersion=${TAG}"`, keeping it from drifting from the tag.
+var appVersion = "v0.6.0"
 
 // uiFontOptions and editorFontOptions are the families the settings dialog
 // offers; the first choice is the system's own font. They differ per platform
@@ -3063,6 +3101,29 @@ func (a *app) importOpenAPI(path string) {
 	a.setStatus(fmt.Sprintf("已导入 OpenAPI：%s（%d 个接口）", saved.Name, len(saved.Calls)))
 }
 
+// importHTTPFile parses a JetBrains HTTP Client .http / .rest file and adds it as
+// a native project: one request per "###" block, with comments and debug code
+// dropped.
+func (a *app) importHTTPFile(path string) {
+	data, err := readFileLimited(path, maxImportBytes)
+	if err != nil {
+		a.errMsg = "无法读取文件：" + err.Error()
+		return
+	}
+	project, err := httpfile.Parse(data, path)
+	if err != nil {
+		a.errMsg = "无法解析 .http 文件：" + err.Error()
+		return
+	}
+	saved, err := a.st.AddProject(*project)
+	if err != nil {
+		a.errMsg = "无法保存项目：" + err.Error()
+		return
+	}
+	a.reload()
+	a.setStatus(fmt.Sprintf("已导入 .http：%s（%d 个请求）", saved.Name, len(saved.Calls)))
+}
+
 // exportOpenAPI writes the selected native project as an OpenAPI 3.x document
 // in the requested format ("json" or "yaml").
 func (a *app) exportOpenAPI(format string) {
@@ -3179,6 +3240,94 @@ func (a *app) importProxy() *model.ProxySettings {
 		}
 	}
 	return &model.ProxySettings{Mode: "direct"}
+}
+
+// updateThrottle is how often a startup check may run automatically.
+const updateThrottle = 24 * time.Hour
+
+// maybeAutoCheckUpdates runs a startup check when the setting is on and the
+// last automatic check was at least updateThrottle ago. It is called once the
+// window is ready and never blocks the UI.
+func (a *app) maybeAutoCheckUpdates() {
+	if !a.autoCheck {
+		return
+	}
+	if !a.lastUpdateAt.IsZero() && time.Since(a.lastUpdateAt) < updateThrottle {
+		return
+	}
+	a.checkForUpdates(false)
+}
+
+// checkForUpdates asks the update source for the newest release in the
+// background. manual decides whether failures and results surface in the UI.
+func (a *app) checkForUpdates(manual bool) {
+	if a.updateChecking {
+		return
+	}
+	a.updateChecking = true
+	a.updateErr = ""
+	if a.win != nil {
+		a.win.Invalidate()
+	}
+	source := strings.TrimSpace(a.updateSource)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), updatecheck.Timeout)
+		defer cancel()
+		var m *updatecheck.Manifest
+		var err error
+		if source != "" {
+			m, err = updatecheck.FetchManifest(ctx, source, nil)
+		} else {
+			m, err = updatecheck.FetchGitHub(ctx, updatecheck.DefaultRepo, nil)
+		}
+		mygo.RunOnMain(func() {
+			a.applyUpdateResult(m, err, manual)
+		})
+	}()
+}
+
+// applyUpdateResult stores a finished check and reflects it in the UI. It runs
+// on the main thread; tests call it directly.
+func (a *app) applyUpdateResult(m *updatecheck.Manifest, err error, manual bool) {
+	a.updateChecking = false
+	a.lastUpdateAt = time.Now()
+	if err != nil {
+		a.updateErr = err.Error()
+		if manual {
+			a.errMsg = "检查更新失败：" + err.Error()
+		}
+	} else {
+		a.updateErr = ""
+		a.updateChecked = true
+		a.updateResult = updatecheck.Evaluate(appVersion, m)
+		if a.updateResult.HasUpdate {
+			if manual {
+				a.updateOpen = true
+			} else {
+				a.setStatus("发现新版本 " + a.updateResult.Latest + "，可在设置 › 关于 查看")
+			}
+		} else if manual {
+			a.setStatus("已是最新版本")
+		}
+	}
+	if a.win != nil {
+		a.win.Invalidate()
+	}
+}
+
+// updateStatusText is the one-line status shown beside the version in About.
+func (a *app) updateStatusText() string {
+	switch {
+	case a.updateChecking:
+		return "正在检查更新…"
+	case a.updateErr != "":
+		return "检查失败：" + a.updateErr
+	case a.updateChecked && a.updateResult.HasUpdate:
+		return "发现新版本 " + a.updateResult.Latest
+	case a.updateChecked:
+		return "已是最新版本（" + appVersion + "）"
+	}
+	return ""
 }
 
 // persistWSDL saves a parsed WSDL as a project in st, the store the import

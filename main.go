@@ -85,6 +85,8 @@ func main() {
 			log.Printf("设置窗口图标失败：%v", err)
 		}
 		a.applyWindowButtons()
+		// Check for a newer release once the window is up, without blocking it.
+		a.maybeAutoCheckUpdates()
 	})
 	err = mygo.App.Run()
 	a.saveUIState()

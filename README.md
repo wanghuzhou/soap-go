@@ -10,11 +10,11 @@ SOAP / WSDL / OpenAPI 接口调试桌面工具，用 **Go + MyGo 原生 UI**（�
 - **请求编辑**：普通 HTTP 请求可选方法（GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS）、URL 与「查询」页签双向同步；Body 类型可选 No Body / JSON / XML / GraphQL / Other / Url Encoded / Multi-Part / Binary File，按类型提供文本编辑器（JSON/XML 高亮）、表单字段或文件选择；SOAP 请求固定 POST，含 SOAPAction、Content-Type、XML 格式化；超时、请求头（项目默认 + 样例覆盖 + 敏感头遮蔽）
 - **发送请求**：真实 HTTP / SOAP 请求，支持代理（系统 / 直连 / 自定义 HTTP·SOCKS5）、超时、响应截断；GET/HEAD 不发送请求体
 - **响应查看**：格式化 / 原始 / 请求 / Headers 四个视图，状态码、耗时、大小；悬停显示复制图标，发送成功后自动保存最近响应
-- **导入**：SoapUI 项目（.xml）、WSDL 文件、WSDL URL（可选代理）、OpenAPI 3.x 文档（.json / .yaml / .yml，按 tag 生成目录、按 operation 生成请求）；SOAP 请求只能由 SoapUI / WSDL 导入产生
+- **导入**：SoapUI 项目（.xml）、WSDL 文件、WSDL URL（可选代理）、OpenAPI 3.x 文档（.json / .yaml / .yml，按 tag 生成目录、按 operation 生成请求）、JetBrains HTTP Client 文件（.http / .rest，按 `###` 分出请求，自动忽略注释与响应处理脚本、替换 `{{变量}}`）；SOAP 请求只能由 SoapUI / WSDL 导入产生
 - **导出**：工作空间 JSON（可选保留代理）；普通 HTTP 项目可导出为 OpenAPI 3.x（JSON 或 YAML）；SoapUI 项目可导出为 SoapUI XML（两类项目不支持对方的导出格式）
 - **认证**：Basic（用户名/密码）与 Bearer（令牌 + 可改 Prefix），可启用/禁用，密码与令牌默认遮蔽
 - **管理**：工作空间切换/新建/重命名/删除/导入/导出；项目、目录、请求的增删改，以及导入项目下的服务/操作，均在树节点右键菜单
-- **其它**：上下/左右分屏、深色/浅色主题、主题色（8 种可选）、界面与编辑器字体设置（字体和字号分别可调）、主题与分栏布局持久化、请求可取消
+- **其它**：上下/左右分屏、深色/浅色主题、主题色（8 种可选）、界面与编辑器字体设置（字体和字号分别可调）、主题与分栏布局持久化、请求可取消；检查更新（启动时自动或手动，更新源可指向内网 latest.json）
 
 
 ## 数据兼容
