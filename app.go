@@ -376,7 +376,7 @@ func newApp(reg *workspace.Registry) *app {
 		splitH:     62,
 		splitSide:  0,
 		formValues: formValues{
-			timeout: "60000", method: "POST", reqKind: model.KindHTTP,
+			timeout: "60", method: "POST", reqKind: model.KindHTTP,
 			bodyType: model.BodyNone, auth: authForm{Type: "none", Enabled: true},
 		},
 		savedValues:      savedValues{savedAuth: authForm{Type: "none", Enabled: true}},
@@ -1093,10 +1093,7 @@ func (a *app) loadCallIntoForm(c *model.Call, defaultKind string) {
 	} else if bt != model.BodyNone && strings.TrimSpace(a.contentType) == "" {
 		a.contentType = model.BodyTypeContentType(bt)
 	}
-	a.timeout = strconv.Itoa(model.ClampTimeout(c.TimeoutMS))
-	if a.timeout == "0" {
-		a.timeout = strconv.Itoa(model.DefaultTimeoutMS)
-	}
+	a.timeout = formatTimeout(c.TimeoutMS)
 	a.headers = make([]headerRow, 0, len(c.Headers))
 	for _, h := range c.Headers {
 		a.headers = append(a.headers, headerRow{Name: h.Name, Value: h.Value})
@@ -2616,21 +2613,21 @@ func (a *app) syncResponse() {
 	a.respEd.Buffer.SetLanguage(editor.LanguageForText(file, text))
 }
 
-// normalizeTimeout rewrites the timeout input to the value actually used.
+// normalizeTimeout rewrites the timeout input to the seconds actually used.
 func (a *app) normalizeTimeout() {
-	if s := strconv.Itoa(parseTimeout(a.timeout)); a.timeout != s {
+	if s := formatTimeout(parseTimeout(a.timeout)); a.timeout != s {
 		a.timeout = s
 	}
 }
 
-// stepTimeout nudges the timeout by delta milliseconds, clamped to the range.
+// stepTimeout nudges the timeout by delta seconds, clamped to the range.
 func (a *app) stepTimeout(delta int) {
-	n := parseTimeout(a.timeout) + delta
-	if n < model.MinTimeoutMS {
-		n = model.MinTimeoutMS
+	n := parseTimeout(a.timeout)/1000 + delta
+	if n < model.MinTimeoutMS/1000 {
+		n = model.MinTimeoutMS / 1000
 	}
-	if n > model.MaxTimeoutMS {
-		n = model.MaxTimeoutMS
+	if n > model.MaxTimeoutMS/1000 {
+		n = model.MaxTimeoutMS / 1000
 	}
 	a.timeout = strconv.Itoa(n)
 }
@@ -3478,12 +3475,19 @@ func (a *app) doImportWorkspace(path, name string) {
 
 // ---- helpers ----
 
+// parseTimeout reads the seconds field and returns the timeout in milliseconds,
+// clamped to the model's bounds.
 func parseTimeout(s string) int {
 	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil || n <= 0 {
 		return model.DefaultTimeoutMS
 	}
-	return model.ClampTimeout(n)
+	return model.ClampTimeout(n * 1000)
+}
+
+// formatTimeout renders a millisecond timeout as whole seconds for the editor.
+func formatTimeout(ms int) string {
+	return strconv.Itoa(model.ClampTimeout(ms) / 1000)
 }
 
 func headersFromRows(rows []headerRow) []model.Header {

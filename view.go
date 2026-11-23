@@ -1601,16 +1601,16 @@ func (a *app) settingsPanel(c *ui.Context) {
 		}
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "超时").FontSize(a.us(11)).TextColor(t.TextMuted).Width(72)
-			a.stepBtn(c, "−", parseTimeout(a.timeout) > model.MinTimeoutMS, func() { a.stepTimeout(-1000) })
-			inp := ui.TextInput(c, &a.timeout).Placeholder("60000").Width(110).Ref(&a.timeoutRef).
+			a.stepBtn(c, "−", parseTimeout(a.timeout) > model.MinTimeoutMS, func() { a.stepTimeout(-1) })
+			inp := ui.TextInput(c, &a.timeout).Placeholder("60").Width(110).Ref(&a.timeoutRef).
 				OnSubmit(func() { a.normalizeTimeout() })
 			if !inp.Focused() {
 				a.normalizeTimeout()
 			}
-			a.stepBtn(c, "+", parseTimeout(a.timeout) < model.MaxTimeoutMS, func() { a.stepTimeout(1000) })
-			ui.Text(c, "ms").FontSize(a.us(11)).TextColor(t.TextMuted)
+			a.stepBtn(c, "+", parseTimeout(a.timeout) < model.MaxTimeoutMS, func() { a.stepTimeout(1) })
+			ui.Text(c, "秒").FontSize(a.us(11)).TextColor(t.TextMuted)
 			ui.Spacer(c)
-			ui.Text(c, "范围 1000 – 600000，超出自动修正").FontSize(a.us(10.5)).TextColor(t.TextMuted)
+			ui.Text(c, "范围 1 – 600 秒，超出自动修正").FontSize(a.us(10.5)).TextColor(t.TextMuted)
 		})
 		ui.Divider(c)
 		ui.Text(c, "请求方式").FontSize(a.us(11.5)).Bold()

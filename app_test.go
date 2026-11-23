@@ -357,7 +357,7 @@ func TestBuildSendRequest(t *testing.T) {
 	})
 	a.reload()
 	a.openCall(p.ID, svc.ID, op.ID, call.ID)
-	a.timeout = "5000"
+	a.timeout = "5"
 
 	req, proxy, err := a.buildSendRequest()
 	if err != nil {
@@ -1246,28 +1246,48 @@ func TestShortcutHelpListsTabKeys(t *testing.T) {
 	}
 }
 
+// TestTimeoutFieldShowsSeconds checks the request settings show seconds, not
+// raw milliseconds, with the matching range hint.
+func TestTimeoutFieldShowsSeconds(t *testing.T) {
+	a, _ := newNativeCall(t)
+	if a.timeout != "60" {
+		t.Fatalf("default timeout field = %q, want 60 seconds", a.timeout)
+	}
+	_, keys := a.requestSections()
+	for i, k := range keys {
+		if k == "settings" {
+			a.reqSection = i
+		}
+	}
+	tt := ui.NewTester(a.view, 1000, 700)
+	tt.Frame()
+	if !tt.HasText("范围 1 – 600 秒，超出自动修正") {
+		t.Fatal("the timeout range hint is not in seconds")
+	}
+}
+
 // TestTimeoutNormalizesAndSteps checks a typed timeout is rewritten to the
-// value actually used, and the stepper stays within the allowed range.
+// seconds actually used, and the stepper stays within the allowed range.
 func TestTimeoutNormalizesAndSteps(t *testing.T) {
 	a := newTestApp(t)
-	a.timeout = "60"
+	a.timeout = "0"
 	a.normalizeTimeout()
-	if a.timeout != "1000" {
-		t.Fatalf("timeout 60 normalized to %q, want 1000", a.timeout)
+	if a.timeout != "60" {
+		t.Fatalf("timeout 0 normalized to %q, want 60", a.timeout)
 	}
 	a.timeout = "999999"
 	a.normalizeTimeout()
-	if a.timeout != "600000" {
-		t.Fatalf("timeout 999999 normalized to %q, want 600000", a.timeout)
+	if a.timeout != "600" {
+		t.Fatalf("timeout 999999 normalized to %q, want 600", a.timeout)
 	}
-	a.timeout = "5000"
-	a.stepTimeout(1000)
-	if a.timeout != "6000" {
-		t.Fatalf("step up = %q, want 6000", a.timeout)
+	a.timeout = "5"
+	a.stepTimeout(1)
+	if a.timeout != "6" {
+		t.Fatalf("step up = %q, want 6", a.timeout)
 	}
 	a.stepTimeout(-10000)
-	if a.timeout != "1000" {
-		t.Fatalf("step down = %q, want 1000", a.timeout)
+	if a.timeout != "1" {
+		t.Fatalf("step down = %q, want 1", a.timeout)
 	}
 }
 
