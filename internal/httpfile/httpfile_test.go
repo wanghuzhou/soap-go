@@ -183,3 +183,38 @@ func TestParseStripsBOM(t *testing.T) {
 		t.Errorf("endpoint = %q", got)
 	}
 }
+
+// TestParseDropsCommentsAroundBody checks comments before and after a body do
+// not leak into it (a leaked note makes JSON invalid).
+func TestParseDropsCommentsAroundBody(t *testing.T) {
+	src := `### A
+POST http://h/a
+Content-Type: application/json
+
+# 请求体示例
+{"x": 1}
+
+# 下一条请求的说明
+### B
+POST http://h/b
+Content-Type: application/json
+
+{"y": 2}
+`
+	p, err := Parse([]byte(src), "x.http")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(p.Calls) != 2 {
+		t.Fatalf("calls = %d", len(p.Calls))
+	}
+	if got := p.Calls[0].Request; got != `{"x": 1}` {
+		t.Errorf("body A = %q, want the JSON only", got)
+	}
+	if p.Calls[0].BodyType != model.BodyJSON {
+		t.Errorf("body A type = %q", p.Calls[0].BodyType)
+	}
+	if got := p.Calls[1].Request; got != `{"y": 2}` {
+		t.Errorf("body B = %q", got)
+	}
+}

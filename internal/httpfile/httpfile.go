@@ -133,6 +133,12 @@ func Parse(data []byte, filename string) (*model.Project, error) {
 				finish()
 				continue
 			}
+			// Comments are not part of the body: a note between the body and
+			// the next "###", or one just above the body, must not be sent as
+			// JSON/XML content.
+			if isComment(line) {
+				continue
+			}
 			cur.body = append(cur.body, raw)
 		}
 	}
@@ -207,7 +213,16 @@ func callFrom(r rawRequest, vars map[string]string) model.Call {
 		}
 		call.Headers = append(call.Headers, model.Header{Name: h.name, Value: value})
 	}
-	body := strings.TrimRight(substitute(strings.Join(r.body, "\n"), vars), "\r\n")
+	// Drop blank lines around the body (comments were already removed while
+	// parsing), so the stored body starts and ends on real content.
+	lines := r.body
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	body := substitute(strings.Join(lines, "\n"), vars)
 	call.BodyType, call.Request, call.BodyFields = classifyBody(call.ContentType, body)
 	return call
 }
