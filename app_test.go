@@ -1266,9 +1266,9 @@ func TestTimeoutFieldShowsSeconds(t *testing.T) {
 	}
 }
 
-// TestTimeoutNormalizesAndSteps checks a typed timeout is rewritten to the
-// seconds actually used, and the stepper stays within the allowed range.
-func TestTimeoutNormalizesAndSteps(t *testing.T) {
+// TestTimeoutNormalizes checks a typed timeout is rewritten to the seconds
+// actually used and clamped to the allowed range.
+func TestTimeoutNormalizes(t *testing.T) {
 	a := newTestApp(t)
 	a.timeout = "0"
 	a.normalizeTimeout()
@@ -1279,15 +1279,6 @@ func TestTimeoutNormalizesAndSteps(t *testing.T) {
 	a.normalizeTimeout()
 	if a.timeout != "600" {
 		t.Fatalf("timeout 999999 normalized to %q, want 600", a.timeout)
-	}
-	a.timeout = "5"
-	a.stepTimeout(1)
-	if a.timeout != "6" {
-		t.Fatalf("step up = %q, want 6", a.timeout)
-	}
-	a.stepTimeout(-10000)
-	if a.timeout != "1" {
-		t.Fatalf("step down = %q, want 1", a.timeout)
 	}
 }
 

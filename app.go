@@ -2620,18 +2620,6 @@ func (a *app) normalizeTimeout() {
 	}
 }
 
-// stepTimeout nudges the timeout by delta seconds, clamped to the range.
-func (a *app) stepTimeout(delta int) {
-	n := parseTimeout(a.timeout)/1000 + delta
-	if n < model.MinTimeoutMS/1000 {
-		n = model.MinTimeoutMS / 1000
-	}
-	if n > model.MaxTimeoutMS/1000 {
-		n = model.MaxTimeoutMS / 1000
-	}
-	a.timeout = strconv.Itoa(n)
-}
-
 // responseIsJSON reports whether the response body should be treated as JSON:
 // its Content-Type says so, or, without one, its body is written as JSON.
 func (a *app) responseIsJSON() bool {

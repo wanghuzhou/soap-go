@@ -60,6 +60,9 @@ func (a *app) view(c *ui.Context) {
 	// Tab switching and closing, as most editors have them.
 	c.OnWindowShortcut(ui.Ctrl, ui.KeyTab, func() { a.switchTab(1) })
 	c.OnWindowShortcut(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.switchTab(-1) })
+	// macOS-style tab switching, since Cmd+Tab belongs to the system.
+	c.OnWindowShortcut(ui.Super|ui.Shift, ui.KeyBracketRight, func() { a.switchTab(1) })
+	c.OnWindowShortcut(ui.Super|ui.Shift, ui.KeyBracketLeft, func() { a.switchTab(-1) })
 	c.OnWindowShortcut(ui.Ctrl, ui.KeyW, func() { a.closeActiveTab() })
 	c.OnWindowShortcut(ui.Super, ui.KeyW, func() { a.closeActiveTab() })
 	t := c.Theme()
@@ -1601,13 +1604,11 @@ func (a *app) settingsPanel(c *ui.Context) {
 		}
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "超时").FontSize(a.us(11)).TextColor(t.TextMuted).Width(72)
-			a.stepBtn(c, "−", parseTimeout(a.timeout) > model.MinTimeoutMS, func() { a.stepTimeout(-1) })
 			inp := ui.TextInput(c, &a.timeout).Placeholder("60").Width(110).Ref(&a.timeoutRef).
 				OnSubmit(func() { a.normalizeTimeout() })
 			if !inp.Focused() {
 				a.normalizeTimeout()
 			}
-			a.stepBtn(c, "+", parseTimeout(a.timeout) < model.MaxTimeoutMS, func() { a.stepTimeout(1) })
 			ui.Text(c, "秒").FontSize(a.us(11)).TextColor(t.TextMuted)
 			ui.Spacer(c)
 			ui.Text(c, "范围 1 – 600 秒，超出自动修正").FontSize(a.us(10.5)).TextColor(t.TextMuted)
@@ -1973,8 +1974,8 @@ var shortcutHelp = []struct{ keys, desc string }{
 	{"Ctrl/Cmd + S", "保存当前请求"},
 	{"Ctrl/Cmd + Shift + F", "格式化请求报文"},
 	{"Ctrl/Cmd + K", "聚焦左侧搜索框"},
-	{"Ctrl + Tab", "切换到下一个标签页"},
-	{"Ctrl + Shift + Tab", "切换到上一个标签页"},
+	{"Ctrl + Tab / Cmd + Shift + ]", "切换到下一个标签页"},
+	{"Ctrl + Shift + Tab / Cmd + Shift + [", "切换到上一个标签页"},
 	{"Ctrl/Cmd + W", "关闭当前标签页"},
 	{"Esc", "关闭弹窗或清空搜索"},
 	{"Tab / Shift+Tab", "在可聚焦控件间移动"},
@@ -2219,7 +2220,7 @@ func (a *app) shortcutsSettings(c *ui.Context) {
 				ui.Divider(c)
 			}
 			ui.Row(c).Padding(11, 14).Gap(12).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, s.keys).FontSize(a.us(11.5)).Bold().TextColor(t.Accent).Width(170)
+				ui.Text(c, s.keys).FontSize(a.us(11.5)).Bold().TextColor(t.Accent).Width(240)
 				ui.Text(c, s.desc).FontSize(a.us(11.5)).TextColor(t.Text)
 			})
 		}
