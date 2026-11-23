@@ -38,6 +38,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # The macOS build uses `go tool mygo build`, which takes its version from
+      # mygo.json and cannot receive -ldflags. Keep the tag and mygo.json in
+      # step so the macOS binary reports the released version (the version test
+      # already ties the source appVersion to mygo.json).
+      - name: Check tag matches mygo.json version
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version mygo.json)"
+          if [ "v${version}" != "${TAG}" ]; then
+            echo "::error::tag ${TAG} does not match mygo.json version v${version}; bump mygo.json before tagging"
+            exit 1
+          fi
       - name: Vet
         run: go vet ./...
       - name: Test

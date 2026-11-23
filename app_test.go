@@ -3105,6 +3105,24 @@ func TestMygoVersionMatchesAppVersion(t *testing.T) {
 	}
 }
 
+// TestVersionFromMygo checks the default version is read from the embedded
+// mygo.json, which is what the macOS build (no -ldflags) relies on.
+func TestVersionFromMygo(t *testing.T) {
+	data, err := os.ReadFile("mygo.json")
+	if err != nil {
+		t.Fatalf("read mygo.json: %v", err)
+	}
+	var meta struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("parse mygo.json: %v", err)
+	}
+	if got, want := versionFromMygo(), "v"+meta.Version; got != want {
+		t.Fatalf("versionFromMygo() = %q, want %q", got, want)
+	}
+}
+
 // TestSwitchingTabHidesRevealedSecret checks the eye toggle resets when another
 // request is opened, so its credentials are not shown in clear text.
 func TestSwitchingTabHidesRevealedSecret(t *testing.T) {

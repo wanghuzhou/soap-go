@@ -597,11 +597,8 @@ func (a *app) resetFontSettings() {
 // systemFontLabel is the dropdown choice that means the system's own font.
 const systemFontLabel = "系统默认"
 
-// appVersion is the release version shown in the settings dialog's About
-// section and compared against by the update check. It is a variable so the
-// release build can set it from the git tag through
-// `-ldflags "-X main.appVersion=${TAG}"`, keeping it from drifting from the tag.
-var appVersion = "v0.6.0"
+// appVersion lives in version.go: it defaults to the embedded mygo.json version
+// and can be overridden from the git tag at release time.
 
 // uiFontOptions and editorFontOptions are the families the settings dialog
 // offers; the first choice is the system's own font. They differ per platform
