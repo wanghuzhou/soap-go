@@ -26,6 +26,11 @@ import (
 // ErrNotFound is returned when a referenced node does not exist.
 var ErrNotFound = errors.New("未找到指定对象")
 
+// ErrStoreClosed is returned by a write to a store whose workspace has been
+// deleted. It stops a response that arrives after the delete from recreating
+// the workspace file.
+var ErrStoreClosed = errors.New("工作空间已删除")
+
 // Store is the persistent project repository.
 type Store struct {
 	// mu guards projects for readers and the final in-memory swap.
@@ -35,6 +40,9 @@ type Store struct {
 	writeMu  sync.Mutex
 	path     string
 	projects []model.Project
+	// closed marks a deleted workspace's store read-only, so a late commit
+	// cannot rewrite (recreate) its file.
+	closed bool
 }
 
 // New loads (or initialises) the store at the given file path.
@@ -120,6 +128,10 @@ func (s *Store) commit(mutate func([]model.Project) ([]model.Project, error)) er
 	defer s.writeMu.Unlock()
 
 	s.mu.RLock()
+	if s.closed {
+		s.mu.RUnlock()
+		return ErrStoreClosed
+	}
 	next := cloneProjects(s.projects)
 	s.mu.RUnlock()
 
@@ -135,6 +147,15 @@ func (s *Store) commit(mutate func([]model.Project) ([]model.Project, error)) er
 	s.projects = next
 	s.mu.Unlock()
 	return nil
+}
+
+// Close marks the store read-only. After it returns, every commit is refused
+// with ErrStoreClosed, so an in-flight request that finishes after its
+// workspace was deleted cannot write the file back.
+func (s *Store) Close() {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
 }
 
 // ---- deep copy helpers ----

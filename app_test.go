@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -1722,6 +1723,131 @@ func TestContextMenuRightClickKeepsSelection(t *testing.T) {
 				t.Fatalf("C2 overwritten with %q", c.Request)
 			}
 		}
+	}
+}
+
+// TestSaveCallTargetsActiveTabNotStaleSelection checks that a save goes to the
+// tab the editor shows, not to a request the tree selection drifted onto after
+// a cancelled delete (which used to overwrite the wrong sample).
+func TestSaveCallTargetsActiveTabNotStaleSelection(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	s, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	o, _ := a.st.AddOperation(p.ID, s.ID, model.Operation{Name: "O"})
+	c1, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C1", Request: "<first/>"})
+	c2, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C2", Request: "<second/>"})
+	a.reload()
+	a.openCall(p.ID, s.ID, o.ID, c1.ID)
+
+	// Simulate the tree selection left on C2 by a cancelled delete while the
+	// editor still shows C1.
+	a.pid, a.sid, a.oid, a.cid = p.ID, s.ID, o.ID, c2.ID
+	a.xmlEd.Buffer.Reset("<edited/>")
+	a.saveCall()
+
+	got, _ := a.st.Get(p.ID)
+	for _, c := range got.Services[0].Operations[0].Calls {
+		switch c.ID {
+		case c1.ID:
+			if c.Request != "<edited/>" {
+				t.Fatalf("C1 = %q, want the edited body", c.Request)
+			}
+		case c2.ID:
+			if c.Request != "<second/>" {
+				t.Fatalf("C2 overwritten with %q", c.Request)
+			}
+		}
+	}
+}
+
+// TestDeleteCallCancelLeavesEditorOnActiveTab checks that cancelling a
+// delete-by-id does not move the selection onto the target, so a later save
+// still lands on the tab the editor shows.
+func TestDeleteCallCancelLeavesEditorOnActiveTab(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	s, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	o, _ := a.st.AddOperation(p.ID, s.ID, model.Operation{Name: "O"})
+	c1, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C1", Request: "<first/>"})
+	c2, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C2", Request: "<second/>"})
+	a.reload()
+	a.openCall(p.ID, s.ID, o.ID, c1.ID)
+
+	// Ask to delete C2, then cancel.
+	a.deleteCallAt(p.ID, s.ID, o.ID, c2.ID)
+	if !a.confirmOpen {
+		t.Fatal("delete did not ask for confirmation")
+	}
+	a.confirmOpen = false
+	a.confirmAction = nil
+
+	if a.cid != c1.ID {
+		t.Fatalf("cancelled delete moved selection to %q, want %q", a.cid, c1.ID)
+	}
+	if got := a.xmlEd.Buffer.String(); got != "<first/>" {
+		t.Fatalf("editor changed to %q", got)
+	}
+	got, _ := a.st.Get(p.ID)
+	if len(got.Services[0].Operations[0].Calls) != 2 {
+		t.Fatal("cancelled delete removed a call")
+	}
+}
+
+// TestResponseSameSampleFollowsActiveTab checks that a response is considered
+// the active tab's when its tab is still shown, even if the tree selection
+// moved to a folder while the request was in flight.
+func TestResponseSameSampleFollowsActiveTab(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	s, _ := a.st.AddService(p.ID, model.Service{Name: "S"})
+	o, _ := a.st.AddOperation(p.ID, s.ID, model.Operation{Name: "O"})
+	c1, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C1", Request: "<a/>"})
+	c2, _ := a.st.AddCall(p.ID, s.ID, o.ID, model.Call{Title: "C2", Request: "<b/>"})
+	a.reload()
+	a.openCall(p.ID, s.ID, o.ID, c1.ID)
+	key := callKey(p.ID, s.ID, o.ID, c1.ID)
+
+	// The tab is still C1, but a click on a folder cleared the tree selection.
+	a.pid, a.sid, a.oid, a.cid = p.ID, "", "", ""
+	if !a.responseSameSample(key, p.ID, s.ID, o.ID, c1.ID) {
+		t.Fatal("response of the still-open tab was not recognised")
+	}
+	if a.responseSameSample(callKey(p.ID, s.ID, o.ID, c2.ID), p.ID, s.ID, o.ID, c2.ID) {
+		t.Fatal("a different request's response matched")
+	}
+}
+
+// TestDeleteWorkspaceCancelsSendAndClosesStore checks deleting a workspace
+// cancels a request still in flight and marks the old store read-only, so a
+// late response cannot recreate the deleted file.
+func TestDeleteWorkspaceCancelsSendAndClosesStore(t *testing.T) {
+	a := newTestApp(t)
+	a.createWorkspace("W2")
+	old := a.st
+	cancelled := false
+	a.sending = true
+	a.sendCancel = func() { cancelled = true }
+
+	a.deleteWorkspace()
+	if !a.confirmOpen {
+		t.Fatal("delete did not ask for confirmation")
+	}
+	fn := a.confirmAction
+	a.confirmOpen = false
+	a.confirmAction = nil
+	fn()
+
+	if !cancelled {
+		t.Fatal("in-flight send was not cancelled")
+	}
+	if _, err := old.AddProject(model.Project{Name: "late"}); !errors.Is(err, store.ErrStoreClosed) {
+		t.Fatalf("late write to deleted workspace store = %v, want ErrStoreClosed", err)
 	}
 }
 

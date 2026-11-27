@@ -611,9 +611,7 @@ func (a *app) treeContextMenu(m *ui.Menu, it treeItem) {
 		}
 		m.Separator()
 		if m.Item("删除请求").Danger().Chosen() {
-			a.selGroup = ""
-			a.pid, a.sid, a.oid, a.cid = it.pid, it.sid, it.oid, it.cid
-			a.deleteCall()
+			a.deleteCallAt(it.pid, it.sid, it.oid, it.cid)
 		}
 	}
 }

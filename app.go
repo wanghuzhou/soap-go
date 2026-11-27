@@ -745,6 +745,30 @@ func (a *app) locate() (p *model.Project, s *model.Service, o *model.Operation, 
 	return
 }
 
+// targetCall returns the call the editor's save/send actions must act on. The
+// editor always shows the active tab, so when a tab is open the target is that
+// tab's call even if the tree selection sits on a different request (for
+// example after a cancelled delete). Without a tab it falls back to the tree
+// selection. It keeps a.pid/sid/oid/cid in step so the tree highlight matches
+// what is saved.
+func (a *app) targetCall() (p *model.Project, s *model.Service, o *model.Operation, c *model.Call) {
+	if key := a.activeTabKey(); key != "" {
+		a.pid, a.sid, a.oid, a.cid = splitKey(key)
+	}
+	return a.locate()
+}
+
+// responseSameSample reports whether a completed send for key and the given ids
+// should be shown in the current editor. The editor shows the active tab, so
+// when a tab is open that tab's key decides: clicking a folder/service node
+// while a request is in flight must not hide the response of the still-open tab.
+func (a *app) responseSameSample(key, pid, sid, oid, cid string) bool {
+	if at := a.activeTabKey(); at != "" {
+		return at == key
+	}
+	return a.pid == pid && a.sid == sid && a.oid == oid && a.cid == cid
+}
+
 // findCallByKey resolves an open tab's call, whether it is an operation sample
 // or a native project/group request.
 func (a *app) findCallByKey(key string) *model.Call {
@@ -1592,15 +1616,7 @@ func renameTargetID(it treeItem) string {
 
 // saveCall writes the form back to the selected call.
 func (a *app) saveCall() {
-	p, s, o, c := a.locate()
-	if c == nil {
-		// The tree selection may be a project/service while a tab is open;
-		// save the tab's sample the editor is showing.
-		if key := a.activeTabKey(); key != "" {
-			a.pid, a.sid, a.oid, a.cid = splitKey(key)
-			p, s, o, c = a.locate()
-		}
-	}
+	p, s, o, c := a.targetCall()
 	if p == nil || c == nil {
 		a.errMsg = "请先选择一个请求"
 		return
@@ -1662,10 +1678,21 @@ func (a *app) deleteCall() {
 		a.errMsg = "请先选择一个请求"
 		return
 	}
-	pid, cid := p.ID, c.ID
 	sid, oid := "", ""
 	if s != nil && o != nil {
 		sid, oid = s.ID, o.ID
+	}
+	a.deleteCallAt(p.ID, sid, oid, c.ID)
+}
+
+// deleteCallAt removes one sample by id, after confirmation. It does not move
+// the tree selection first, so cancelling the dialog cannot leave the selection
+// on a request whose body the editor does not hold (which would let a later
+// Ctrl+S overwrite it).
+func (a *app) deleteCallAt(pid, sid, oid, cid string) {
+	if pid == "" || cid == "" {
+		a.errMsg = "请先选择一个请求"
+		return
 	}
 	a.askConfirm("确定删除该请求？", "删除", func() {
 		var err error
@@ -2274,13 +2301,7 @@ func storeSaveResponse(st *store.Store, pid, sid, oid, cid string, saved *model.
 // buildSendRequest assembles the payload the transport sends: project headers,
 // sample headers, the method, content type, auth header and the editor body.
 func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error) {
-	p, _, _, c := a.locate()
-	if c == nil {
-		if key := a.activeTabKey(); key != "" {
-			a.pid, a.sid, a.oid, a.cid = splitKey(key)
-			p, _, _, c = a.locate()
-		}
-	}
+	p, _, _, c := a.targetCall()
 	if p == nil || c == nil {
 		return model.SendRequest{}, nil, fmt.Errorf("请先选择一个请求")
 	}
@@ -2577,7 +2598,7 @@ func (a *app) sendRequest() {
 			// Only show the response under the sample it was sent for; if the
 			// user switched while it was in flight, keep their current view and
 			// still save the result with the original sample.
-			sameSample := a.pid == pid && a.sid == sid && a.oid == oid && a.cid == cid
+			sameSample := a.responseSameSample(key, pid, sid, oid, cid)
 			if sameSample {
 				a.hasResp = true
 				a.resp = resp
@@ -3541,10 +3562,17 @@ func (a *app) deleteWorkspace() {
 		text += "\n" + note
 	}
 	a.askConfirm(text, "删除", func() {
+		// A request still in flight in this workspace must not write its
+		// response back once the workspace is gone: cancel it, and mark the old
+		// store closed so a response that already completed cannot recreate the
+		// file.
+		old := a.st
+		a.cancelSend()
 		if err := a.reg.Delete(a.info.ID); err != nil {
 			a.errMsg = "无法删除工作空间：" + err.Error()
 			return
 		}
+		old.Close()
 		a.st, a.info = a.reg.Active()
 		a.clearSelection()
 		a.reload()
