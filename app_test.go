@@ -1851,6 +1851,77 @@ func TestDeleteWorkspaceCancelsSendAndClosesStore(t *testing.T) {
 	}
 }
 
+// TestExportWorkspaceOmitsResponseBodies checks an exported workspace keeps the
+// response metadata but not its body, which now lives in a separate file.
+func TestExportWorkspaceOmitsResponseBodies(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	call, err := a.st.AddProjectCall(p.ID, "", model.Call{Title: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.reload()
+	a.persistResponse(p.ID, "", "", call.ID, model.SendResponse{Status: 200, StatusText: "OK", Body: "<secret/>"})
+
+	path := filepath.Join(t.TempDir(), "ws.json")
+	a.exportWorkspace(path)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "<secret/>") {
+		t.Fatal("export contains a response body")
+	}
+	var projects []model.Project
+	if err := json.Unmarshal(raw, &projects); err != nil {
+		t.Fatal(err)
+	}
+	resp := projects[0].Calls[0].Response
+	if resp == nil || resp.Status != 200 {
+		t.Fatalf("response metadata lost: %+v", resp)
+	}
+	if resp.Body != "" {
+		t.Fatalf("exported body = %q, want empty", resp.Body)
+	}
+}
+
+// TestTabCloseAndWorkspaceSwitchClearCaches checks sent previews and the binary
+// body cache are dropped when a tab closes and when the workspace changes.
+func TestTabCloseAndWorkspaceSwitchClearCaches(t *testing.T) {
+	a := newTestApp(t)
+	a.createProject("P")
+	a.reload()
+	p := a.projects[0]
+	c1, _ := a.st.AddProjectCall(p.ID, "", model.Call{Title: "c1"})
+	c2, _ := a.st.AddProjectCall(p.ID, "", model.Call{Title: "c2"})
+	a.reload()
+	a.openCall(p.ID, "", "", c1.ID)
+	a.openCall(p.ID, "", "", c2.ID)
+
+	k1 := callKey(p.ID, "", "", c1.ID)
+	a.sentPreviews[k1] = "sent"
+	a.binCachePath, a.binCacheData = "x", "big"
+	a.closeTabByKey(k1)
+	if _, ok := a.sentPreviews[k1]; ok {
+		t.Fatal("sentPreviews not cleared when a tab closed")
+	}
+	if a.binCacheData != "" {
+		t.Fatal("binCache not cleared when a tab closed")
+	}
+
+	a.sentPreviews[callKey(p.ID, "", "", c2.ID)] = "sent2"
+	a.binCachePath, a.binCacheData = "y", "big2"
+	a.clearSelection()
+	if len(a.sentPreviews) != 0 {
+		t.Fatalf("sentPreviews not cleared on workspace switch: %d", len(a.sentPreviews))
+	}
+	if a.binCacheData != "" {
+		t.Fatal("binCache not cleared on workspace switch")
+	}
+}
+
 // TestSendRequiresSelectedCall checks Send refuses when no request sample is
 // open, instead of sending the editor's previous payload.
 func TestSendRequiresSelectedCall(t *testing.T) {

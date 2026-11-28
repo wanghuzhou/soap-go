@@ -58,7 +58,7 @@ func TestUpdateCallResponsePersists(t *testing.T) {
 		t.Error("saved response shares its header map with the caller")
 	}
 
-	// Reload from disk: the response must be part of the workspace JSON.
+	// Reload from disk: the body must be loaded back from its sidecar file.
 	s2, err := New(path)
 	if err != nil {
 		t.Fatal(err)

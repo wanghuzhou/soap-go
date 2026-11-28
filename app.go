@@ -1321,6 +1321,8 @@ func (a *app) removeTabAt(i int) {
 	closingActive := i == a.active
 	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 	delete(a.drafts, key)
+	delete(a.sentPreviews, key)
+	a.clearBinaryCache()
 	if len(a.tabs) == 0 {
 		a.clearSelection()
 		return
@@ -1348,6 +1350,7 @@ func (a *app) closeTabsUnder(match func(key string) bool) {
 	for _, k := range a.tabs {
 		if match(k) {
 			delete(a.drafts, k)
+			delete(a.sentPreviews, k)
 			closed = true
 			continue
 		}
@@ -1356,6 +1359,7 @@ func (a *app) closeTabsUnder(match func(key string) bool) {
 	if !closed {
 		return
 	}
+	a.clearBinaryCache()
 	a.tabs = kept
 	if len(a.tabs) == 0 {
 		a.clearSelection()
@@ -2254,6 +2258,8 @@ func (a *app) clearSelection() {
 	a.tabs = nil
 	a.active = -1
 	a.drafts = map[string]*callDraft{}
+	a.sentPreviews = map[string]string{}
+	a.clearBinaryCache()
 }
 
 // persistResponse stores a sent response with its sample, so reopening it shows
@@ -2412,6 +2418,15 @@ func (a *app) readBinaryBody(path string) (string, error) {
 	a.binCachePath, a.binCacheSize, a.binCacheMod = path, info.Size(), info.ModTime()
 	a.binCacheData = string(data)
 	return a.binCacheData, nil
+}
+
+// clearBinaryCache drops the cached binary body, so an upload of up to 256 MB
+// does not stay resident after its tab is closed or the workspace changes.
+func (a *app) clearBinaryCache() {
+	a.binCachePath = ""
+	a.binCacheSize = 0
+	a.binCacheMod = time.Time{}
+	a.binCacheData = ""
 }
 
 // requestBodyType returns the effective body shape of the form, inferring it
@@ -3588,6 +3603,9 @@ func (a *app) exportWorkspace(path string) {
 			projects[i].Proxy = nil
 		}
 	}
+	// Response bodies now live in separate files beside the workspace; an export
+	// never bundles them, so clear each saved body before writing the JSON.
+	projects = stripResponseBodiesForExport(projects)
 	data, err := json.MarshalIndent(projects, "", "  ")
 	if err != nil {
 		a.errMsg = "无法导出：" + err.Error()
@@ -3598,6 +3616,35 @@ func (a *app) exportWorkspace(path string) {
 		return
 	}
 	a.setStatus("已导出工作空间：" + filepath.Base(path))
+}
+
+// stripResponseBodiesForExport clears every saved response's body, so an
+// exported workspace carries no response body. The metadata (status, headers,
+// size) is kept. projects must be a copy the caller owns.
+func stripResponseBodiesForExport(projects []model.Project) []model.Project {
+	clear := func(c *model.Call) {
+		if c.Response == nil || c.Response.Body == "" {
+			return
+		}
+		r := *c.Response
+		r.Body = ""
+		c.Response = &r
+	}
+	for pi := range projects {
+		p := &projects[pi]
+		for ci := range p.Calls {
+			clear(&p.Calls[ci])
+		}
+		for si := range p.Services {
+			for oi := range p.Services[si].Operations {
+				op := &p.Services[si].Operations[oi]
+				for ci := range op.Calls {
+					clear(&op.Calls[ci])
+				}
+			}
+		}
+	}
+	return projects
 }
 
 // importWorkspaceNamed imports with an explicit workspace name.

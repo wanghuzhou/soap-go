@@ -66,14 +66,20 @@ func New(path string) (*Store, error) {
 			return nil, err
 		}
 	}
+	// Response bodies live in their own files beside the workspace, not inside
+	// the JSON. Load them into memory, migrate any legacy inline body out to a
+	// file, and drop files whose request no longer exists.
+	migrated := s.hydrateResponseBodies()
 	// Older WSDL imports stored operations without any request sample. Opening
 	// such a project showed an empty editor, which looks like a failed import.
 	// Backfill one sample from the generated template and persist the fix.
-	if backfillWSDLCalls(s.projects) {
+	changed := backfillWSDLCalls(s.projects)
+	if changed || migrated {
 		if err := s.saveProjects(s.projects); err != nil {
 			return nil, err
 		}
 	}
+	s.gcResponseFiles()
 	return s, nil
 }
 
@@ -116,7 +122,153 @@ func NewID() string {
 // saveProjects persists the project list atomically. Callers either run before
 // the store is shared (New) or hold writeMu (commit).
 func (s *Store) saveProjects(projects []model.Project) error {
-	return fileutil.WriteJSONAtomic(s.path, projects, 0o644)
+	return fileutil.WriteJSONAtomic(s.path, s.serializeProjects(projects), 0o644)
+}
+
+// ---- response body files ----
+//
+// A saved response's body is stored in its own file beside the workspace JSON,
+// so projects.json stays small and cheap to rewrite. Only the metadata (status,
+// headers, size) lives in the JSON; the bytes live under
+// responses/<workspace>/<projectID>/<callID>.body. Bodies are also kept in
+// memory, so a caller that reads a SavedResponse sees Body populated.
+
+// responseRoot is the directory holding this workspace's response bodies.
+func (s *Store) responseRoot() string {
+	base := strings.TrimSuffix(filepath.Base(s.path), filepath.Ext(s.path))
+	return filepath.Join(filepath.Dir(s.path), "responses", base)
+}
+
+// responseFilePath is the body file for one call.
+func (s *Store) responseFilePath(projectID, callID string) string {
+	return filepath.Join(s.responseRoot(), projectID, callID+".body")
+}
+
+// writeResponseFile stores (or, for an empty body, removes) one call's body.
+func (s *Store) writeResponseFile(projectID, callID, body string) error {
+	path := s.responseFilePath(projectID, callID)
+	if body == "" {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return fileutil.WriteAtomic(path, []byte(body), 0o644)
+}
+
+// prepareResponse persists a response's body to its file and returns the copy
+// kept in memory (body included). A nil response removes the body file.
+func (s *Store) prepareResponse(projectID, callID string, resp *model.SavedResponse) (*model.SavedResponse, error) {
+	if resp == nil {
+		if err := s.writeResponseFile(projectID, callID, ""); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	if err := s.writeResponseFile(projectID, callID, resp.Body); err != nil {
+		return nil, err
+	}
+	return cloneSavedResponse(resp), nil
+}
+
+// forEachCall visits every call in the list, whether project-level or under a
+// service/operation, with its project id.
+func forEachCall(projects *[]model.Project, fn func(projectID string, c *model.Call)) {
+	list := *projects
+	for pi := range list {
+		pid := list[pi].ID
+		for ci := range list[pi].Calls {
+			fn(pid, &list[pi].Calls[ci])
+		}
+		for si := range list[pi].Services {
+			for oi := range list[pi].Services[si].Operations {
+				op := &list[pi].Services[si].Operations[oi]
+				for ci := range op.Calls {
+					fn(pid, &op.Calls[ci])
+				}
+			}
+		}
+	}
+}
+
+// serializeProjects returns a copy safe to write to disk: each response body
+// that has a file is blanked so the JSON keeps only metadata. A body with no
+// file (for example a migration that could not write) is kept inline, so it is
+// never lost.
+func (s *Store) serializeProjects(projects []model.Project) []model.Project {
+	out := cloneProjects(projects)
+	forEachCall(&out, func(pid string, c *model.Call) {
+		if c.Response == nil || c.Response.Body == "" {
+			return
+		}
+		if _, err := os.Stat(s.responseFilePath(pid, c.ID)); err == nil {
+			c.Response.Body = ""
+		}
+	})
+	return out
+}
+
+// hydrateResponseBodies fills each response's Body from its file. It also
+// migrates a legacy inline body out to a file, reporting whether it did.
+func (s *Store) hydrateResponseBodies() bool {
+	migrated := false
+	forEachCall(&s.projects, func(pid string, c *model.Call) {
+		r := c.Response
+		if r == nil {
+			return
+		}
+		if data, err := os.ReadFile(s.responseFilePath(pid, c.ID)); err == nil {
+			r.Body = string(data)
+			return
+		}
+		if r.Body != "" {
+			if err := s.writeResponseFile(pid, c.ID, r.Body); err == nil {
+				migrated = true
+			}
+		}
+	})
+	return migrated
+}
+
+// gcResponseFiles deletes body files whose call no longer exists, so deleting a
+// request or project does not leak large blobs. It only touches this
+// workspace's response dir.
+func (s *Store) gcResponseFiles() {
+	live := map[string]bool{}
+	forEachCall(&s.projects, func(pid string, c *model.Call) {
+		if c.Response != nil {
+			live[filepath.Join(pid, c.ID+".body")] = true
+		}
+	})
+	root := s.responseRoot()
+	projects, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, pe := range projects {
+		if !pe.IsDir() {
+			continue
+		}
+		pid := pe.Name()
+		files, err := os.ReadDir(filepath.Join(root, pid))
+		if err != nil {
+			continue
+		}
+		keep := false
+		for _, fe := range files {
+			if fe.IsDir() || live[filepath.Join(pid, fe.Name())] {
+				keep = true
+				continue
+			}
+			_ = os.Remove(filepath.Join(root, pid, fe.Name()))
+		}
+		if !keep {
+			_ = os.Remove(filepath.Join(root, pid))
+		}
+	}
 }
 
 // commit applies mutate to a deep copy, persists it, and only then swaps it
@@ -580,7 +732,11 @@ func (s *Store) UpdateCallResponse(projectID, serviceID, opID, callID string, re
 		op := &list[pi].Services[si].Operations[oi]
 		for ci := range op.Calls {
 			if op.Calls[ci].ID == callID {
-				op.Calls[ci].Response = cloneSavedResponse(resp)
+				saved, err := s.prepareResponse(projectID, callID, resp)
+				if err != nil {
+					return nil, err
+				}
+				op.Calls[ci].Response = saved
 				return list, nil
 			}
 		}
@@ -622,6 +778,19 @@ func (s *Store) DuplicateCall(projectID, serviceID, opID, callID string) (model.
 		out, op.Calls, copied = duplicateCall(op.Calls, callID)
 		if !copied {
 			return nil, ErrNotFound
+		}
+		// The copy has its own id, so give its response body its own file.
+		if out.Response != nil {
+			saved, err := s.prepareResponse(projectID, out.ID, out.Response)
+			if err != nil {
+				return nil, err
+			}
+			for ci := range op.Calls {
+				if op.Calls[ci].ID == out.ID {
+					op.Calls[ci].Response = saved
+				}
+			}
+			out.Response = cloneSavedResponse(saved)
 		}
 		return list, nil
 	})
@@ -851,7 +1020,11 @@ func (s *Store) UpdateProjectCallResponse(projectID, callID string, resp *model.
 		}
 		for ci := range list[i].Calls {
 			if list[i].Calls[ci].ID == callID {
-				list[i].Calls[ci].Response = cloneSavedResponse(resp)
+				saved, err := s.prepareResponse(projectID, callID, resp)
+				if err != nil {
+					return nil, err
+				}
+				list[i].Calls[ci].Response = saved
 				return list, nil
 			}
 		}
@@ -888,6 +1061,19 @@ func (s *Store) DuplicateProjectCall(projectID, callID string) (model.Call, erro
 		out, list[i].Calls, copied = duplicateCall(list[i].Calls, callID)
 		if !copied {
 			return nil, ErrNotFound
+		}
+		// The copy has its own id, so give its response body its own file.
+		if out.Response != nil {
+			saved, err := s.prepareResponse(projectID, out.ID, out.Response)
+			if err != nil {
+				return nil, err
+			}
+			for ci := range list[i].Calls {
+				if list[i].Calls[ci].ID == out.ID {
+					list[i].Calls[ci].Response = saved
+				}
+			}
+			out.Response = cloneSavedResponse(saved)
 		}
 		return list, nil
 	})
