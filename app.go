@@ -886,6 +886,9 @@ func (a *app) tabLimit() int {
 func (a *app) applyMaxTabsText() {
 	if v, err := strconv.Atoi(strings.TrimSpace(a.maxTabsText)); err == nil && v >= minTabLimit && v <= maxTabLimit {
 		a.maxTabs = v
+		// Enforce here, on the change, rather than inside the settings render:
+		// closing tabs is a mutation and must not run every frame.
+		a.enforceTabLimit("")
 	}
 }
 

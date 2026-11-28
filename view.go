@@ -49,23 +49,17 @@ func (a *app) view(c *ui.Context) {
 	// rest of the UI instead of the desktop's own menus.
 	c.SetMenuPresentation(ui.PopoverMenus)
 	a.syncEditorFont()
-	// Editor shortcuts: send and save.
-	c.OnWindowShortcut(ui.Ctrl, ui.KeyEnter, func() { a.sendRequest() })
-	c.OnWindowShortcut(ui.Ctrl, ui.KeyS, func() { a.saveCall() })
-	c.OnWindowShortcut(ui.Super, ui.KeyEnter, func() { a.sendRequest() })
-	c.OnWindowShortcut(ui.Super, ui.KeyS, func() { a.saveCall() })
-	c.OnWindowShortcut(ui.Ctrl|ui.Shift, ui.KeyF, func() { a.formatBody() })
-	c.OnWindowShortcut(ui.Super|ui.Shift, ui.KeyF, func() { a.formatBody() })
-	c.OnWindowShortcut(ui.Ctrl, ui.KeyK, func() { a.searchRef.SelectAll() })
-	c.OnWindowShortcut(ui.Super, ui.KeyK, func() { a.searchRef.SelectAll() })
-	// Tab switching and closing, as most editors have them.
-	c.OnWindowShortcut(ui.Ctrl, ui.KeyTab, func() { a.switchTab(1) })
-	c.OnWindowShortcut(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.switchTab(-1) })
-	// macOS-style tab switching, since Cmd+Tab belongs to the system.
-	c.OnWindowShortcut(ui.Super|ui.Shift, ui.KeyBracketRight, func() { a.switchTab(1) })
-	c.OnWindowShortcut(ui.Super|ui.Shift, ui.KeyBracketLeft, func() { a.switchTab(-1) })
-	c.OnWindowShortcut(ui.Ctrl, ui.KeyW, func() { a.closeActiveTab() })
-	c.OnWindowShortcut(ui.Super, ui.KeyW, func() { a.closeActiveTab() })
+	// Window-wide shortcuts, registered from the same table that the settings
+	// help renders, so the bindings and their documentation cannot drift apart.
+	for _, sc := range windowShortcuts {
+		sc := sc
+		if sc.run == nil {
+			continue
+		}
+		for _, b := range sc.bindings {
+			c.OnWindowShortcut(b.mods, b.key, func() { sc.run(a) })
+		}
+	}
 	t := c.Theme()
 	ui.Column(c).Fill().Background(t.Background).Children(func() {
 		a.topBar(c)
@@ -420,8 +414,10 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 	switch {
 	case selected:
 		row = row.Background(t.Accent.Alpha(0.14)).Radius(6)
-	case !editing && row.Hovered():
-		row = row.Background(t.SurfaceHover).Radius(6)
+	default:
+		if !editing {
+			row = hoverBg(row, t).Radius(6)
+		}
 	}
 	row = row.Children(func() {
 		if selected {
@@ -465,7 +461,9 @@ func (a *app) treeRow(c *ui.Context, it treeItem) {
 				a.renameFocused = true
 			} else if a.renameFocused {
 				// Clicking outside the tree commits the draft, like blur in an
-				// inline editor.
+				// inline editor. This is the one intended side effect in the tree
+				// render: in an immediate-mode UI a lost focus is only observable
+				// here, so the commit has to happen on this frame.
 				a.commitInlineRename(it)
 			}
 		} else {
@@ -746,11 +744,10 @@ func (a *app) tabStrip(c *ui.Context) {
 					Transition(ui.ElementTransition{Duration: 120 * time.Millisecond, Colors: true})
 				// The open request takes the accent color so it stands out among
 				// the tabs; the others stay quiet and only tint on hover.
-				switch {
-				case active:
+				if active {
 					tab = tab.Background(t.Accent.Alpha(0.20)).Radius(6)
-				case tab.Hovered():
-					tab = tab.Background(t.SurfaceHover).Radius(6)
+				} else {
+					tab = hoverBg(tab, t).Radius(6)
 				}
 				tab = tab.ContextMenu(func(m *ui.Menu) {
 					if m.Item("关闭当前标签页").Chosen() {
@@ -804,18 +801,7 @@ func (a *app) tabStrip(c *ui.Context) {
 								Tooltip("有未保存的修改")
 						}
 					})
-					closeBox := ui.Row(c).Width(24).Height(24).Center().Justify(ui.Center).Radius(12).
-						Cursor(ui.CursorPointer).Label("关闭标签").Focusable().
-						Transition(ui.ElementTransition{Duration: 100 * time.Millisecond, Colors: true})
-					closeHovered := closeBox.Hovered()
-					closeCol := t.TextMuted
-					if closeHovered {
-						closeBox = closeBox.Background(t.Danger.Alpha(0.20))
-						closeCol = t.Danger
-					}
-					closeBox.OnClick(func() { a.closeTab(i) }).Children(func() {
-						ui.Icon(c, iconClose).FontSize(a.us(10.5)).TextColor(closeCol)
-					})
+					a.closeIconButton(c, 24, "关闭标签", func() { a.closeTab(i) })
 				})
 			}
 			if len(a.tabs) == 0 {
@@ -1268,9 +1254,7 @@ func (a *app) fileFieldButton(c *ui.Context, i int) {
 	path := a.bodyFields[i].Value
 	btn := ui.ButtonBase(c).Grow(1).Padding(t.Space(1.5), t.Space(2.5)).Radius(t.Radius).
 		Border(1, t.Border).Justify(ui.Start).Label("选择文件").Tooltip(path)
-	if btn.Hovered() {
-		btn = btn.Background(t.SurfaceHover)
-	}
+	btn = hoverBg(btn, t)
 	btn.Children(func() {
 		label, col := "选择文件…", t.TextMuted
 		if strings.TrimSpace(path) != "" {
@@ -1819,9 +1803,7 @@ func (a *app) importOption(c *ui.Context, icon, title, desc string, onClick func
 	t := c.Theme()
 	row := ui.Row(c).Gap(12).AlignItems(ui.Center).Padding(12).Radius(9).
 		Border(1, t.Border).OnClick(onClick).Focusable().Label(title)
-	if row.Hovered() {
-		row = row.Background(t.SurfaceHover)
-	}
+	row = hoverBg(row, t)
 	row.Children(func() {
 		ui.Row(c).Width(34).Height(34).Center().Justify(ui.Center).
 			Background(t.Accent.Alpha(0.12)).Radius(8).Children(func() {
@@ -1978,18 +1960,33 @@ func (a *app) confirmModal(c *ui.Context) {
 
 // ---- chrome ----
 
-// shortcutHelp lists the window-wide keyboard shortcuts shown in settings.
-var shortcutHelp = []struct{ keys, desc string }{
-	{"Ctrl/Cmd + Enter", "发送当前请求"},
-	{"Ctrl/Cmd + S", "保存当前请求"},
-	{"Ctrl/Cmd + Shift + F", "格式化请求报文"},
-	{"Ctrl/Cmd + K", "聚焦左侧搜索框"},
-	{"Ctrl + Tab / Cmd + Shift + ]", "切换到下一个标签页"},
-	{"Ctrl + Shift + Tab / Cmd + Shift + [", "切换到上一个标签页"},
-	{"Ctrl/Cmd + W", "关闭当前标签页"},
-	{"Esc", "关闭弹窗或清空搜索"},
-	{"Tab / Shift+Tab", "在可聚焦控件间移动"},
-	{"Enter / Space", "激活当前聚焦的按钮"},
+// keyBinding is one registered key combination for a window shortcut.
+type keyBinding struct {
+	mods ui.Modifiers
+	key  ui.Key
+}
+
+// windowShortcut is one user-facing shortcut: the key text shown in settings,
+// the bindings that trigger it (Ctrl and Cmd variants), its description and the
+// action. Registering and documenting from this one table keeps them in step.
+type windowShortcut struct {
+	keys     string
+	bindings []keyBinding
+	desc     string
+	run      func(*app)
+}
+
+var windowShortcuts = []windowShortcut{
+	{"Ctrl/Cmd + Enter", []keyBinding{{ui.Ctrl, ui.KeyEnter}, {ui.Super, ui.KeyEnter}}, "发送当前请求", (*app).sendRequest},
+	{"Ctrl/Cmd + S", []keyBinding{{ui.Ctrl, ui.KeyS}, {ui.Super, ui.KeyS}}, "保存当前请求", (*app).saveCall},
+	{"Ctrl/Cmd + Shift + F", []keyBinding{{ui.Ctrl | ui.Shift, ui.KeyF}, {ui.Super | ui.Shift, ui.KeyF}}, "格式化请求报文", (*app).formatBody},
+	{"Ctrl/Cmd + K", []keyBinding{{ui.Ctrl, ui.KeyK}, {ui.Super, ui.KeyK}}, "聚焦左侧搜索框", func(a *app) { a.searchRef.SelectAll() }},
+	{"Ctrl + Tab / Cmd + Shift + ]", []keyBinding{{ui.Ctrl, ui.KeyTab}, {ui.Super | ui.Shift, ui.KeyBracketRight}}, "切换到下一个标签页", func(a *app) { a.switchTab(1) }},
+	{"Ctrl + Shift + Tab / Cmd + Shift + [", []keyBinding{{ui.Ctrl | ui.Shift, ui.KeyTab}, {ui.Super | ui.Shift, ui.KeyBracketLeft}}, "切换到上一个标签页", func(a *app) { a.switchTab(-1) }},
+	{"Ctrl/Cmd + W", []keyBinding{{ui.Ctrl, ui.KeyW}, {ui.Super, ui.KeyW}}, "关闭当前标签页", (*app).closeActiveTab},
+	{"Esc", nil, "关闭弹窗或清空搜索", nil},
+	{"Tab / Shift+Tab", nil, "在可聚焦控件间移动", nil},
+	{"Enter / Space", nil, "激活当前聚焦的按钮", nil},
 }
 
 // settingsModal is a two-pane settings window: a navigation list on the left
@@ -2201,7 +2198,6 @@ func (a *app) otherSettings(c *ui.Context) {
 				Grow(1).Label("更新源")
 		})
 	})
-	a.enforceTabLimit("")
 	if v, err := strconv.Atoi(strings.TrimSpace(a.maxTabsText)); err != nil || v < minTabLimit || v > maxTabLimit {
 		ui.Text(c, fmt.Sprintf("请输入 %d–%d 之间的整数。", minTabLimit, maxTabLimit)).
 			FontSize(a.us(10.5)).TextColor(t.Danger)
@@ -2265,7 +2261,7 @@ func (a *app) aboutSettings(c *ui.Context) {
 func (a *app) shortcutsSettings(c *ui.Context) {
 	t := c.Theme()
 	a.settingsCard(c, func() {
-		for i, s := range shortcutHelp {
+		for i, s := range windowShortcuts {
 			s := s
 			if i > 0 {
 				ui.Divider(c)
@@ -2323,13 +2319,21 @@ func (a *app) stepBtn(c *ui.Context, label string, enabled bool, onClick func())
 	if enabled {
 		col = t.Text
 		btn = btn.OnClick(onClick).Focusable().Label(label)
-		if btn.Hovered() {
-			btn = btn.Background(t.SurfaceHover)
-		}
+		btn = hoverBg(btn, t)
 	}
 	btn.Children(func() {
 		ui.Text(c, label).FontSize(a.us(14)).TextColor(col)
 	})
+}
+
+// hoverBg gives a control the standard hover face when the pointer is over it,
+// so the many small buttons share one hover style instead of each repeating the
+// same if-block.
+func hoverBg(el ui.Element, t *ui.Theme) ui.Element {
+	if el.Hovered() {
+		return el.Background(t.SurfaceHover)
+	}
+	return el
 }
 
 // segment is one choice of a small segmented control.
@@ -2367,8 +2371,8 @@ func (a *app) splitOption(c *ui.Context, mode int, icon *ui.SVG, tip string) {
 		OnClick(func() { a.splitSide = mode; a.saveUIState() }).Tooltip(tip).Focusable().Label(tip)
 	if active {
 		btn = btn.Background(t.SurfacePressed)
-	} else if btn.Hovered() {
-		btn = btn.Background(t.SurfaceHover)
+	} else {
+		btn = hoverBg(btn, t)
 	}
 	btn.Children(func() {
 		col := t.TextMuted
@@ -2383,9 +2387,7 @@ func (a *app) iconBtn(c *ui.Context, icon *ui.SVG, tip string, onClick func()) {
 	t := c.Theme()
 	btn := ui.Row(c).Width(26).Height(24).Center().Justify(ui.Center).Radius(6).
 		OnClick(onClick).Tooltip(tip).Focusable().Label(tip)
-	if btn.Hovered() {
-		btn = btn.Background(t.SurfaceHover)
-	}
+	btn = hoverBg(btn, t)
 	btn.Children(func() {
 		ui.Icon(c, icon).FontSize(a.us(13)).TextColor(t.TextMuted)
 	})
@@ -2416,9 +2418,7 @@ func (a *app) iconMenuBtn(c *ui.Context, icon *ui.SVG, tip string, build func(m 
 	t := c.Theme()
 	btn := ui.ButtonBase(c).Width(26).Height(24).Center().Justify(ui.Center).Radius(6).
 		BorderWidth(0).Background(ui.Transparent).Label(tip).Tooltip(tip)
-	if btn.Hovered() {
-		btn = btn.Background(t.SurfaceHover)
-	}
+	btn = hoverBg(btn, t)
 	btn.Children(func() {
 		ui.Icon(c, icon).FontSize(a.us(13)).TextColor(t.TextMuted)
 	})
@@ -2430,9 +2430,7 @@ func (a *app) iconMenuBtn(c *ui.Context, icon *ui.SVG, tip string, build func(m 
 func (a *app) flatButton(c *ui.Context, label string, onClick func()) {
 	t := c.Theme()
 	btn := ui.ButtonBase(c).Padding(2, 7).Radius(6)
-	if btn.Hovered() {
-		btn = btn.Background(t.SurfaceHover)
-	}
+	btn = hoverBg(btn, t)
 	btn.Children(func() {
 		ui.Text(c, label).FontSize(a.us(11)).TextColor(t.Text)
 	})
@@ -2446,9 +2444,7 @@ func (a *app) flatButton(c *ui.Context, label string, onClick func()) {
 func (a *app) plainButton(c *ui.Context, label string) bool {
 	t := c.Theme()
 	btn := ui.ButtonBase(c).Padding(4, 10).Radius(6).BorderWidth(0)
-	if btn.Hovered() {
-		btn = btn.Background(t.SurfaceHover)
-	}
+	btn = hoverBg(btn, t)
 	btn.Children(func() {
 		ui.Text(c, label).FontSize(a.us(11.5)).TextColor(t.Text)
 	})
@@ -2466,9 +2462,7 @@ func (a *app) copyIcon(c *ui.Context, copied string, text func() string) ui.Elem
 			mygo.Clipboard.WriteText(text())
 			a.setStatus(copied)
 		})
-	if btn.Hovered() {
-		btn = btn.Background(t.SurfaceHover)
-	}
+	btn = hoverBg(btn, t)
 	return btn.Children(func() {
 		ui.Icon(c, iconCopy).FontSize(a.us(13)).TextColor(t.TextMuted)
 	})

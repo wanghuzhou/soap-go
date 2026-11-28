@@ -1239,8 +1239,11 @@ func TestTabSwitchAndClose(t *testing.T) {
 // switching and closing keys.
 func TestShortcutHelpListsTabKeys(t *testing.T) {
 	var all strings.Builder
-	for _, s := range shortcutHelp {
+	for _, s := range windowShortcuts {
 		all.WriteString(s.keys + " " + s.desc + "\n")
+		if s.run != nil && len(s.bindings) == 0 {
+			t.Fatalf("shortcut %q has an action but no binding", s.keys)
+		}
 	}
 	for _, want := range []string{"Ctrl + Tab", "Ctrl + Shift + Tab", "Ctrl/Cmd + W"} {
 		if !strings.Contains(all.String(), want) {
