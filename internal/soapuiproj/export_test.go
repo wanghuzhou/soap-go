@@ -96,6 +96,39 @@ func TestMarshalEscapedBody(t *testing.T) {
 	}
 }
 
+// TestMarshalTestStepAction checks a request test step's action is exported (it
+// used to be dropped silently) and round-trips through Parse.
+func TestMarshalTestStepAction(t *testing.T) {
+	orig := model.Project{
+		Name:   "ts",
+		Source: "soapui",
+		TestSuites: []model.TestSuite{{
+			Name: "suite",
+			TestCases: []model.TestCase{{
+				Name: "case",
+				Steps: []model.TestStep{{
+					Name: "step", Type: "request",
+					Endpoint: "http://x/soap", Action: "urn:step", Request: "<r/>",
+				}},
+			}},
+		}},
+	}
+	data, err := Marshal(orig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `action="urn:step"`) {
+		t.Fatalf("exported test step lost its action:\n%s", data)
+	}
+	got, err := Parse(data)
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	if a := got.TestSuites[0].TestCases[0].Steps[0].Action; a != "urn:step" {
+		t.Fatalf("round-tripped action = %q", a)
+	}
+}
+
 func TestMarshalRefusesNative(t *testing.T) {
 	if _, err := Marshal(model.Project{Name: "n", Source: "native"}); err == nil {
 		t.Fatal("Marshal must refuse a native project")

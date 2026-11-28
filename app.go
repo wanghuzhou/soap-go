@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"mime"
@@ -28,8 +27,10 @@ import (
 	"soapgo/internal/httpfile"
 	"soapgo/internal/model"
 	"soapgo/internal/openapi"
+	"soapgo/internal/queryparams"
 	"soapgo/internal/soapuiproj"
 	"soapgo/internal/store"
+	"soapgo/internal/textfmt"
 	"soapgo/internal/transport"
 	"soapgo/internal/updatecheck"
 	"soapgo/internal/workspace"
@@ -45,10 +46,7 @@ type headerRow struct {
 
 // queryRow is one editable query-string parameter. The rows are derived from
 // and written back to the endpoint URL, so they need no separate persistence.
-type queryRow struct {
-	Key   string
-	Value string
-}
+type queryRow = queryparams.Row
 
 // bodyField is one editable name/value pair of a urlencoded or multipart body.
 // Type is "" or "text" for a text value, and "file" when Value names a file to
@@ -1161,7 +1159,7 @@ func (a *app) loadCallIntoForm(c *model.Call, defaultKind string) {
 	a.xmlEd.Buffer.Reset(body)
 	a.xmlEd.Buffer.SetLanguage(a.editorLanguage(body))
 	a.auth = authFormOf(c.Auth)
-	a.queryRows = parseQueryRows(a.endpoint)
+	a.queryRows = queryparams.Parse(a.endpoint)
 	a.querySrc = a.endpoint
 	a.savedSnapshot = body
 	a.savedHeaders = append([]headerRow(nil), a.headers...)
@@ -2327,22 +2325,6 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 	}
 	method := model.EffectiveMethod(kind, a.method)
 
-	hdrs := map[string]string{}
-	for _, h := range p.Headers {
-		if h.Name != "" {
-			hdrs[h.Name] = h.Value
-		}
-	}
-	for _, h := range a.headers {
-		if h.Name != "" {
-			hdrs[h.Name] = h.Value
-		}
-	}
-	if kind == model.KindSOAP {
-		if a.action != "" {
-			hdrs["SOAPAction"] = a.action
-		}
-	}
 	body, contentType, filePath := "", "", ""
 	if kind == model.KindHTTP && model.MethodHasBody(method) && a.requestBodyType(kind) == model.BodyBinary {
 		// Leave the read to the sending goroutine: only the path travels here.
@@ -2362,16 +2344,9 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 			return model.SendRequest{}, nil, err
 		}
 	}
-	// Only send a Content-Type when the request actually has a body (or is
-	// SOAP); a bodyless GET must not carry the default JSON type.
-	if contentType != "" {
-		hdrs["Content-Type"] = contentType
-	}
-	// The authentication page wins over a hand-written Authorization header,
-	// which the panel's hint tells the user.
-	if h := a.auth.modelAuth().Authorization(); h != "" {
-		hdrs["Authorization"] = h
-	}
+	// The one merged header set shared by send, preview and curl. A bodyless GET
+	// carries no Content-Type because contentType is empty.
+	hdrs := a.mergedRequestHeaders(p.Headers, kind, a.action, contentType)
 	headerList := make([]model.Header, 0, len(hdrs))
 	for k, v := range hdrs {
 		headerList = append(headerList, model.Header{Name: k, Value: v})
@@ -2395,6 +2370,34 @@ func (a *app) buildSendRequest() (model.SendRequest, *model.ProxySettings, error
 		proxy = p.Proxy
 	}
 	return req, proxy, nil
+}
+
+// mergedRequestHeaders merges the project default headers and the sample's own
+// headers (sample wins on a name clash), then adds the SOAPAction, the body's
+// Content-Type and the authentication header. It is the single place the send,
+// the request preview and curl build their header set, so the three agree.
+func (a *app) mergedRequestHeaders(projHeaders []model.Header, kind, action, contentType string) map[string]string {
+	hdrs := map[string]string{}
+	for _, h := range projHeaders {
+		if h.Name != "" {
+			hdrs[h.Name] = h.Value
+		}
+	}
+	for _, h := range a.headers {
+		if h.Name != "" {
+			hdrs[h.Name] = h.Value
+		}
+	}
+	if kind == model.KindSOAP && action != "" {
+		hdrs["SOAPAction"] = action
+	}
+	if contentType != "" {
+		hdrs["Content-Type"] = contentType
+	}
+	if h := a.auth.modelAuth().Authorization(); h != "" {
+		hdrs["Authorization"] = h
+	}
+	return hdrs
 }
 
 // readBinaryBody reads a binary request body, caching the last file read so the
@@ -2762,9 +2765,9 @@ func (a *app) responseText() string {
 		return headerLines(a.resp.Headers)
 	default: // 格式化
 		if a.responseIsJSON() {
-			return prettyJSON(a.resp.Body)
+			return textfmt.PrettyJSON(a.resp.Body)
 		}
-		return prettyXML(a.resp.Body)
+		return textfmt.PrettyXML(a.resp.Body)
 	}
 }
 
@@ -2857,21 +2860,13 @@ func requestPreview(a *app) string {
 		body = a.xmlEd.Buffer.String()
 		contentType = strings.TrimSpace(a.contentType)
 	}
-	hdrs := map[string]string{}
-	for _, h := range a.projHeaders {
-		hdrs[h.Name] = h.Value
-	}
-	for _, h := range a.headers {
-		hdrs[h.Name] = h.Value
-	}
-	if kind == model.KindSOAP && a.action != "" {
-		hdrs["SOAPAction"] = a.action
-	}
-	if contentType != "" {
-		hdrs["Content-Type"] = contentType
-	}
-	if h := a.auth.modelAuth().Authorization(); h != "" {
-		hdrs["Authorization"] = h
+	hdrs := a.mergedRequestHeaders(a.projHeaders, kind, a.action, contentType)
+	if a.maskSecrets {
+		for k := range hdrs {
+			if isSensitiveName(k) {
+				hdrs[k] = "••••••"
+			}
+		}
 	}
 	var b strings.Builder
 	b.WriteString(method + " " + a.endpoint + " HTTP/1.1\n")
@@ -2885,7 +2880,7 @@ func requestPreview(a *app) string {
 // otherwise XML.
 func (a *app) formatBody() {
 	if a.isJSONRequest() {
-		out, err := formatJSON(a.xmlEd.Buffer.String())
+		out, err := textfmt.FormatJSON(a.xmlEd.Buffer.String())
 		if err != nil {
 			a.errMsg = "无法格式化：" + err.Error()
 			return
@@ -2893,7 +2888,7 @@ func (a *app) formatBody() {
 		a.xmlEd.Buffer.Reset(out)
 		return
 	}
-	out, err := formatXML(a.xmlEd.Buffer.String())
+	out, err := textfmt.FormatXML(a.xmlEd.Buffer.String())
 	if err != nil {
 		a.errMsg = "无法格式化：" + err.Error()
 		return
@@ -2905,7 +2900,7 @@ func (a *app) formatBody() {
 // otherwise XML.
 func (a *app) minifyBody() {
 	if a.isJSONRequest() {
-		out, err := minifyJSON(a.xmlEd.Buffer.String())
+		out, err := textfmt.MinifyJSON(a.xmlEd.Buffer.String())
 		if err != nil {
 			a.errMsg = "无法压缩：" + err.Error()
 			return
@@ -2913,23 +2908,12 @@ func (a *app) minifyBody() {
 		a.xmlEd.Buffer.Reset(out)
 		return
 	}
-	toks, err := xmlTokenize(strings.TrimSpace(a.xmlEd.Buffer.String()))
+	out, err := textfmt.MinifyXML(a.xmlEd.Buffer.String())
 	if err != nil {
 		a.errMsg = "无法压缩：" + err.Error()
 		return
 	}
-	var b strings.Builder
-	for _, tk := range toks {
-		if tk.kind == 't' {
-			if strings.TrimSpace(tk.raw) == "" {
-				continue // structural whitespace only
-			}
-			b.WriteString(tk.raw) // keep the text value's own spaces
-			continue
-		}
-		b.WriteString(strings.TrimSpace(tk.raw))
-	}
-	a.xmlEd.Buffer.Reset(b.String())
+	a.xmlEd.Buffer.Reset(out)
 }
 
 // copyCurl puts an equivalent curl command on the clipboard.
@@ -2960,49 +2944,33 @@ func (a *app) curlCommand() (string, error) {
 			body = a.xmlEd.Buffer.String()
 			contentType = strings.TrimSpace(a.contentType)
 		}
-	}
-	authHeader := a.auth.modelAuth().Authorization()
-	// Copy the address the request actually goes to, so a relative endpoint
-	// carries the project host it is joined to.
-	url := model.JoinProjectURL(a.selectedProjectHost(), a.endpoint)
-	var b strings.Builder
-	b.WriteString("curl -X " + method + " " + shellQuote(url))
-	for _, h := range a.projHeaders {
-		if authHeader != "" && strings.EqualFold(strings.TrimSpace(h.Name), "Authorization") {
-			continue
-		}
-		b.WriteString(" \\\n  -H " + shellQuote(h.Name+": "+h.Value))
-	}
-	for _, h := range a.headers {
-		// The auth page's header replaces a hand-written Authorization, so do
-		// not send both.
-		if authHeader != "" && strings.EqualFold(strings.TrimSpace(h.Name), "Authorization") {
-			continue
-		}
-		b.WriteString(" \\\n  -H " + shellQuote(h.Name+": "+h.Value))
-	}
-	if kind == model.KindSOAP && a.action != "" {
-		b.WriteString(" \\\n  -H " + shellQuote("SOAPAction: "+a.action))
-	}
-	if authHeader != "" {
-		b.WriteString(" \\\n  -H " + shellQuote("Authorization: "+authHeader))
-	}
-	if binary {
-		// curl reads the file itself; the command stays short and pasteable.
-		path := strings.TrimSpace(a.bodyFile)
-		if path == "" {
+	} else if binary {
+		// Validate the path here so a missing file fails before anything is built.
+		if strings.TrimSpace(a.bodyFile) == "" {
 			return "", fmt.Errorf("请选择要上传的文件")
 		}
-		if contentType == "" {
-			contentType = strings.TrimSpace(a.contentType)
-		}
+		contentType = strings.TrimSpace(a.contentType)
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
-		b.WriteString(" \\\n  --data-binary " + shellQuote("@"+path))
 	}
-	if contentType != "" {
-		b.WriteString(" \\\n  -H " + shellQuote("Content-Type: "+contentType))
+	// Copy the address the request actually goes to, so a relative endpoint
+	// carries the project host it is joined to.
+	url := model.JoinProjectURL(a.selectedProjectHost(), a.endpoint)
+	hdrs := a.mergedRequestHeaders(a.projHeaders, kind, a.action, contentType)
+	var b strings.Builder
+	b.WriteString("curl -X " + method + " " + shellQuote(url))
+	keys := make([]string, 0, len(hdrs))
+	for k := range hdrs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		b.WriteString(" \\\n  -H " + shellQuote(k+": "+hdrs[k]))
+	}
+	if binary {
+		// curl reads the file itself; the command stays short and pasteable.
+		b.WriteString(" \\\n  --data-binary " + shellQuote("@"+strings.TrimSpace(a.bodyFile)))
 	}
 	switch {
 	case multipart:
@@ -3723,249 +3691,4 @@ func humanSize(n int) string {
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// xmlTok is one lexical token of an XML document, with its original bytes.
-type xmlTok struct {
-	kind byte   // 's' start, 'e' end, 'x' self-closing, 't' text, 'q' comment/CDATA/PI/directive
-	raw  string // the token exactly as written
-}
-
-// xmlTokenize splits a document into tokens with encoding/xml's tokenizer, but
-// keeps each token's original bytes (via Decoder.InputOffset), so namespace
-// prefixes, attribute quoting, entity references and CDATA sections survive.
-// A regex cannot tokenize XML correctly: a ">" may sit inside an attribute
-// value, and "<" inside CDATA or a comment.
-func xmlTokenize(s string) ([]xmlTok, error) {
-	s = strings.TrimPrefix(s, "\ufeff")
-	dec := xml.NewDecoder(strings.NewReader(s))
-	dec.Strict = false
-	var toks []xmlTok
-	prev := int64(0)
-	for {
-		t, err := dec.RawToken()
-		if err == io.EOF {
-			return toks, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		end := dec.InputOffset()
-		raw := s[prev:end]
-		prev = end
-		switch t.(type) {
-		case xml.StartElement:
-			if strings.HasSuffix(strings.TrimSpace(raw), "/>") {
-				toks = append(toks, xmlTok{'x', raw})
-			} else {
-				toks = append(toks, xmlTok{'s', raw})
-			}
-		case xml.EndElement:
-			if strings.TrimSpace(raw) == "" {
-				continue // synthetic end tag of a self-closing element
-			}
-			toks = append(toks, xmlTok{'e', raw})
-		case xml.CharData:
-			if strings.HasPrefix(strings.TrimSpace(raw), "<![CDATA[") {
-				toks = append(toks, xmlTok{'q', raw})
-			} else {
-				toks = append(toks, xmlTok{'t', raw})
-			}
-		default: // xml.Comment, xml.ProcInst, xml.Directive
-			toks = append(toks, xmlTok{'q', raw})
-		}
-	}
-}
-
-// formatXML re-indents an XML document while keeping every tag, namespace
-// prefix, attribute and CDATA section as written. An element whose only content
-// is text stays on one line (`<a>test</a>`), and an empty `<a></a>` keeps that
-// form; a source `<b/>` stays self-closing.
-func formatXML(s string) (string, error) {
-	toks, err := xmlTokenize(strings.TrimSpace(s))
-	if err != nil {
-		return "", err
-	}
-	if len(toks) == 0 {
-		return s, nil
-	}
-	var b strings.Builder
-	depth := 0
-	indent := func() { b.WriteString(strings.Repeat("  ", depth)) }
-	for i := 0; i < len(toks); i++ {
-		tk := toks[i]
-		raw := strings.TrimSpace(tk.raw)
-		if tk.kind == 's' {
-			// Look ahead past structural whitespace: an empty element or an
-			// element with only inline content (text/CDATA/comment) is one line.
-			j := i + 1
-			var inline strings.Builder
-			for j < len(toks) {
-				n := toks[j]
-				if n.kind == 't' && strings.TrimSpace(n.raw) == "" {
-					j++
-					continue
-				}
-				if isInlineXMLToken(n) {
-					inline.WriteString(n.raw)
-					j++
-					continue
-				}
-				break
-			}
-			if j < len(toks) && toks[j].kind == 'e' {
-				indent()
-				b.WriteString(raw)
-				b.WriteString(inline.String())
-				b.WriteString(strings.TrimSpace(toks[j].raw))
-				b.WriteString("\n")
-				i = j
-				continue
-			}
-			indent()
-			b.WriteString(raw)
-			b.WriteString("\n")
-			depth++
-			continue
-		}
-		if raw == "" {
-			continue
-		}
-		if tk.kind == 'e' {
-			depth--
-			if depth < 0 {
-				depth = 0
-			}
-		}
-		indent()
-		b.WriteString(raw)
-		b.WriteString("\n")
-	}
-	return strings.TrimRight(b.String(), "\n"), nil
-}
-
-// isInlineXMLToken reports whether a token is content that may sit inside an
-// otherwise empty element on one line: text, a CDATA section or a comment.
-func isInlineXMLToken(tk xmlTok) bool {
-	switch tk.kind {
-	case 't':
-		return strings.TrimSpace(tk.raw) != ""
-	case 'q':
-		r := strings.TrimSpace(tk.raw)
-		return strings.HasPrefix(r, "<![CDATA[") || strings.HasPrefix(r, "<!--")
-	}
-	return false
-}
-
-// prettyXML formats a response for display, leaving malformed bodies as-is.
-func prettyXML(s string) string {
-	out, err := formatXML(s)
-	if err != nil {
-		return s
-	}
-	return out
-}
-
-// prettyJSON pretty-prints a JSON body, leaving it unchanged when it is not
-// valid JSON.
-func prettyJSON(s string) string {
-	out, err := formatJSON(s)
-	if err != nil {
-		return s
-	}
-	return out
-}
-
-// formatJSON pretty-prints a JSON body with two-space indentation.
-func formatJSON(s string) (string, error) {
-	trimmed := strings.TrimSpace(s)
-	if trimmed == "" {
-		return s, nil
-	}
-	var buf bytes.Buffer
-	if err := json.Indent(&buf, []byte(trimmed), "", "  "); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
-}
-
-// minifyJSON removes insignificant whitespace from a JSON body.
-func minifyJSON(s string) (string, error) {
-	trimmed := strings.TrimSpace(s)
-	if trimmed == "" {
-		return s, nil
-	}
-	var buf bytes.Buffer
-	if err := json.Compact(&buf, []byte(trimmed)); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
-}
-
-// parseQueryRows splits a URL's query string into editable rows, preserving
-// order and duplicates. The values are URL-decoded.
-func parseQueryRows(rawURL string) []queryRow {
-	_, query, _ := splitURL(rawURL)
-	if query == "" {
-		return nil
-	}
-	var rows []queryRow
-	for _, pair := range strings.Split(query, "&") {
-		if pair == "" {
-			continue
-		}
-		key, val := pair, ""
-		if i := strings.IndexByte(pair, '='); i >= 0 {
-			key, val = pair[:i], pair[i+1:]
-		}
-		k, err := url.QueryUnescape(key)
-		if err != nil {
-			k = key
-		}
-		v, err := url.QueryUnescape(val)
-		if err != nil {
-			v = val
-		}
-		rows = append(rows, queryRow{Key: k, Value: v})
-	}
-	return rows
-}
-
-// buildQueryURL rewrites rawURL's query string from rows, keeping the path and
-// the fragment untouched. Rows with an empty key and value are dropped.
-func buildQueryURL(rawURL string, rows []queryRow) string {
-	base, _, frag := splitURL(rawURL)
-	var parts []string
-	for _, r := range rows {
-		if r.Key == "" && r.Value == "" {
-			continue
-		}
-		part := url.QueryEscape(r.Key)
-		if r.Value != "" {
-			part += "=" + url.QueryEscape(r.Value)
-		}
-		parts = append(parts, part)
-	}
-	out := base
-	if len(parts) > 0 {
-		out += "?" + strings.Join(parts, "&")
-	}
-	if frag != "" {
-		out += "#" + frag
-	}
-	return out
-}
-
-// splitURL returns the URL without its query, the query, and the fragment.
-func splitURL(rawURL string) (base, query, fragment string) {
-	rest := rawURL
-	if i := strings.IndexByte(rest, '#'); i >= 0 {
-		fragment = rest[i+1:]
-		rest = rest[:i]
-	}
-	if i := strings.IndexByte(rest, '?'); i >= 0 {
-		query = rest[i+1:]
-		rest = rest[:i]
-	}
-	return rest, query, fragment
 }

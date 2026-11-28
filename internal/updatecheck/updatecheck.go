@@ -164,18 +164,10 @@ func parseURL(raw string) (*url.URL, error) {
 	if raw == "" {
 		return nil, errors.New("更新源地址为空")
 	}
-	u, err := url.Parse(raw)
+	u, err := model.ParseHTTPURL(raw)
 	if err != nil {
 		return nil, fmt.Errorf("更新源地址无效：%w", err)
 	}
-	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return nil, fmt.Errorf("更新源仅支持 http/https，当前为 %q", u.Scheme)
-	}
-	if u.Host == "" || u.Hostname() == "" {
-		return nil, errors.New("更新源地址缺少主机名")
-	}
-	u.Scheme = scheme
 	return u, nil
 }
 

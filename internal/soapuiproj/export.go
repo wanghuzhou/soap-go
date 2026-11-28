@@ -1,13 +1,114 @@
 package soapuiproj
 
 import (
-	"bytes"
 	"encoding/xml"
 	"fmt"
 	"strings"
 
 	"soapgo/internal/model"
 )
+
+// The exporter builds a SoapUI-compatible document with encoding/xml, so the
+// escaping and structure come from the standard library rather than hand-written
+// strings. Element names keep the "con:" prefix SoapUI writes; the prefix is
+// declared on the root with a literal xmlns:con attribute.
+
+// xmlEmpty is an empty element such as <con:settings/>.
+type xmlEmpty struct{}
+
+type xmlExportProject struct {
+	XMLName       xml.Name             `xml:"con:soapui-project"`
+	XmlnsCon      string               `xml:"xmlns:con,attr"`
+	ID            string               `xml:"id,attr,omitempty"`
+	Name          string               `xml:"name,attr"`
+	SoapUIVersion string               `xml:"soapui-version,attr"`
+	Settings      xmlEmpty             `xml:"con:settings"`
+	Interfaces    []xmlExportInterface `xml:"con:interface"`
+	TestSuites    []xmlExportTestSuite `xml:"con:testSuite"`
+	Properties    xmlEmpty             `xml:"con:properties"`
+}
+
+type xmlExportInterface struct {
+	XMLName     xml.Name             `xml:"con:interface"`
+	XmlnsXsi    string               `xml:"xmlns:xsi,attr"`
+	XsiType     string               `xml:"xsi:type,attr"`
+	Name        string               `xml:"name,attr"`
+	Type        string               `xml:"type,attr"`
+	SoapVersion string               `xml:"soapVersion,attr"`
+	DefCache    xmlExportDefCache    `xml:"con:definitionCache"`
+	Endpoints   xmlExportEndpoints   `xml:"con:endpoints"`
+	Operations  []xmlExportOperation `xml:"con:operation"`
+}
+
+type xmlExportDefCache struct {
+	XMLName  xml.Name `xml:"con:definitionCache"`
+	Type     string   `xml:"type,attr"`
+	RootPart string   `xml:"rootPart,attr,omitempty"`
+}
+
+type xmlExportEndpoints struct {
+	XMLName   xml.Name `xml:"con:endpoints"`
+	Endpoints []string `xml:"con:endpoint"`
+}
+
+type xmlExportOperation struct {
+	XMLName  xml.Name        `xml:"con:operation"`
+	Name     string          `xml:"name,attr"`
+	Action   string          `xml:"action,attr"`
+	Type     string          `xml:"type,attr"`
+	Settings xmlEmpty        `xml:"con:settings"`
+	Calls    []xmlExportCall `xml:"con:call"`
+}
+
+type xmlExportCall struct {
+	XMLName   xml.Name      `xml:"con:call"`
+	ID        string        `xml:"id,attr"`
+	Name      string        `xml:"name,attr"`
+	Settings  xmlEmpty      `xml:"con:settings"`
+	Endpoint  string        `xml:"con:endpoint,omitempty"`
+	Request   xmlExportBody `xml:"con:request"`
+	WsaConfig *xmlExportWsa `xml:"con:wsaConfig,omitempty"`
+}
+
+type xmlExportWsa struct {
+	Action string `xml:"action,attr"`
+}
+
+// xmlExportBody is the request payload: CDATA when the body has no "]]>", else
+// escaped character data (a "]]>" cannot appear inside a CDATA section).
+type xmlExportBody struct {
+	CDATA string `xml:",cdata"`
+	Text  string `xml:",chardata"`
+}
+
+type xmlExportTestSuite struct {
+	XMLName   xml.Name            `xml:"con:testSuite"`
+	ID        string              `xml:"id,attr"`
+	Name      string              `xml:"name,attr"`
+	TestCases []xmlExportTestCase `xml:"con:testCase"`
+}
+
+type xmlExportTestCase struct {
+	Name  string              `xml:"name,attr"`
+	Steps []xmlExportTestStep `xml:"con:testStep"`
+}
+
+type xmlExportTestStep struct {
+	Type   string          `xml:"type,attr"`
+	Name   string          `xml:"name,attr"`
+	Config xmlExportConfig `xml:"con:config"`
+}
+
+type xmlExportConfig struct {
+	Request xmlExportConfigReq `xml:"con:request"`
+}
+
+type xmlExportConfigReq struct {
+	Action   string `xml:"action,attr,omitempty"`
+	Endpoint string `xml:"con:endpoint,omitempty"`
+	CDATA    string `xml:",cdata"`
+	Text     string `xml:",chardata"`
+}
 
 // Marshal serialises a model.Project back into a SoapUI-compatible
 // soapui-project XML document. The output is designed to round-trip through
@@ -19,29 +120,113 @@ func Marshal(p model.Project) ([]byte, error) {
 	if !p.CanExportSoapUI() {
 		return nil, fmt.Errorf("普通 HTTP 项目不支持导出 SoapUI XML")
 	}
-	var b bytes.Buffer
-	b.WriteString(xml.Header)
-
-	projName := p.Name
-	if projName == "" {
-		projName = "soap-web-project"
+	out := xmlExportProject{
+		XmlnsCon:      "http://eviware.com/soapui/config",
+		ID:            projectID(p),
+		Name:          nameOr(p.Name, "soap-web-project"),
+		SoapUIVersion: "5.7.0",
 	}
-
-	// Root element with the con namespace.
-	fmt.Fprintf(&b, `<con:soapui-project id="%s" name="%s" soapui-version="5.7.0" xmlns:con="http://eviware.com/soapui/config">`+"\n",
-		xmlAttr(projectID(p)), xmlAttr(projName))
-	b.WriteString("  <con:settings/>\n")
-
 	for _, svc := range p.Services {
-		writeInterface(&b, svc)
+		out.Interfaces = append(out.Interfaces, exportInterface(svc))
 	}
 	for _, ts := range p.TestSuites {
-		writeTestSuite(&b, ts)
+		out.TestSuites = append(out.TestSuites, exportTestSuite(ts))
 	}
+	body, err := xml.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(xml.Header), body...), nil
+}
 
-	b.WriteString("  <con:properties/>\n")
-	b.WriteString("</con:soapui-project>\n")
-	return b.Bytes(), nil
+func exportInterface(svc model.Service) xmlExportInterface {
+	xi := xmlExportInterface{
+		XmlnsXsi:    "http://www.w3.org/2001/XMLSchema-instance",
+		XsiType:     "con:WsdlInterface",
+		Name:        svc.Name,
+		Type:        "wsdl",
+		SoapVersion: "1_1",
+		DefCache:    xmlExportDefCache{Type: "TEXT", RootPart: svc.Wsdl},
+	}
+	seenEP := map[string]bool{}
+	addEP := func(ep string) {
+		ep = strings.TrimSpace(ep)
+		if ep == "" || seenEP[ep] {
+			return
+		}
+		seenEP[ep] = true
+		xi.Endpoints.Endpoints = append(xi.Endpoints.Endpoints, ep)
+	}
+	for _, op := range svc.Operations {
+		addEP(op.Endpoint)
+		for _, c := range op.Calls {
+			addEP(c.Endpoint)
+		}
+	}
+	for _, op := range svc.Operations {
+		xo := xmlExportOperation{Name: op.Name, Action: op.SoapAction, Type: "Request-Response"}
+		for _, c := range op.Calls {
+			xo.Calls = append(xo.Calls, exportCall(op, c))
+		}
+		xi.Operations = append(xi.Operations, xo)
+	}
+	return xi
+}
+
+func exportCall(op model.Operation, c model.Call) xmlExportCall {
+	title := c.Title
+	if title == "" {
+		title = op.Name
+	}
+	xc := xmlExportCall{
+		ID:       callID(c),
+		Name:     title,
+		Endpoint: firstNonEmpty(c.Endpoint, op.Endpoint),
+		Request:  exportBody(firstNonEmpty(c.Request, op.Request)),
+	}
+	if action := firstNonEmpty(c.Action, op.SoapAction); action != "" {
+		xc.WsaConfig = &xmlExportWsa{Action: action}
+	}
+	return xc
+}
+
+func exportTestSuite(ts model.TestSuite) xmlExportTestSuite {
+	x := xmlExportTestSuite{ID: newIDIfEmpty(ts.Name), Name: ts.Name}
+	for _, tc := range ts.TestCases {
+		xtc := xmlExportTestCase{Name: tc.Name}
+		for _, st := range tc.Steps {
+			step := xmlExportTestStep{Type: st.Type, Name: st.Name}
+			step.Config.Request.Endpoint = st.Endpoint
+			step.Config.Request.Action = st.Action
+			step.Config.Request.CDATA, step.Config.Request.Text = bodyParts(st.Request)
+			xtc.Steps = append(xtc.Steps, step)
+		}
+		x.TestCases = append(x.TestCases, xtc)
+	}
+	return x
+}
+
+// exportBody wraps a request body for a con:request element.
+func exportBody(body string) xmlExportBody {
+	cdata, text := bodyParts(body)
+	return xmlExportBody{CDATA: cdata, Text: text}
+}
+
+// bodyParts returns the CDATA and escaped-text parts of a body: a body with no
+// "]]>" goes in CDATA, one that has it goes in escaped text so the XML stays
+// valid.
+func bodyParts(body string) (cdata, text string) {
+	if strings.Contains(body, "]]>") {
+		return "", body
+	}
+	return body, ""
+}
+
+func nameOr(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 func projectID(p model.Project) string {
@@ -49,104 +234,6 @@ func projectID(p model.Project) string {
 		return p.ID
 	}
 	return "soap-web-project-id"
-}
-
-func writeInterface(b *bytes.Buffer, svc model.Service) {
-	fmt.Fprintf(b, `  <con:interface xsi:type="con:WsdlInterface" name="%s" type="wsdl" soapVersion="1_1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">`+"\n",
-		xmlAttr(svc.Name))
-	if svc.Wsdl != "" {
-		fmt.Fprintf(b, "    <con:definitionCache type=\"TEXT\" rootPart=\"%s\"/>\n", xmlAttr(svc.Wsdl))
-	} else {
-		b.WriteString("    <con:definitionCache type=\"TEXT\"/>\n")
-	}
-	b.WriteString("    <con:endpoints>\n")
-	seenEP := map[string]bool{}
-	writeEP := func(ep string) {
-		ep = strings.TrimSpace(ep)
-		if ep == "" || seenEP[ep] {
-			return
-		}
-		seenEP[ep] = true
-		fmt.Fprintf(b, "      <con:endpoint>%s</con:endpoint>\n", xmlText(ep))
-	}
-	for _, op := range svc.Operations {
-		writeEP(op.Endpoint)
-		for _, c := range op.Calls {
-			writeEP(c.Endpoint)
-		}
-	}
-	b.WriteString("    </con:endpoints>\n")
-
-	for _, op := range svc.Operations {
-		fmt.Fprintf(b, `    <con:operation name="%s" action="%s" type="Request-Response">`+"\n",
-			xmlAttr(op.Name), xmlAttr(op.SoapAction))
-		b.WriteString("      <con:settings/>\n")
-		for _, c := range op.Calls {
-			writeCall(b, svc, op, c)
-		}
-		b.WriteString("    </con:operation>\n")
-	}
-	b.WriteString("  </con:interface>\n")
-}
-
-// writeCall writes one <con:call>. The saved response is a native extension and
-// is deliberately omitted: this minimal SoapUI mapping has no field for it.
-func writeCall(b *bytes.Buffer, svc model.Service, op model.Operation, c model.Call) {
-	title := c.Title
-	if title == "" {
-		title = op.Name
-	}
-	fmt.Fprintf(b, `      <con:call id="%s" name="%s">`+"\n", xmlAttr(callID(c)), xmlAttr(title))
-	b.WriteString("        <con:settings/>\n")
-	ep := firstNonEmpty(c.Endpoint, op.Endpoint)
-	if ep != "" {
-		fmt.Fprintf(b, "        <con:endpoint>%s</con:endpoint>\n", xmlText(ep))
-	}
-	action := firstNonEmpty(c.Action, op.SoapAction)
-	b.WriteString("        <con:request>\n")
-	// SoapUI stores the request body as CDATA inside <con:request>. If the body
-	// contains "]]>" we fall back to escaped text to keep the XML valid.
-	body := c.Request
-	if body == "" {
-		// Fall back to the operation default request if the call is empty.
-		body = op.Request
-	}
-	if strings.Contains(body, "]]>") {
-		b.WriteString("          " + xmlText(body) + "\n")
-	} else {
-		b.WriteString("          <![CDATA[" + body + "]]>\n")
-	}
-	b.WriteString("        </con:request>\n")
-	if action != "" {
-		fmt.Fprintf(b, `        <con:wsaConfig action="%s"/>`+"\n", xmlAttr(action))
-	}
-	b.WriteString("      </con:call>\n")
-}
-
-func writeTestSuite(b *bytes.Buffer, ts model.TestSuite) {
-	fmt.Fprintf(b, `  <con:testSuite id="%s" name="%s">`+"\n", xmlAttr(newIDIfEmpty(ts.Name)), xmlAttr(ts.Name))
-	for _, tc := range ts.TestCases {
-		fmt.Fprintf(b, `    <con:testCase name="%s">`+"\n", xmlAttr(tc.Name))
-		for _, st := range tc.Steps {
-			fmt.Fprintf(b, `      <con:testStep type="%s" name="%s">`+"\n", xmlAttr(st.Type), xmlAttr(st.Name))
-			b.WriteString("        <con:config>\n")
-			b.WriteString("          <con:request>\n")
-			if st.Endpoint != "" {
-				fmt.Fprintf(b, "            <con:endpoint>%s</con:endpoint>\n", xmlText(st.Endpoint))
-			}
-			body := st.Request
-			if strings.Contains(body, "]]>") {
-				b.WriteString("            " + xmlText(body) + "\n")
-			} else {
-				b.WriteString("            <![CDATA[" + body + "]]>\n")
-			}
-			b.WriteString("          </con:request>\n")
-			b.WriteString("        </con:config>\n")
-			b.WriteString("      </con:testStep>\n")
-		}
-		b.WriteString("    </con:testCase>\n")
-	}
-	b.WriteString("  </con:testSuite>\n")
 }
 
 func callID(c model.Call) string {
@@ -158,21 +245,4 @@ func callID(c model.Call) string {
 
 func newIDIfEmpty(seed string) string {
 	return "suite-" + strings.ReplaceAll(seed, " ", "-")
-}
-
-// xmlAttr escapes a string for use inside a double-quoted XML attribute.
-func xmlAttr(s string) string {
-	var buf bytes.Buffer
-	_ = xml.EscapeText(&buf, []byte(s))
-	out := buf.String()
-	// EscapeText does not escape quotes; do it manually.
-	out = strings.ReplaceAll(out, `"`, "&quot;")
-	return out
-}
-
-// xmlText escapes a string for use as XML character data.
-func xmlText(s string) string {
-	var buf bytes.Buffer
-	_ = xml.EscapeText(&buf, []byte(s))
-	return buf.String()
 }

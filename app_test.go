@@ -23,6 +23,7 @@ import (
 	"soapgo/internal/model"
 	"soapgo/internal/soapuiproj"
 	"soapgo/internal/store"
+	"soapgo/internal/textfmt"
 	"soapgo/internal/transport"
 	"soapgo/internal/updatecheck"
 	"soapgo/internal/workspace"
@@ -272,7 +273,7 @@ func TestInlineRenameViaUI(t *testing.T) {
 
 func TestFormatXML(t *testing.T) {
 	in := `<a><b>1</b><c x="1"/></a>`
-	out, err := formatXML(in)
+	out, err := textfmt.FormatXML(in)
 	if err != nil {
 		t.Fatalf("formatXML: %v", err)
 	}
@@ -286,7 +287,7 @@ func TestFormatXML(t *testing.T) {
 // <b/> stays self-closing, and text-only elements stay on one line.
 func TestFormatXMLEmptyAndInline(t *testing.T) {
 	in := `<r><a></a><b/><c>t</c><d>  </d></r>`
-	out, err := formatXML(in)
+	out, err := textfmt.FormatXML(in)
 	if err != nil {
 		t.Fatalf("formatXML: %v", err)
 	}
@@ -310,7 +311,7 @@ func TestMinify(t *testing.T) {
 // regex tokenizer used to break.
 func TestFormatXMLPreservesEdgeCases(t *testing.T) {
 	in := `<soap:Envelope xmlns:soap="http://x" a="1>2"><soap:Body><![CDATA[ x > < y ]]></soap:Body></soap:Envelope>`
-	out, err := formatXML(in)
+	out, err := textfmt.FormatXML(in)
 	if err != nil {
 		t.Fatalf("formatXML: %v", err)
 	}
@@ -1884,6 +1885,30 @@ func TestExportWorkspaceOmitsResponseBodies(t *testing.T) {
 	}
 	if resp.Body != "" {
 		t.Fatalf("exported body = %q, want empty", resp.Body)
+	}
+}
+
+// TestRequestPreviewMasksSecrets checks the 请求 tab masks a sensitive header
+// (matching what was actually sent) instead of showing the credential.
+func TestRequestPreviewMasksSecrets(t *testing.T) {
+	a := newTestApp(t)
+	a.maskSecrets = true
+	a.reqKind = model.KindSOAP
+	a.endpoint = "http://example.test/x"
+	a.action = "urn:a"
+	a.auth = authForm{Type: "bearer", Enabled: true, Token: "SECRET"}
+	a.xmlEd.Buffer.Reset("<req/>")
+
+	got := requestPreview(a)
+	if strings.Contains(got, "SECRET") {
+		t.Fatalf("preview leaked the token: %q", got)
+	}
+	if !strings.Contains(got, "••••••") {
+		t.Fatalf("preview did not mask the token: %q", got)
+	}
+	a.maskSecrets = false
+	if !strings.Contains(requestPreview(a), "SECRET") {
+		t.Fatal("preview hid the token even with masking off")
 	}
 }
 

@@ -542,14 +542,38 @@ func ValidateEndpoint(rawURL string) error {
 	if err != nil {
 		return fmt.Errorf("Endpoint 地址无效: %w", err)
 	}
-	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return fmt.Errorf("Endpoint 仅支持 http/https 协议，当前为 %q", u.Scheme)
-	}
-	if u.Host == "" || u.Hostname() == "" {
-		return errors.New("Endpoint 缺少主机名")
+	if err := validateHTTPURL(u); err != nil {
+		return fmt.Errorf("Endpoint %w", err)
 	}
 	return nil
+}
+
+// validateHTTPURL checks a parsed URL is an absolute http/https URL with a host
+// and lower-cases its scheme. It is the shared core of every URL check in the
+// app, so the endpoint, WSDL and update-source validators cannot drift apart.
+func validateHTTPURL(u *url.URL) error {
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("仅支持 http/https 协议，当前为 %q", u.Scheme)
+	}
+	if u.Host == "" || u.Hostname() == "" {
+		return errors.New("缺少主机名")
+	}
+	u.Scheme = scheme
+	return nil
+}
+
+// ParseHTTPURL parses raw into an absolute http/https URL with a host, with a
+// lower-cased scheme. Callers wrap the error with their own context.
+func ParseHTTPURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, err
+	}
+	if err := validateHTTPURL(u); err != nil {
+		return nil, err
+	}
+	return u, nil
 }
 
 // NormalizeHost trims a project host: surrounding spaces, trailing slashes and

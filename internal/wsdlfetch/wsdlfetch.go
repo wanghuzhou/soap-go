@@ -133,18 +133,10 @@ func parseURL(raw string) (*url.URL, error) {
 	if raw == "" {
 		return nil, fmt.Errorf("%w：缺少 url", ErrInvalidURL)
 	}
-	u, err := url.Parse(raw)
+	u, err := model.ParseHTTPURL(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%w：%v", ErrInvalidURL, err)
 	}
-	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return nil, fmt.Errorf("%w：仅支持 http/https 协议，当前为 %q", ErrInvalidURL, u.Scheme)
-	}
-	if u.Host == "" || u.Hostname() == "" {
-		return nil, fmt.Errorf("%w：缺少主机名", ErrInvalidURL)
-	}
-	u.Scheme = scheme
 	return u, nil
 }
 

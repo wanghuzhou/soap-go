@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 
 	"soapgo/internal/model"
+	"soapgo/internal/queryparams"
 )
 
 // Icons drawn as SVG, so the chrome does not fall back to the look of a
@@ -1476,7 +1477,7 @@ func (a *app) headersPanel(c *ui.Context) {
 func (a *app) queryPanel(c *ui.Context) {
 	t := c.Theme()
 	if a.endpoint != a.querySrc {
-		a.queryRows = parseQueryRows(a.endpoint)
+		a.queryRows = queryparams.Parse(a.endpoint)
 		a.querySrc = a.endpoint
 	}
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
@@ -1512,8 +1513,8 @@ func (a *app) queryPanel(c *ui.Context) {
 	})
 	// Only rewrite the URL when the rows themselves changed; an untouched URL
 	// (even one spelled with %20) must not be canonicalised on load.
-	if produced := buildQueryURL(a.endpoint, a.queryRows); produced != a.endpoint &&
-		produced != buildQueryURL(a.endpoint, parseQueryRows(a.endpoint)) {
+	if produced := queryparams.Build(a.endpoint, a.queryRows); produced != a.endpoint &&
+		produced != queryparams.Build(a.endpoint, queryparams.Parse(a.endpoint)) {
 		a.endpoint = produced
 		a.querySrc = produced
 	}
